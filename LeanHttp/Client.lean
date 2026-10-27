@@ -16,8 +16,13 @@ public section
 `Client.request` makes one HTTP/1.1 call on a connection of its own (`Connection: close`) and reads
 the whole response into memory.  The calling task does all the work in order: name resolution,
 connecting, writing the request, reading the response.  Other tasks exist only where a timer races
-an operation, and none outlives the call except an abandoned connect attempt (see
-`LeanHttp.Connect`).
+an operation.
+
+v4.34.1 can cancel a pending receive but not a pending connect, write or name lookup, so three
+things can outlive a call that gave up on them: a connect attempt that was abandoned (its socket is
+released when the kernel gives up on the SYN), a write the peer never accepts (its socket stays open
+while the peer keeps the connection), and a name lookup that timed out (it runs on in libuv's thread
+pool until the resolver gives up).  `NOTES.md` records what each costs.
 
 Only connect failures are retried, since nothing has been sent when a connect fails; everything else
 is reported with how far the request got (`Delivery`), so that the caller can decide.
@@ -145,7 +150,7 @@ private partial def readResponse (config : Config) (socket : TCP.Socket.Client) 
   let left ← remainingMs deadline
   if left == 0 then
     return (ex, some (.timeout .deadline, ""))
-  let receiving : AsyncTask (Option ByteArray) ← async (socket.recv? config.readChunkBytes.toUInt64)
+  let receiving ← start (socket.recv? config.readChunkBytes.toUInt64)
   match ← awaitWithin receiving (min config.readGapMs left) with
   | none =>
     cancelReceive socket
@@ -154,6 +159,28 @@ private partial def readResponse (config : Config) (socket : TCP.Socket.Client) 
   | some (.error err) => return (ex, some (.peerClosed, toString err))
   | some (.ok none) => readResponse config socket ex.endOfInput deadline
   | some (.ok (some data)) => readResponse config socket (ex.feed data) deadline
+
+/--
+Writes `bytes[offset:]` in slices of at most `Config.writeChunkBytes`, each of which must be accepted
+within the gap (`Config.readGapMs`) and the deadline.  Returns the reason if writing stopped early.
+A small request goes out in one write.
+-/
+private partial def writeRequest (config : Config) (socket : TCP.Socket.Client) (bytes : ByteArray)
+    (offset : Nat) (deadline : Nat) : Async (Option (Cause × String)) := do
+  if offset ≥ bytes.size then
+    return none
+  let left ← remainingMs deadline
+  if left == 0 then
+    return some (.timeout .deadline, "")
+  let stop := min bytes.size (offset + max 1 config.writeChunkBytes)
+  let slice := if offset == 0 && stop == bytes.size then bytes else bytes.extract offset stop
+  let writing ← start (socket.send slice)
+  match ← awaitWithin writing (min config.readGapMs left) with
+  | none =>
+    let which := if config.readGapMs < left then TimeoutKind.write else .deadline
+    return some (.timeout which, s!"{offset} of {bytes.size} request bytes accepted")
+  | some (.error err) => return some (.peerClosed, toString err)
+  | some (.ok ()) => writeRequest config socket bytes stop deadline
 
 /--
 Sends `req` and reads the whole response.  The request's target must be an absolute `http` URI;
@@ -198,16 +225,10 @@ def request (client : Client) (req : Request ByteArray) :
       return fail (.timeout .deadline) .notSent target rounds (detail := (Cause.connect attempts).describe)
   let socket := connected.socket
   let rounds := connected.rounds
-  let left ← remainingMs deadline
-  if left == 0 then
+  if (← remainingMs deadline) == 0 then
     return fail (.timeout .deadline) .notSent target rounds
-  let writing : AsyncTask Unit ← async (socket.send bytes)
-  match ← awaitWithin writing (min config.readGapMs left) with
-  | none =>
-    let which := if config.readGapMs < left then TimeoutKind.write else .deadline
-    return fail (.timeout which) .maybeDelivered target rounds
-  | some (.error err) => return fail .peerClosed .maybeDelivered target rounds (detail := toString err)
-  | some (.ok ()) => pure ()
+  if let some (cause, detail) ← writeRequest config socket bytes 0 deadline then
+    return fail cause .maybeDelivered target rounds (detail := detail)
   let (ex, stopped) ← readResponse config socket ex deadline
   let delivery := ex.delivery
   let status := ex.head.map (·.status)

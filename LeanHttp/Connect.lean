@@ -13,7 +13,8 @@ public section
 /-!
 # Connecting
 
-Name resolution, then rounds of connect attempts, with backoff between rounds.
+Name resolution, bounded only by the call's deadline and the resolver's own timeouts, then rounds of
+connect attempts, with backoff between rounds.
 
 Within a round the addresses are tried in order, each with its own time limit
 (`Config.connectTimeoutMs`).  The next attempt starts when the current one fails, or when it has not
@@ -86,7 +87,7 @@ on success if `noDelay`.
 def attempt (addr : SocketAddress) (timeoutMs : Nat) (noDelay : Bool) :
     Async (Except AttemptOutcome TCP.Socket.Client) := do
   let socket ← TCP.Socket.Client.mk
-  let connecting : AsyncTask Unit ← async (socket.connect addr)
+  let connecting ← start (socket.connect addr)
   match ← awaitWithin connecting timeoutMs with
   | none => return .error .timedOut
   | some (.error err) => return .error (.failed (toString err))
@@ -165,8 +166,7 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
     if left == 0 then
       result := .deadline
       break
-    let task : AsyncTask (Except AttemptOutcome Unit) ←
-      async (run i addrs[i] (min config.connectTimeoutMs left))
+    let task ← start (run i addrs[i] (min config.connectTimeoutMs left))
     started := started.push task
     let isLast := i + 1 == addrs.size
     let ended : Task (Option Woken) ←
@@ -210,18 +210,17 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
 /--
 Resolves `target` to the socket addresses to try, in order.
 -/
-def resolve (config : Config) (target : Target) (port : UInt16) (deadline : Nat) :
+def resolve (target : Target) (port : UInt16) (deadline : Nat) :
     Async (Except ConnectError (Array SocketAddress)) := do
   match target with
   | .literal addr => return .ok #[Address.withPort addr port]
   | .name host =>
-    let left ← remainingMs deadline
-    let lookup : AsyncTask (Array IPAddr) ← async (DNS.getAddrInfo host (toString port))
-    match ← awaitWithin lookup (min config.connectTimeoutMs left) with
-    | none =>
-      if (← remainingMs deadline) == 0 then
-        return .error (.deadline #[] 0)
-      return .error (.resolve host "timed out")
+    -- Only the deadline bounds the lookup: v4.34.1 cannot cancel one, and an abandoned lookup
+    -- occupies a thread of libuv's pool, and delays the process's exit, until the resolver gives
+    -- up by its own timeouts.  So the client leaves those timeouts to decide.
+    let lookup ← start (DNS.getAddrInfo host (toString port))
+    match ← awaitWithin lookup (← remainingMs deadline) with
+    | none => return .error (.deadline #[] 0)
     | some (.error err) => return .error (.resolve host (toString err))
     | some (.ok answers) =>
       let addrs := Address.connectOrder answers
@@ -235,7 +234,7 @@ within `deadline` (a value of `IO.monoMsNow`).  `seed` drives the backoff jitter
 -/
 def run (config : Config) (target : Target) (port : UInt16) (seed : UInt64) (deadline : Nat) :
     Async (Except ConnectError Connected) := do
-  let addrs ← match ← resolve config target port deadline with
+  let addrs ← match ← resolve target port deadline with
     | .error err => return .error err
     | .ok addrs => pure addrs
   let mut attempts : Array ConnectAttempt := #[]

@@ -39,7 +39,9 @@ structure Config where
   connectStaggerMs : Nat := 250
 
   /--
-  Longest silence allowed between two reads of the response (default: 30 s).  Every byte resets it.
+  Longest time without progress on the connection (default: 30 s): between two reads of the
+  response, where every byte resets it, or for one slice of the request (`writeChunkBytes`) to be
+  accepted by the kernel.
   -/
   readGapMs : Nat := 30 * 1000
 
@@ -85,6 +87,12 @@ structure Config where
   Bytes asked for in each read from the socket (default: 64 KiB).
   -/
   readChunkBytes : Nat := 64 * 1024
+
+  /--
+  Largest slice of the request handed to the socket in one write (default: 64 KiB).  A request no
+  larger than this goes out in a single write.
+  -/
+  writeChunkBytes : Nat := 64 * 1024
 
   /--
   Parser limits for the response head and framing.  The client sets `enableKeepAlive`,

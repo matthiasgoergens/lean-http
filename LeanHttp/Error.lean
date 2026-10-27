@@ -52,7 +52,7 @@ inductive TimeoutKind where
   | read
 
   /--
-  Writing the request made no progress for `Config.readGapMs`.
+  A slice of the request (`Config.writeChunkBytes`) was not accepted within `Config.readGapMs`.
   -/
   | write
 
@@ -131,7 +131,8 @@ What went wrong.
 -/
 inductive Cause where
   /--
-  The call was cancelled on our side (the calling task was cancelled).
+  The client closed the connection on its own initiative.  Reserved for closing a client and for
+  cancellation, which arrive with connection reuse; milestone 1 never produces it.
   -/
   | localClose
 
@@ -260,7 +261,7 @@ def isConnect : Cause → Bool
 A one-line description.
 -/
 def describe : Cause → String
-  | .localClose => "the call was cancelled"
+  | .localClose => "the client closed the connection"
   | .peerClosed => "the connection closed before a complete response"
   | .timeout which => s!"{which.name} timeout"
   | .protocol detail => s!"invalid response: {detail}"
@@ -292,7 +293,7 @@ instance : ToString Error where
     s!"{e.target}: {e.cause.describe}{detail} [{e.delivery.name}, seed {e.seed}]"
 
 /--
-Converts the error for code that works with `IO.Error`, as the throwing `Client.request!` does.
+Converts the error for code that works with `IO.Error`, as the throwing `Client.send` does.
 -/
 def toIOError (e : Error) : IO.Error :=
   .userError (toString e)
