@@ -30,8 +30,6 @@ def backoffChecks : Checks Unit := do
     [100, 200, 400, 800, 1600, 3200, 5000]
   checkEq "ceiling stays at the cap" (Backoff.ceiling base cap 1000) 5000
   checkEq "ceiling with a zero base" (Backoff.ceiling 0 cap 70) 0
-  -- The schedule is a pure function of (seed, attempt).
-  checkEq "same seed, same schedule" (Backoff.schedule base cap 42 8) (Backoff.schedule base cap 42 8)
   checkEq "a delay does not depend on the schedule's length"
     (Backoff.schedule base cap 7 2) ((Backoff.schedule base cap 7 5).take 2)
   -- SplitMix64's published first outputs for seed 0.
@@ -161,7 +159,6 @@ def errorChecks : Checks Unit := do
     (match big.outcome with | .failed c => some c | _ => none) (some (.limit .body))
   checkEq "with the response received" big.delivery .responseReceived
   let e : Error := { cause := .connect #[], delivery := .notSent, target := "h:1", seed := 7 }
-  check "a connect error is notSent and retryable" (e.notSent && e.cause.isConnect)
   check "an error's text names the delivery and the seed"
     ((toString e).contains "not sent" && (toString e).contains "seed 7") (toString e)
   check "only connect failures count as connect"

@@ -29,9 +29,14 @@ trap cleanup EXIT
 
 passes=0
 fails=0
-result() { # result <PASS|FAIL> <scenario> <description>
+knowns=0
+result() { # result <PASS|FAIL|KNOWN> <scenario> <description>
   echo "$1 $2: $3" | tee --append "$out/summary.txt"
-  if [ "$1" = PASS ]; then passes=$((passes + 1)); else fails=$((fails + 1)); fi
+  case $1 in
+    PASS) passes=$((passes + 1)) ;;
+    KNOWN) knowns=$((knowns + 1)) ;;
+    *) fails=$((fails + 1)) ;;
+  esac
 }
 
 # start <scenario> <server name> <ready text> <command...>: start a server, wait for <ready text>.
@@ -50,6 +55,7 @@ start() {
 }
 
 # client <scenario> <net-client args...>: run the client once, record its output and timings.
+# If $slow_exit is set, a slow exit is reported as KNOWN with that reason instead of FAIL.
 client() {
   local scenario=$1; shift
   local file="$out/$scenario.txt"
@@ -66,6 +72,8 @@ client() {
   echo "exit status=$rc wall_ms=$wall exit_after_main_ms=$after" >> "$file"
   if [ -z "$main" ]; then
     result FAIL "$scenario" "main never returned (status $rc)"
+  elif [ "$after" -gt 1000 ] && [ -n "${slow_exit:-}" ]; then
+    result KNOWN "$scenario" "process took ${after} ms to exit after main returned: $slow_exit"
   elif [ "$after" -gt 1000 ]; then
     result FAIL "$scenario" "process took ${after} ms to exit after main returned"
   else
@@ -115,6 +123,9 @@ ONEWRITE=18082  # onewrite.py on 127.0.0.1
 DUAL=18083      # blackhole on ::1, evil.py on 127.0.0.1
 HOLE=18084      # blackhole on ::1 only
 CLOSED=18085    # nothing listens
+HOLE2=18086     # blackhole on ::1 only, for the connect deadline
+NOREAD=18087    # accepts and never reads
+LARGE=18088     # onewrite.py, for a large POST
 
 # Names for the resolver tests.  getaddrinfo without a socket type returns each of these addresses
 # once per socket type, three times in all.
@@ -198,10 +209,18 @@ if scenario blackhole-first; then
     "connects to 127.0.0.1 when ::1 drops SYNs"
   expect blackhole-first 'summary calls n=10 .* ok=10$' "ten calls out of ten"
   expect blackhole-first 'failed_attempts=\[\[::1\]:18083#0:abandoned\]' "the ::1 attempt was abandoned"
-  if grep --quiet 'conn1 EOF from client after 1 requests' "$out/blackhole-first.evil.log"; then
-    result PASS blackhole-first "the winning connection was closed after the call"
+  # Each call's connection must close before the next call connects.  A connection kept open by the
+  # abandoned ::1 attempt would close only when the kernel gives up on that attempt, or at exit.
+  ordered=1
+  for k in $(seq 1 9); do
+    eof=$(grep --line-number "conn$k EOF from client" "$out/blackhole-first.evil.log" | cut --delimiter=: --fields=1 | head --lines=1)
+    next=$(grep --line-number "conn$((k + 1)) accepted" "$out/blackhole-first.evil.log" | cut --delimiter=: --fields=1 | head --lines=1)
+    { [ -n "$eof" ] && [ -n "$next" ] && [ "$eof" -lt "$next" ]; } || ordered=0
+  done
+  if [ $ordered -eq 1 ]; then
+    result PASS blackhole-first "each call's connection closed before the next call connected"
   else
-    result FAIL blackhole-first "the server did not see the winning connection close"
+    result FAIL blackhole-first "a call's connection was still open when the next call connected"
   fi
   median_within blackhole-first 240 400 "median call within about the 250 ms stagger"
   client blackhole-stagger50 call GET "http://dual.test:$DUAL/ok" repeat=10 stagger=50
@@ -314,6 +333,40 @@ if scenario nodelay; then
   fi
 fi
 
+if scenario post-large; then
+  start post-large onewrite "listening" "$PY" -I "$here/onewrite.py" --port $LARGE || exit 1
+  client post-large call POST "http://127.0.0.1:$LARGE/" body=3000000
+  expect post-large 'call 0 ok status=200 bytes=12 ' "a 3 MB body goes out in slices and is answered"
+fi
+
+if scenario connect-deadline; then
+  start connect-deadline hole "blackhole" "$PY" -I "$here/blackhole.py" ::1 $HOLE2 || exit 1
+  client connect-deadline call GET "http://[::1]:$HOLE2/" deadline=1500
+  expect connect-deadline 'call 0 error delivery=not sent .*cause="deadline timeout"' \
+    "the deadline passes while connecting; nothing sent"
+  within connect-deadline 1490 1900 "at the 1.5 s deadline"
+fi
+
+if scenario write-timeout; then
+  start write-timeout noread "listening" "$PY" -I "$here/noread.py" $NOREAD || exit 1
+  client write-timeout call POST "http://127.0.0.1:$NOREAD/" body=32000000 gap=1000
+  expect write-timeout 'call 0 error delivery=maybe delivered .*cause="write timeout" detail="[0-9]+ of 32000[0-9]+ request bytes accepted"' \
+    "a peer that stops reading stalls the upload; the write gap ends it"
+fi
+
+# Last, because it points the resolver at a name server that never answers.
+if scenario dns-timeout; then
+  cp /etc/resolv.conf /tmp/resolv.conf.saved 2>/dev/null || : > /tmp/resolv.conf.saved
+  printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf || exit 1
+  start dns-timeout dns "listening" "$PY" -I "$here/dnsblack.py" || exit 1
+  slow_exit="libuv joins its thread pool at exit, and the abandoned lookup runs until the resolver gives up (NOTES.md)" \
+    client dns-timeout call GET "http://slow.test/" deadline=2000
+  cp /tmp/resolv.conf.saved /etc/resolv.conf
+  expect dns-timeout 'call 0 error delivery=not sent .*cause="deadline timeout"' \
+    "a name server that never answers: the call ends at the deadline; nothing sent"
+  within dns-timeout 1990 2400 "at the 2 s deadline"
+fi
+
 cleanup
-echo "### $passes passed, $fails failed" | tee --append "$out/summary.txt"
+echo "### $passes passed, $fails failed, $knowns known limitations" | tee --append "$out/summary.txt"
 [ "$fails" -eq 0 ]
