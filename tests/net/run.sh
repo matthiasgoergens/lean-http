@@ -141,9 +141,10 @@ servers() {
 
 scenario() { # scenario <name>: true if the scenario was asked for (or none were)
   [ ${#selected[@]} -eq 0 ] && return 0
-  local s; for s in "${selected[@]}"; do [ "$s" = "$1" ] && return 0; done
+  local s; for s in "${selected[@]}"; do [ "$s" = "$1" ] && { matched+=("$1"); return 0; }; done
   return 1
 }
+matched=()
 selected=("$@")
 rm --force "$out"/*.txt "$out"/*.log
 echo "### $(date --utc +%FT%TZ) $(uname -r); syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)" \
@@ -370,5 +371,12 @@ if scenario dns-timeout; then
 fi
 
 cleanup
+# A name that matches no scenario, or a run with no checks at all, must not pass silently.
+for s in "${selected[@]}"; do
+  case " ${matched[*]} " in *" $s "*) ;; *) echo "FAIL $s: no such scenario" | tee --append "$out/summary.txt"; fails=$((fails + 1)) ;; esac
+done
+if [ $((passes + fails + knowns)) -eq 0 ]; then
+  echo "FAIL run: no checks ran" | tee --append "$out/summary.txt"; fails=1
+fi
 echo "### $passes passed, $fails failed, $knowns known limitations" | tee --append "$out/summary.txt"
 [ "$fails" -eq 0 ]
