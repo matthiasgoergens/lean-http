@@ -62,6 +62,11 @@ structure Exchange where
   maxInterim : Nat
 
   /--
+  Largest body accepted, in decoded bytes.
+  -/
+  maxBody : Nat
+
+  /--
   Interim responses seen so far.
   -/
   interim : Nat := 0
@@ -160,19 +165,33 @@ private def handleEvents (ex : Exchange) (events : Array (H1.Event .sending)) : 
     (ex, progressed || p)
 
 /--
-Pulls every body chunk the machine can produce now.
+`true` when the body the machine is about to read is known to exceed the limit: a `Content-Length`
+larger than what the limit leaves.
+-/
+private def announcedTooLarge (ex : Exchange) : Bool :=
+  match ex.machine.reader.state with
+  | .readBody (.fixed remaining) => ex.body.size + remaining > ex.maxBody
+  | _ => false
+
+/--
+Pulls every body chunk the machine can produce now, enforcing the body limit.
 -/
 private partial def pullAll (ex : Exchange) (progressed : Bool) : Exchange × Bool :=
   if ex.finished || !ex.machine.canPullBodyNow then
     (ex, progressed)
+  else if ex.announcedTooLarge then
+    (ex.fail (.limit .body), true)
   else
     let (machine, chunk?) := ex.machine.pullBody
     let ex := { ex with machine }
     match chunk? with
     | some pulled =>
-      let ex := { ex with body := ex.body ++ pulled.chunk.data }
-      let ex := if pulled.final && ex.head.isSome then { ex with bodyDone := true } else ex
-      pullAll ex true
+      if ex.body.size + pulled.chunk.data.size > ex.maxBody then
+        (ex.fail (.limit .body), true)
+      else
+        let ex := { ex with body := ex.body ++ pulled.chunk.data }
+        let ex := if pulled.final && ex.head.isSome then { ex with bodyDone := true } else ex
+        pullAll ex true
     | none => (ex, progressed)
 
 /--
@@ -203,15 +222,21 @@ Starts an exchange.  `head` must already carry its `Host` field; framing fields 
 `Content-Length` for `body`, and `Connection: close` is added.  Returns the exchange and the bytes
 of the request, to be written in one go.
 
-`h1` supplies the parser limits; keep-alive is turned off, and the body limits are set to
-`maxBodyBytes`.
+`h1` supplies the parser limits; keep-alive is turned off.  The body limit, `maxBodyBytes` decoded
+bytes, is enforced here rather than by the machine, which would refuse an oversized
+`Content-Length` before reporting the head: a caller is better served by an error that carries the
+status and says the response was received.  The machine still bounds the input it buffers by
+`maxBodyBytes` plus its header allowances.
 -/
 def start (h1 : H1.Config) (maxInterim maxBodyBytes : Nat) (head : Request.Head)
     (body : ByteArray) : Exchange × ByteArray :=
+  -- The machine's own limits are lifted out of the way of the exchange's (`pullAll`).
+  let unlimited := 2 ^ 62
   let config := { h1 with
     enableKeepAlive := false
-    maxBodySize := maxBodyBytes
-    maxChunkSize := maxBodyBytes }
+    maxBodySize := unlimited
+    maxChunkSize := unlimited
+    maxBufferedBodyBytes := some maxBodyBytes }
   let headers := head.headers
     |>.erase Header.Name.contentLength
     |>.erase Header.Name.transferEncoding
@@ -222,7 +247,7 @@ def start (h1 : H1.Config) (maxInterim maxBodyBytes : Nat) (head : Request.Head)
   let machine := if body.isEmpty then machine else machine.sendData #[{ data := body }]
   let machine := machine.userClosedBody
   let (machine, result) := machine.step
-  let ex : Exchange := { machine, maxInterim }
+  let ex : Exchange := { machine, maxInterim, maxBody := maxBodyBytes }
   let (ex, _) := ex.handleEvents result.events
   let ex :=
     if ex.machine.failed || ex.machine.error.isSome then

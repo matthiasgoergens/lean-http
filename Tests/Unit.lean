@@ -156,6 +156,10 @@ def errorChecks : Checks Unit := do
   checkEq "a final head: response received" ex3.delivery .responseReceived
   checkEq "and the body cut short is peerClosed"
     (match ex3.endOfInput.outcome with | .failed c => some c | _ => none) (some .peerClosed)
+  let big := ex.feed "HTTP/1.1 200 OK\r\nContent-Length: 2000\r\n\r\n".toUTF8
+  checkEq "an announced body over the limit fails at once"
+    (match big.outcome with | .failed c => some c | _ => none) (some (.limit .body))
+  checkEq "with the response received" big.delivery .responseReceived
   let e : Error := { cause := .connect #[], delivery := .notSent, target := "h:1", seed := 7 }
   check "a connect error is notSent and retryable" (e.notSent && e.cause.isConnect)
   check "an error's text names the delivery and the seed"
