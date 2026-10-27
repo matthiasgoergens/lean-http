@@ -126,30 +126,47 @@ private inductive Woken where
   | allEnded
 
 /--
+Who holds the winning socket of a round.  The socket lives here, and only here, from the moment an
+attempt connects until the round hands it over, so that attempts still pending after the round
+reference no socket but their own.
+-/
+private inductive Slot where
+  | open
+  | won (index : Nat) (socket : TCP.Socket.Client)
+  | closed
+
+/--
 One round of attempts over `addrs`, in order, staggered.  Returns the round's result and the record
 of every attempt started, except the one that won.
 -/
 def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (deadline : Nat) :
     Async (RoundResult × Array ConnectAttempt) := do
-  -- Resolved by the first attempt to connect.  `resolve` ignores later winners, and their sockets,
-  -- referenced by nothing else, are closed when dropped.
-  let first : IO.Promise (Option (Nat × TCP.Socket.Client)) ← IO.Promise.new
-  let firstTask : Task (Option Woken) := first.result?.map (sync := true) (·.map fun _ => .won)
-  let mut started : Array (AsyncTask (Except AttemptOutcome TCP.Socket.Client)) := #[]
+  let slot : IO.Ref Slot ← IO.mkRef .open
+  -- Resolved when an attempt has put its socket in `slot`.
+  let signal : IO.Promise Unit ← IO.Promise.new
+  let signalled : Task (Option Woken) := signal.result?.map (sync := true) (·.map fun _ => .won)
+  -- An attempt that connects after another has won, or after the round, finds the slot taken or
+  -- closed; its socket is then referenced by nothing and is closed when dropped.
+  let run (i : Nat) (addr : SocketAddress) (timeoutMs : Nat) : Async (Except AttemptOutcome Unit) := do
+    match ← attempt addr timeoutMs config.noDelay with
+    | .error outcome => return .error outcome
+    | .ok socket =>
+      let won ← slot.modifyGet fun
+        | .open => (true, .won i socket)
+        | taken => (false, taken)
+      if won then signal.resolve ()
+      return .ok ()
+  let mut started : Array (AsyncTask (Except AttemptOutcome Unit)) := #[]
   let mut result : RoundResult := .deadline
   for h : i in [0:addrs.size] do
-    if ← first.isResolved then
+    if ← signal.isResolved then
       break
     let left ← remainingMs deadline
     if left == 0 then
       result := .deadline
       break
-    let task : AsyncTask (Except AttemptOutcome TCP.Socket.Client) ←
-      async (attempt addrs[i] (min config.connectTimeoutMs left) config.noDelay)
-    BaseIO.chainTask (sync := true) task fun (r : Except IO.Error (Except AttemptOutcome _)) =>
-      match r with
-      | .ok (.ok socket) => first.resolve (some (i, socket))
-      | _ => pure ()
+    let task : AsyncTask (Except AttemptOutcome Unit) ←
+      async (run i addrs[i] (min config.connectTimeoutMs left))
     started := started.push task
     let isLast := i + 1 == addrs.size
     let ended : Task (Option Woken) ←
@@ -159,7 +176,7 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
       else
         pure (Task.map (sync := true) (fun _ => some Woken.attemptEnded) task.run)
     let waitMs := if isLast then left else min config.connectStaggerMs left
-    match ← awaitFirst #[firstTask, ended] waitMs with
+    match ← awaitFirst #[signalled, ended] waitMs with
     | some (some .won) => break
     | some (some .allEnded) =>
       result := .failed
@@ -170,21 +187,20 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
         result := .deadline
         break
       -- Otherwise the stagger passed with the attempt still pending: start the next one.
-  -- Whatever the loop concluded, an attempt that connected wins.
-  let won ← do
-    if ← first.isResolved then pure first.result?.get.join else pure none
-  let final := match won with
-    | some (i, socket) => RoundResult.connected socket addrs[i]!
-    | none => result
+  -- Close the round.  Whatever the loop concluded, an attempt that connected wins.
+  let won ← slot.modifyGet fun st => (st, .closed)
+  let (final, winner) := match won with
+    | .won i socket => (RoundResult.connected socket addrs[i]!, some i)
+    | _ => (result, none)
   let mut attempts := #[]
   for h : i in [0:started.size] do
-    if won.map (·.1) == some i then
+    if winner == some i then
       continue
     let outcome ←
       if ← IO.hasFinished started[i] then
         match started[i].get with
         | .ok (.error outcome) => pure outcome
-        | .ok (.ok _) => pure .abandoned
+        | .ok (.ok ()) => pure .abandoned
         | .error err => pure (.failed (toString err))
       else
         pure .abandoned
