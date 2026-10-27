@@ -209,7 +209,7 @@ def request (client : Client) (req : Request ByteArray) :
   | some (.error err) => return fail .peerClosed .maybeDelivered target rounds (detail := toString err)
   | some (.ok ()) => pure ()
   let (ex, stopped) ← readResponse config socket ex deadline
-  let delivery := if ex.head.isSome then Delivery.responseReceived else .maybeDelivered
+  let delivery := ex.delivery
   let status := ex.head.map (·.status)
   if let some (cause, detail) := stopped then
     return fail cause delivery target rounds status detail

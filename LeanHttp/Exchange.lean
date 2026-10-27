@@ -112,6 +112,13 @@ def outcome (ex : Exchange) : Outcome :=
   | none, none => .pending
 
 /--
+How far the request got, for an exchange whose request was written: the response was received if
+its final head was parsed, and otherwise the request may or may not have been acted on.
+-/
+def delivery (ex : Exchange) : Delivery :=
+  if ex.head.isSome then .responseReceived else .maybeDelivered
+
+/--
 `true` once the exchange has a final outcome.
 -/
 def finished (ex : Exchange) : Bool :=
