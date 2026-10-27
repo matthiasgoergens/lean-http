@@ -1,0 +1,19 @@
+# on the host of the build host (strace is not in the image), net-client built by scripts/remote.sh from the sources committed with this log
+$ ssh buildhost 'cd ~/lean-http && bash tests/net/strace-nodelay.sh'
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:37520/echo body=100
+call 0 ok status=200 bytes=165 ms=20.748 rounds=1 address=127.0.0.1:37520 seed=4432567944781366000 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=16
+main returning at ms=22.091
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+142169 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 13
+142169 connect(13, {sa_family=AF_INET, sin_port=htons(37520), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+142169 setsockopt(13, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+142173 write(13, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+142159 +++ exited with 0 +++
+142173 +++ exited with 0 +++
+142164 +++ exited with 0 +++
+142169 +++ exited with 0 +++
+142167 +++ exited with 0 +++
+142176 +++ exited with 0 +++
+142150 +++ exited with 0 +++
+142133 +++ exited with 0 +++
