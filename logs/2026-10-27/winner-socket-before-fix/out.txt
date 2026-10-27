@@ -1,0 +1,24 @@
+# lean-http at 8943e8d (before dce21bd) with Tests/Net.lean from 07d40cc, built and run by check.sh below in
+# localhost/b8perf-lean on the build host: podman run --rm --network none --sysctl net.ipv4.tcp_syn_retries=2 ... bash check.sh
+# ::1 drops SYNs (blackhole.py), evil.py answers on 127.0.0.1; the server logs when the client's connection closes.
+$ cat check.sh
+cd /w
+lake build net-client 2>&1 | tail -1
+printf '::1 dual.test\n127.0.0.1 dual.test\n' >> /etc/hosts
+/py/bin/python3 -I blackhole.py ::1 18083 > /tmp/bh.log 2>&1 &
+/py/bin/python3 -I evil.py --port 18083 > /tmp/evil.log 2>&1 &
+sleep 2; cat /tmp/bh.log
+.lake/build/bin/net-client call GET http://dual.test:18083/ok linger=9000
+cat /tmp/evil.log
+$ bash check.sh
+Build completed successfully (42 jobs).
+blackhole ::1:18083: ok (connect timed out)
+call 0 ok status=200 bytes=5 ms=984.859 rounds=1 address=127.0.0.1:18083 seed=16680748466389492606 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+fds_after_calls=13
+fds_after_linger_9000ms=11
+main returning at ms=9985.819
+      18.2 listening on 127.0.0.1:18083
+    3412.5 conn1 accepted from ('127.0.0.1', 41262)
+    3430.7 conn1 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+   10346.0 conn1 EOF from client after 1 requests
+   10346.4 conn1 closed by server
