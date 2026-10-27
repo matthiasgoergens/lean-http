@@ -18,3 +18,14 @@ So the library uses a copy of the stack's `src/Std/Http/Protocol`, renamed to `L
 The exchange core still refuses `101` itself and counts interim responses itself, since neither version of the machine limits them.  When a toolchain ships these protocol changes, delete `vendor/`, `scripts/vendor.sh` and `LeanHttp/VendorCompat.lean` (which would then clash), and point the imports back at `Std.Http.Protocol`.
 
 The three informational cases record behaviour without asserting it: a status line without the space before an empty reason phrase, bare LF line endings and obsolete line folding are all rejected as bad messages, by both versions.
+
+## What can outlive a call, and other limits of milestone 1
+
+Measured on 2026-10-27 (`logs/2026-10-27/net/`); v4.34.1 can cancel a pending receive but not a pending connect, write or name lookup.
+
+- **An abandoned connect attempt** keeps its socket until the kernel gives up on the SYN: about 127 s with Linux's default `tcp_syn_retries` of 6.  It holds no worker and does not delay exit (the blackhole scenarios exit within tens of milliseconds), and the tests see the descriptors released once the kernel gives up (with `tcp_syn_retries=2` to keep the run short).  A host whose first address drops SYNs therefore costs one descriptor per call for two minutes; at about 8 calls a second that reaches the common limit of 1024 descriptors.
+- **A write the peer never accepts** keeps its socket while the peer keeps the connection open (zero-window probes can keep it alive indefinitely).  The call itself ends at the write gap or the deadline, and exit is not delayed.
+- **An abandoned name lookup** keeps running in libuv's thread pool (four threads by default) until the resolver gives up, and libuv joins that pool when the process exits: with a name server that never answers, the process waited 8 s at exit after a call that ended at its 2 s deadline (`dns-timeout`, reported as a known limitation).  So the client bounds lookups only by the deadline and leaves the rest to the resolver's own timeouts (`/etc/resolv.conf`).
+- **No early response during an upload.**  The response is read only after the whole request is written, so a server that answers early (a 413, say) and stops reading makes the call end as a write timeout, or as a closed connection, without the response.  Milestone 2's exchange core reads while it writes.
+- **The write gap is per slice.**  `readGapMs` bounds each 64 KiB slice of the request (`writeChunkBytes`), since a write's completion is the only progress the client can observe.
+- **No cancellation.**  `Cause.localClose` is reserved for closing a client and cancelling a call, which come with connection reuse.
