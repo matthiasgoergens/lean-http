@@ -46,7 +46,7 @@ Request bodies: bytes (replayable), or a stream (not replayable, so never retrie
 
 ## What `Std.Http` provides
 
-From v4.34.1: `Request`, `Response`, `Headers` (with validated names and values, which rules out header injection), `Method`, `Status`, the URI parser (IPv6 literals included), the HTTP/1.1 machine in client mode (`Direction.sending`), and the pure redirect planner (`Protocol/H1/Redirect.lean`).  The planner's same-URL cycle check is the one thing the per-call planner does not take over.  The PR's client-side additions to the machine are not in v4.34.1; milestone 1 does not need them.  If a proof needs to see inside the machine (its `H1.lean` has 18 `partial def`s in v4.34.1, which no theorem can unfold), a separate codec written for proof becomes a later step, with the upstream machine as its test oracle.
+From v4.34.1: `Request`, `Response`, `Headers` (with validated names and values, which rules out header injection), `Method`, `Status`, the URI parser (IPv6 literals included), the HTTP/1.1 machine in client mode (`Direction.sending`), and the pure redirect planner (`Protocol/H1/Redirect.lean`).  The per-call planner uses it and adds its own hop limit, which ends in an error.  The PR's client-side additions to the machine are not in v4.34.1; milestone 1 does not need them.  If a proof needs to see inside the machine (its `H1.lean` has 18 `partial def`s in v4.34.1, which no theorem can unfold), a separate codec written for proof becomes a later step, with the upstream machine as its test oracle.
 
 ## Socket lifecycle
 
