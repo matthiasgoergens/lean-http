@@ -1,6 +1,6 @@
 # lean-http: design
 
-An HTTP/1.1 client for Lean 4 (v4.34.1), built so that its decisions can be tested exhaustively and, where it pays, proved.  It uses `Std.Http`'s data types and its HTTP/1.1 machine as shipped in the toolchain, and replaces only the part where the proposed upstream client went wrong: connection management.
+An HTTP/1.1 client for Lean 4 (v4.34.1), built so that its decisions can be tested exhaustively and, where it pays, proved.  It uses `Std.Http`'s data types as shipped in the toolchain and the HTTP/1.1 machine of the proposed upstream client stack (a renamed copy of its protocol layer, until a toolchain ships it; see `NOTES.md`), and replaces only the part where that client went wrong: connection management.
 
 ## Position
 
@@ -46,7 +46,7 @@ Request bodies: bytes (replayable), or a stream (not replayable, so never retrie
 
 ## What `Std.Http` provides
 
-From v4.34.1: `Request`, `Response`, `Headers` (with validated names and values, which rules out header injection), `Method`, `Status`, the URI parser (IPv6 literals included), the HTTP/1.1 machine in client mode (`Direction.sending`), and the pure redirect planner (`Protocol/H1/Redirect.lean`).  The per-call planner uses it and adds its own hop limit, which ends in an error.  The PR's client-side additions to the machine are not in v4.34.1; milestone 1 does not need them.  If a proof needs to see inside the machine (its `H1.lean` has 18 `partial def`s in v4.34.1, which no theorem can unfold), a separate codec written for proof becomes a later step, with the upstream machine as its test oracle.
+From v4.34.1: `Request`, `Response`, `Headers` (with validated names and values, which rules out header injection), `Method`, `Status` and the URI parser (IPv6 literals included).  The HTTP/1.1 machine in client mode (`Direction.sending`) and the pure redirect planner (`Protocol/H1/Redirect.lean`) come from the upstream stack's protocol layer instead, vendored under `LeanHttpProto`: v4.34.1's machine rejects a chunk-size line with extensions or a trailer section that arrives split across reads, which the stack fixes (measured; `NOTES.md`).  The per-call planner uses the redirect planner and adds its own hop limit, which ends in an error.  If a proof needs to see inside the machine (its `H1.lean` has 18 `partial def`s in v4.34.1, which no theorem can unfold), a separate codec written for proof becomes a later step, with the upstream machine as its test oracle.
 
 ## Socket lifecycle
 
