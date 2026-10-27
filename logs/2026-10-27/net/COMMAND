@@ -1,7 +1,4 @@
 $ scripts/remote.sh lake build net-client
 $ CTR_EXTRA='--sysctl net.ipv4.tcp_syn_retries=2' scripts/remote.sh bash tests/net/run.sh
-On the build host, in localhost/b8perf-lean with Lean v4.34.1, --network none; sources as committed
-with this log (vendored protocol layer from leanprover/lean4 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b).
-summary.txt has the checks; <scenario>.txt the client's command, output, exit status and exit
-timing; <scenario>.<server>.log the servers' logs.  The box's load average was about 170 on 128
-CPUs during the run.
+On the build host, in localhost/b8perf-lean with Lean v4.34.1, --network none.  Sources: lean-http at 449bb96 plus the run.sh exit-status check committed just before this log; vendored protocol layer from leanprover/lean4 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b.
+summary.txt has the checks; <scenario>.txt the client's command, output, exit status and exit timing; <scenario>.<server>.log the servers' logs.  The box's load average was about 170 on 128 CPUs during the run.

@@ -1,10 +1,8 @@
 $ scripts/remote.sh lake build unit-tests && scripts/remote.sh .lake/build/bin/unit-tests
-# sources as committed with this log
-Build completed successfully (42 jobs).
+# lean-http at d7d8dbd
 PASS ceiling doubles from the base
 PASS ceiling stays at the cap
 PASS ceiling with a zero base
-PASS same seed, same schedule
 PASS a delay does not depend on the schedule's length
 PASS draw is SplitMix64
 PASS pinned schedule for seed 42
@@ -44,7 +42,8 @@ PASS half a head: maybe delivered
 PASS an interim response only: maybe delivered
 PASS a final head: response received
 PASS and the body cut short is peerClosed
-PASS a connect error is notSent and retryable
+PASS an announced body over the limit fails at once
+PASS with the response received
 PASS an error's text names the delivery and the seed
 PASS only connect failures count as connect
 46 checks, 0 failing

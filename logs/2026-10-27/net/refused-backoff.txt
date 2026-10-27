@@ -1,5 +1,5 @@
 $ net-client call GET http://127.0.0.1:18085/ seed=42
-call 0 error delivery=not sent ms=97.329 rounds=3 seed=42 status=none cause="could not connect: 127.0.0.1:18085 (round 0): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 1): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 2): no such thing (error code: 111, connection refused)" detail="" attempts=[127.0.0.1:18085#0:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#1:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#2:failed(no such thing (error code: 111, connection refused))]
+call 0 error delivery=not sent ms=84.530 rounds=3 seed=42 status=none cause="could not connect: 127.0.0.1:18085 (round 0): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 1): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 2): no such thing (error code: 111, connection refused)" detail="" attempts=[127.0.0.1:18085#0:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#1:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#2:failed(no such thing (error code: 111, connection refused))]
 fds_after_calls=11
-main returning at ms=97.783
-exit status=0 wall_ms=129 exit_after_main_ms=32
+main returning at ms=85.713
+exit status=0 wall_ms=104 exit_after_main_ms=19

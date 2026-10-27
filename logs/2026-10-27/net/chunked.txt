@@ -1,5 +1,5 @@
 $ net-client call GET http://127.0.0.1:18080/chunked-ext
-call 0 ok status=200 bytes=11 ms=6.528 rounds=1 address=127.0.0.1:18080 seed=11505700971022034300 failed_attempts=[] body_start="hello world"
+call 0 ok status=200 bytes=11 ms=5.272 rounds=1 address=127.0.0.1:18080 seed=10344431327166391352 failed_attempts=[] body_start="hello world"
 fds_after_calls=11
-main returning at ms=6.863
-exit status=0 wall_ms=134 exit_after_main_ms=128
+main returning at ms=5.822
+exit status=0 wall_ms=39 exit_after_main_ms=34

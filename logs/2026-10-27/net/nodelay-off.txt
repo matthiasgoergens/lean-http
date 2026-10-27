@@ -1,8 +1,8 @@
 $ net-client call POST http://127.0.0.1:18082/ body=100 repeat=300 nodelay=0
-call 0 ok status=200 bytes=12 ms=4.373 rounds=1 address=127.0.0.1:18082 seed=7346214895208187824 failed_attempts=[] body_start="{\"ok\": true}"
-call 1 ok status=200 bytes=12 ms=3.762 rounds=1 address=127.0.0.1:18082 seed=10656515467329070143 failed_attempts=[] body_start="{\"ok\": true}"
-call 2 ok status=200 bytes=12 ms=2.452 rounds=1 address=127.0.0.1:18082 seed=16200351956825498577 failed_attempts=[] body_start="{\"ok\": true}"
-summary calls n=300 min=0.319 p50=0.964 p90=2.796 max=107.896 ms ok=300
+call 0 ok status=200 bytes=12 ms=14.456 rounds=1 address=127.0.0.1:18082 seed=7125187097734385146 failed_attempts=[] body_start="{\"ok\": true}"
+call 1 ok status=200 bytes=12 ms=4.223 rounds=1 address=127.0.0.1:18082 seed=10936051079187479997 failed_attempts=[] body_start="{\"ok\": true}"
+call 2 ok status=200 bytes=12 ms=7.816 rounds=1 address=127.0.0.1:18082 seed=6835818136909920619 failed_attempts=[] body_start="{\"ok\": true}"
+summary calls n=300 min=0.448 p50=1.234 p90=4.017 max=46.337 ms ok=300
 fds_after_calls=11
-main returning at ms=680.382
-exit status=0 wall_ms=695 exit_after_main_ms=15
+main returning at ms=687.982
+exit status=0 wall_ms=713 exit_after_main_ms=26

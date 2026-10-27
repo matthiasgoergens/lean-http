@@ -1,6 +1,5 @@
-$ scripts/vendor.sh && scripts/remote.sh lake build codec-tests && scripts/remote.sh .lake/build/bin/codec-tests
-# machine: LeanHttpProto.Http.Protocol.H1, vendored from leanprover/lean4 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b; sources as committed with this log
-Build completed successfully (28 jobs).
+$ scripts/remote.sh lake build codec-tests && scripts/remote.sh .lake/build/bin/codec-tests
+# machine: LeanHttpProto.Http.Protocol.H1, vendored from leanprover/lean4 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b; lean-http at d7d8dbd
 PASS request GET without body: "GET / HTTP/1.1\x0d\nHost: example.test\x0d\nConnection: close\x0d\n\x0d\n"
 PASS request POST with body: "POST / HTTP/1.1\x0d\nHost: example.test\x0d\nConnection: close\x0d\nContent-Length: 7\x0d\n\x0d\n{\"a\":1}"
 PASS request POST without body: "POST / HTTP/1.1\x0d\nHost: example.test\x0d\nConnection: close\x0d\nContent-Length: 0\x0d\n\x0d\n"
