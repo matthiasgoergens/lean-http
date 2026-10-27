@@ -1,6 +1,6 @@
 module
 
-public import Std.Http.Protocol.H1.Config
+public import LeanHttpProto.Http.Protocol.H1.Config
 
 public section
 
@@ -90,6 +90,6 @@ structure Config where
   Parser limits for the response head and framing.  The client sets `enableKeepAlive`,
   `maxBodySize` and `maxChunkSize` itself from the fields above.
   -/
-  h1 : Std.Http.Protocol.H1.Config := {}
+  h1 : LeanHttpProto.Http.Protocol.H1.Config := {}
 
 end LeanHttp

@@ -1,11 +1,19 @@
 import Lake
 open Lake DSL
 
-package «lean-http» where
-  leanOptions := #[⟨`autoImplicit, false⟩]
+package «lean-http»
+
+/--
+The upstream HTTP/1.1 protocol layer, renamed to `LeanHttpProto.Http.Protocol`.  Generated into
+`vendor/` by `scripts/vendor.sh`, which must run before the first build; see NOTES.md.
+-/
+lean_lib LeanHttpProto where
+  srcDir := "vendor"
+  roots := #[`LeanHttpProto.Http.Protocol.H1]
 
 @[default_target]
-lean_lib LeanHttp
+lean_lib LeanHttp where
+  leanOptions := #[⟨`autoImplicit, false⟩]
 
 /-- Drives the HTTP/1.1 machine as a client over recorded response shapes. -/
 lean_exe «codec-tests» where

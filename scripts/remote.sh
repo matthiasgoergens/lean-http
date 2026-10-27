@@ -9,6 +9,10 @@
 host=${LEAN_HTTP_HOST:-buildhost}
 here=$(cd "$(dirname "$0")/.." && pwd) || exit 1
 py=/home/matthias/.local/share/uv/python/cpython-3.14.8-linux-x86_64-gnu
+# The vendored protocol layer is generated, not committed: make it if it is missing or stale.
+commit=$(sed --quiet 's/^commit=//p' "$here/scripts/vendor.sh")
+grep --quiet --fixed-strings "$commit" "$here/vendor/SOURCE" 2>/dev/null \
+  || "$here/scripts/vendor.sh" >&2 || exit 1
 rsync --archive --delete --exclude .lake --exclude .git --exclude logs \
   "$here/" "$host:lean-http/" || exit 1
 quoted=$(printf '%q ' "$@")

@@ -1,6 +1,6 @@
 module
 
-public import Std.Http.Protocol.H1
+public import LeanHttpProto.Http.Protocol.H1
 public import LeanHttp.Error
 
 public section
@@ -8,8 +8,9 @@ public section
 /-!
 # The exchange core
 
-One request and its response on one connection, as pure functions over the toolchain's HTTP/1.1
-machine (`Std.Http.Protocol.H1.Machine` in the client direction).  The shell writes the bytes that
+One request and its response on one connection, as pure functions over the HTTP/1.1 machine of the
+upstream client stack (`LeanHttpProto.Http.Protocol.H1.Machine`, a renamed copy of
+`Std.Http.Protocol.H1.Machine` with the stack's changes, in the client direction).  The shell writes the bytes that
 `Exchange.start` returns, feeds every read to `Exchange.feed`, reports end of input with
 `Exchange.endOfInput`, and stops when `Exchange.outcome` is no longer `pending`.  No I/O happens
 here, so every response shape can be tested by feeding bytes, split at any point.
@@ -24,7 +25,7 @@ namespace LeanHttp
 
 set_option linter.all true
 
-open Std.Http Std.Http.Protocol
+open Std.Http LeanHttpProto.Http.Protocol
 
 /--
 Where an exchange stands.
@@ -51,7 +52,7 @@ The state of one exchange.
 -/
 structure Exchange where
   /--
-  The toolchain's HTTP/1.1 machine, in the client direction.
+  The HTTP/1.1 machine, in the client direction.
   -/
   machine : H1.Machine .sending
 

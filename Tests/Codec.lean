@@ -3,7 +3,7 @@ import LeanHttp.Exchange
 /-!
 # Codec tests
 
-Drives the exchange core, and through it the toolchain's HTTP/1.1 machine in the client direction,
+Drives the exchange core, and through it the HTTP/1.1 machine in the client direction,
 over the response shapes a client meets.  Each response is fed whole, one byte at a time, and split
 in two at every position; the outcome must be the expected one in every case, since TCP may deliver
 the bytes in any segmentation.
@@ -31,7 +31,7 @@ def requestHead (method : Method) : Request.Head :=
 structure Limits where
   maxInterim : Nat := 10
   maxBody : Nat := 1024
-  h1 : Std.Http.Protocol.H1.Config := {}
+  h1 : LeanHttpProto.Http.Protocol.H1.Config := {}
 
 /-- Feeds `pieces` in order, then end of input if `eof`. -/
 def run (limits : Limits) (method : Method) (pieces : List ByteArray) (eof : Bool) : Exchange :=
@@ -220,10 +220,35 @@ def runCase (c : Case) : IO Nat := do
     IO.println s!"INFO {c.name}: {String.intercalate " | " outcomes}"
     return 0
 
+/-- Request encodings: the exact bytes `Exchange.start` produces. -/
+def requestCases : List (String × Method × String × String) := [
+  ("GET without body", .get, "",
+    "GET / HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\n\r\n"),
+  ("POST with body", .post, "{\"a\":1}",
+    "POST / HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\nContent-Length: 7\r\n\r\n{\"a\":1}"),
+  ("POST without body", .post, "",
+    "POST / HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\nContent-Length: 0\r\n\r\n")
+]
+
+/-- Checks one request encoding; returns whether it matched. -/
+def runRequestCase (c : String × Method × String × String) : IO Bool := do
+  let (name, method, body, expected) := c
+  let (_, bytes) := Exchange.start {} 10 1024 (requestHead method) body.toUTF8
+  let got := String.fromUTF8? bytes |>.getD "<invalid UTF-8>"
+  if got == expected then
+    IO.println s!"PASS request {name}: {repr got}"
+    return true
+  else
+    IO.println s!"FAIL request {name}: expected {repr expected}, got {repr got}"
+    return false
+
 def main : IO UInt32 := do
   let mut failingCases := 0
+  for c in requestCases do
+    if !(← runRequestCase c) then
+      failingCases := failingCases + 1
   for c in cases do
     if (← runCase c) > 0 then
       failingCases := failingCases + 1
-  IO.println s!"{cases.length} cases, {failingCases} failing"
+  IO.println s!"{requestCases.length + cases.length} cases, {failingCases} failing"
   return if failingCases == 0 then 0 else 1
