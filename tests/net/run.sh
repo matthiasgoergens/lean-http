@@ -55,7 +55,7 @@ start() {
 }
 
 # client <scenario> <net-client args...>: run the client once, record its output and timings.
-# If $slow_exit is set, a slow exit is reported as KNOWN with that reason instead of FAIL.
+# A non-zero exit status or a slow exit is a FAIL, or KNOWN with the reason in $known_exit.
 client() {
   local scenario=$1; shift
   local file="$out/$scenario.txt"
@@ -72,8 +72,10 @@ client() {
   echo "exit status=$rc wall_ms=$wall exit_after_main_ms=$after" >> "$file"
   if [ -z "$main" ]; then
     result FAIL "$scenario" "main never returned (status $rc)"
-  elif [ "$after" -gt 1000 ] && [ -n "${slow_exit:-}" ]; then
-    result KNOWN "$scenario" "process took ${after} ms to exit after main returned: $slow_exit"
+  elif { [ "$after" -gt 1000 ] || [ "$rc" -ne 0 ]; } && [ -n "${known_exit:-}" ]; then
+    result KNOWN "$scenario" "exit status $rc, ${after} ms after main returned: $known_exit"
+  elif [ "$rc" -ne 0 ]; then
+    result FAIL "$scenario" "exit status $rc, ${after} ms after main returned"
   elif [ "$after" -gt 1000 ]; then
     result FAIL "$scenario" "process took ${after} ms to exit after main returned"
   else
@@ -359,7 +361,7 @@ if scenario dns-timeout; then
   cp /etc/resolv.conf /tmp/resolv.conf.saved 2>/dev/null || : > /tmp/resolv.conf.saved
   printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf || exit 1
   start dns-timeout dns "listening" "$PY" -I "$here/dnsblack.py" || exit 1
-  slow_exit="libuv joins its thread pool at exit, and the abandoned lookup runs until the resolver gives up (NOTES.md)" \
+  known_exit="the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)" \
     client dns-timeout call GET "http://slow.test/" deadline=2000
   cp /tmp/resolv.conf.saved /etc/resolv.conf
   expect dns-timeout 'call 0 error delivery=not sent .*cause="deadline timeout"' \
