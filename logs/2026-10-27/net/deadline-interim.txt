@@ -1,0 +1,5 @@
+$ net-client call GET http://127.0.0.1:18080/interim-forever?ms=300 deadline=2000
+call 0 error delivery=maybe delivered ms=2001.382 rounds=1 seed=5617163266879363129 status=none cause="deadline timeout" detail=""
+fds_after_calls=11
+main returning at ms=2001.869
+exit status=0 wall_ms=2033 exit_after_main_ms=32

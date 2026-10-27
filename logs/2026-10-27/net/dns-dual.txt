@@ -1,0 +1,5 @@
+$ net-client call GET http://dual.test:18085/ retries=0
+call 0 error delivery=not sent ms=7.179 rounds=1 seed=8637663708762483169 status=none cause="could not connect: [::1]:18085 (round 0): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 0): no such thing (error code: 111, connection refused)" detail="" attempts=[[::1]:18085#0:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#0:failed(no such thing (error code: 111, connection refused))]
+fds_after_calls=11
+main returning at ms=7.799
+exit status=0 wall_ms=68 exit_after_main_ms=61

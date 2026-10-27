@@ -13,7 +13,7 @@ py=/home/matthias/.local/share/uv/python/cpython-3.14.8-linux-x86_64-gnu
 commit=$(sed --quiet 's/^commit=//p' "$here/scripts/vendor.sh")
 grep --quiet --fixed-strings "$commit" "$here/vendor/SOURCE" 2>/dev/null \
   || "$here/scripts/vendor.sh" >&2 || exit 1
-rsync --archive --delete --exclude .lake --exclude .git --exclude logs \
+rsync --archive --delete --exclude .lake --exclude .git --exclude logs --exclude out \
   "$here/" "$host:lean-http/" || exit 1
 quoted=$(printf '%q ' "$@")
 ssh "$host" "cd ~/lean-http && nice ionice podman run --rm --network none ${CTR_EXTRA:-} \

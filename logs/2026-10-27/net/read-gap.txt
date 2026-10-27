@@ -1,0 +1,5 @@
+$ net-client call GET http://127.0.0.1:18080/stall-head?ms=3000 gap=1000
+call 0 error delivery=maybe delivered ms=1010.667 rounds=1 seed=8332079483573299561 status=none cause="read timeout" detail=""
+fds_after_calls=11
+main returning at ms=1011.145
+exit status=0 wall_ms=1031 exit_after_main_ms=20
