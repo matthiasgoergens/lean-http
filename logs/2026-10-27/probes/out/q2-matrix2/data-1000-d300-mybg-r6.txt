@@ -1,0 +1,7 @@
+### server=data delay=300ms size=1000 | client variant=mybg arg=0ms hold=300ms n=1
+  [client] main returning
+  [client] bg selector finished: 1000 bytes
+  exit=0 wall=318ms 
+  [server] listening 26729
+  [server] server[0]: sent 1000
+  [server] server[0]: client closed

@@ -1,0 +1,6 @@
+### server=data delay=150ms size=67108864 | client variant=bgcancel arg=0ms hold=300ms n=1
+  [client] bg selector finished: 65536 bytes
+  [client] cancelRecv done
+  [client] main returning
+  exit=0 wall=320ms 
+  [server] listening 27176

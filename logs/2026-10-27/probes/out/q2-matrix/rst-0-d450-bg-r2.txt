@@ -1,0 +1,4 @@
+### server=rst delay=450ms size=0 | client variant=bg arg=0ms hold=300ms n=1
+  [client] main returning
+  exit=0 wall=327ms 
+  [server] listening 37919

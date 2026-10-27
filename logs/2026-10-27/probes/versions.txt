@@ -1,0 +1,36 @@
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+Python 3.14.8
+gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+00fe7e13cb9de5ec79762753622a4a428e64b9d343bdeeda3f0735521e1f264c
+crash1.txt
+crash2-1.txt
+crash2-10.txt
+crash2-2.txt
+crash2-3.txt
+crash2-4.txt
+crash2-5.txt
+crash2-6.txt
+crash2-7.txt
+crash2-8.txt
+crash2-9.txt
+hang1.txt
+hang2.txt
+poke1.txt
+q1-all.txt
+q1-first.txt
+q1-latency.txt
+q2-drop
+q2-drop-summary.txt
+q2-drop2
+q2-drop2-bgdrop-summary.txt
+q2-loop
+q2-loop-summary.txt
+q2-matrix
+q2-matrix-summary.txt
+q2-matrix2
+q2-matrix2-summary.txt
+q2-segv
+trace1.txt
+trace2.txt
+trace3.txt
+6.0M	out

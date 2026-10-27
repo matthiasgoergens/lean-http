@@ -1,0 +1,8 @@
+### server=flood delay=290ms size=65536 | client variant=closeable arg=0ms hold=300ms n=1
+  [client] bg selector finished: recv: 65536 bytes
+  [client] loop ended: some "recv: 65536 bytes"
+  [client] main returning
+  exit=0 wall=328ms 
+  [server] listening 22416
+  [server] server[0]: flood stopped after 1835008: [Errno 104] Connection reset by peer
+  [server] server[0]: client closed

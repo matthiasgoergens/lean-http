@@ -1,0 +1,7 @@
+### server=data delay=295ms size=1000 | client variant=bgcancel arg=0ms hold=300ms n=1
+  [client] cancelRecv done
+  [client] main returning
+  exit=137 wall=8007ms HANG-killed-at-limit
+  [server] listening 34940
+  [server] server[0]: sent 1000
+  [server] server[0]: client closed

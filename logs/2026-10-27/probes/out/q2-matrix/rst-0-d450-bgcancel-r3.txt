@@ -1,0 +1,5 @@
+### server=rst delay=450ms size=0 | client variant=bgcancel arg=0ms hold=300ms n=1
+  [client] cancelRecv done
+  [client] main returning
+  exit=0 wall=336ms 
+  [server] listening 22842

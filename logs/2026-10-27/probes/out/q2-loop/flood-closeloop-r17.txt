@@ -1,0 +1,8 @@
+### server=flood delay=0ms size=65536 | client variant=closeloop arg=0ms hold=300ms n=1
+  [client] loop ended: some ()
+  [client] read 79100905 bytes before main returned
+  [client] main returning
+  exit=0 wall=361ms 
+  [server] listening 26818
+  [server] server[0]: flood stopped after 82247680: [Errno 104] Connection reset by peer
+  [server] server[0]: client closed

@@ -1,0 +1,7 @@
+### server=flood delay=0ms size=65536 | client variant=mybgloop arg=0ms hold=300ms n=1
+  [client] read 177001823 bytes before main returned
+  [client] main returning
+  exit=0 wall=315ms 
+  [server] listening 20885
+  [server] server[0]: flood stopped after 180289536: [Errno 104] Connection reset by peer
+  [server] server[0]: client closed

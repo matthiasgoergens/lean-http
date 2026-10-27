@@ -1,0 +1,200 @@
+flood-bgdrop-r100.txt:  exit=0 wall=379ms 
+flood-bgdrop-r101.txt:  exit=0 wall=358ms 
+flood-bgdrop-r102.txt:  exit=0 wall=394ms 
+flood-bgdrop-r103.txt:  exit=0 wall=385ms 
+flood-bgdrop-r104.txt:  exit=0 wall=354ms 
+flood-bgdrop-r105.txt:  exit=0 wall=335ms 
+flood-bgdrop-r106.txt:  exit=0 wall=443ms 
+flood-bgdrop-r107.txt:  exit=0 wall=347ms 
+flood-bgdrop-r108.txt:  exit=0 wall=404ms 
+flood-bgdrop-r109.txt:  exit=137 wall=8118ms HANG-killed-at-limit
+flood-bgdrop-r10.txt:  exit=0 wall=730ms 
+flood-bgdrop-r110.txt:  exit=137 wall=8024ms HANG-killed-at-limit
+flood-bgdrop-r111.txt:  exit=137 wall=8020ms HANG-killed-at-limit
+flood-bgdrop-r112.txt:  exit=0 wall=410ms 
+flood-bgdrop-r113.txt:  exit=137 wall=8018ms HANG-killed-at-limit
+flood-bgdrop-r114.txt:  exit=0 wall=342ms 
+flood-bgdrop-r115.txt:  exit=0 wall=322ms 
+flood-bgdrop-r116.txt:  exit=137 wall=8054ms HANG-killed-at-limit
+flood-bgdrop-r117.txt:  exit=0 wall=320ms 
+flood-bgdrop-r118.txt:  exit=0 wall=329ms 
+flood-bgdrop-r119.txt:  exit=137 wall=8020ms HANG-killed-at-limit
+flood-bgdrop-r11.txt:  exit=0 wall=1237ms 
+flood-bgdrop-r120.txt:  exit=0 wall=366ms 
+flood-bgdrop-r121.txt:  exit=139 wall=698ms 
+flood-bgdrop-r122.txt:  exit=0 wall=326ms 
+flood-bgdrop-r123.txt:  exit=0 wall=442ms 
+flood-bgdrop-r124.txt:  exit=0 wall=318ms 
+flood-bgdrop-r125.txt:  exit=0 wall=623ms 
+flood-bgdrop-r126.txt:  exit=0 wall=378ms 
+flood-bgdrop-r127.txt:  exit=0 wall=328ms 
+flood-bgdrop-r128.txt:  exit=0 wall=672ms 
+flood-bgdrop-r129.txt:  exit=0 wall=509ms 
+flood-bgdrop-r12.txt:  exit=0 wall=1401ms 
+flood-bgdrop-r130.txt:  exit=0 wall=453ms 
+flood-bgdrop-r131.txt:  exit=0 wall=360ms 
+flood-bgdrop-r132.txt:  exit=0 wall=528ms 
+flood-bgdrop-r133.txt:  exit=0 wall=379ms 
+flood-bgdrop-r134.txt:  exit=0 wall=350ms 
+flood-bgdrop-r135.txt:  exit=0 wall=526ms 
+flood-bgdrop-r136.txt:  exit=137 wall=8069ms HANG-killed-at-limit
+flood-bgdrop-r137.txt:  exit=0 wall=371ms 
+flood-bgdrop-r138.txt:  exit=0 wall=381ms 
+flood-bgdrop-r139.txt:  exit=137 wall=8025ms HANG-killed-at-limit
+flood-bgdrop-r13.txt:  exit=0 wall=328ms 
+flood-bgdrop-r140.txt:  exit=0 wall=348ms 
+flood-bgdrop-r141.txt:  exit=0 wall=349ms 
+flood-bgdrop-r142.txt:  exit=0 wall=330ms 
+flood-bgdrop-r143.txt:  exit=137 wall=8024ms HANG-killed-at-limit
+flood-bgdrop-r144.txt:  exit=137 wall=8054ms HANG-killed-at-limit
+flood-bgdrop-r145.txt:  exit=0 wall=376ms 
+flood-bgdrop-r146.txt:  exit=137 wall=8457ms HANG-killed-at-limit
+flood-bgdrop-r147.txt:  exit=0 wall=398ms 
+flood-bgdrop-r148.txt:  exit=0 wall=348ms 
+flood-bgdrop-r149.txt:  exit=0 wall=333ms 
+flood-bgdrop-r14.txt:  exit=137 wall=8015ms HANG-killed-at-limit
+flood-bgdrop-r150.txt:  exit=0 wall=383ms 
+flood-bgdrop-r151.txt:  exit=0 wall=346ms 
+flood-bgdrop-r152.txt:  exit=0 wall=348ms 
+flood-bgdrop-r153.txt:  exit=0 wall=405ms 
+flood-bgdrop-r154.txt:  exit=0 wall=338ms 
+flood-bgdrop-r155.txt:  exit=0 wall=382ms 
+flood-bgdrop-r156.txt:  exit=0 wall=336ms 
+flood-bgdrop-r157.txt:  exit=0 wall=426ms 
+flood-bgdrop-r158.txt:  exit=0 wall=344ms 
+flood-bgdrop-r159.txt:  exit=0 wall=494ms 
+flood-bgdrop-r15.txt:  exit=0 wall=317ms 
+flood-bgdrop-r160.txt:  exit=0 wall=384ms 
+flood-bgdrop-r161.txt:  exit=137 wall=8029ms HANG-killed-at-limit
+flood-bgdrop-r162.txt:  exit=0 wall=644ms 
+flood-bgdrop-r163.txt:  exit=137 wall=8272ms HANG-killed-at-limit
+flood-bgdrop-r164.txt:  exit=0 wall=349ms 
+flood-bgdrop-r165.txt:  exit=137 wall=8249ms HANG-killed-at-limit
+flood-bgdrop-r166.txt:  exit=0 wall=323ms 
+flood-bgdrop-r167.txt:  exit=0 wall=479ms 
+flood-bgdrop-r168.txt:  exit=0 wall=599ms 
+flood-bgdrop-r169.txt:  exit=0 wall=318ms 
+flood-bgdrop-r16.txt:  exit=137 wall=8017ms HANG-killed-at-limit
+flood-bgdrop-r170.txt:  exit=139 wall=706ms 
+flood-bgdrop-r171.txt:  exit=0 wall=625ms 
+flood-bgdrop-r172.txt:  exit=0 wall=340ms 
+flood-bgdrop-r173.txt:  exit=0 wall=398ms 
+flood-bgdrop-r174.txt:  exit=0 wall=329ms 
+flood-bgdrop-r175.txt:  exit=137 wall=8291ms HANG-killed-at-limit
+flood-bgdrop-r176.txt:  exit=137 wall=8146ms HANG-killed-at-limit
+flood-bgdrop-r177.txt:  exit=0 wall=399ms 
+flood-bgdrop-r178.txt:  exit=137 wall=8370ms HANG-killed-at-limit
+flood-bgdrop-r179.txt:  exit=0 wall=708ms 
+flood-bgdrop-r17.txt:  exit=137 wall=8015ms HANG-killed-at-limit
+flood-bgdrop-r180.txt:  exit=0 wall=319ms 
+flood-bgdrop-r181.txt:  exit=0 wall=353ms 
+flood-bgdrop-r182.txt:  exit=0 wall=334ms 
+flood-bgdrop-r183.txt:  exit=0 wall=340ms 
+flood-bgdrop-r184.txt:  exit=0 wall=353ms 
+flood-bgdrop-r185.txt:  exit=0 wall=335ms 
+flood-bgdrop-r186.txt:  exit=0 wall=367ms 
+flood-bgdrop-r187.txt:  exit=0 wall=364ms 
+flood-bgdrop-r188.txt:  exit=137 wall=8019ms HANG-killed-at-limit
+flood-bgdrop-r189.txt:  exit=0 wall=405ms 
+flood-bgdrop-r18.txt:  exit=0 wall=662ms 
+flood-bgdrop-r190.txt:  exit=0 wall=357ms 
+flood-bgdrop-r191.txt:  exit=0 wall=387ms 
+flood-bgdrop-r192.txt:  exit=0 wall=325ms 
+flood-bgdrop-r193.txt:  exit=0 wall=447ms 
+flood-bgdrop-r194.txt:  exit=0 wall=424ms 
+flood-bgdrop-r195.txt:  exit=137 wall=8026ms HANG-killed-at-limit
+flood-bgdrop-r196.txt:  exit=0 wall=319ms 
+flood-bgdrop-r197.txt:  exit=0 wall=324ms 
+flood-bgdrop-r198.txt:  exit=137 wall=8094ms HANG-killed-at-limit
+flood-bgdrop-r199.txt:  exit=0 wall=321ms 
+flood-bgdrop-r19.txt:  exit=0 wall=483ms 
+flood-bgdrop-r1.txt:  exit=0 wall=1929ms 
+flood-bgdrop-r200.txt:  exit=0 wall=425ms 
+flood-bgdrop-r20.txt:  exit=0 wall=437ms 
+flood-bgdrop-r21.txt:  exit=137 wall=8493ms HANG-killed-at-limit
+flood-bgdrop-r22.txt:  exit=0 wall=338ms 
+flood-bgdrop-r23.txt:  exit=0 wall=325ms 
+flood-bgdrop-r24.txt:  exit=0 wall=405ms 
+flood-bgdrop-r25.txt:  exit=137 wall=8016ms HANG-killed-at-limit
+flood-bgdrop-r26.txt:  exit=0 wall=365ms 
+flood-bgdrop-r27.txt:  exit=137 wall=8014ms HANG-killed-at-limit
+flood-bgdrop-r28.txt:  exit=0 wall=617ms 
+flood-bgdrop-r29.txt:  exit=0 wall=416ms 
+flood-bgdrop-r2.txt:  exit=0 wall=1396ms 
+flood-bgdrop-r30.txt:  exit=0 wall=701ms 
+flood-bgdrop-r31.txt:  exit=0 wall=1533ms 
+flood-bgdrop-r32.txt:  exit=0 wall=1412ms 
+flood-bgdrop-r33.txt:  exit=0 wall=987ms 
+flood-bgdrop-r34.txt:  exit=0 wall=403ms 
+flood-bgdrop-r35.txt:  exit=137 wall=8025ms HANG-killed-at-limit
+flood-bgdrop-r36.txt:  exit=0 wall=344ms 
+flood-bgdrop-r37.txt:  exit=0 wall=368ms 
+flood-bgdrop-r38.txt:  exit=0 wall=434ms 
+flood-bgdrop-r39.txt:  exit=0 wall=745ms 
+flood-bgdrop-r3.txt:  exit=0 wall=672ms 
+flood-bgdrop-r40.txt:  exit=0 wall=518ms 
+flood-bgdrop-r41.txt:  exit=0 wall=721ms 
+flood-bgdrop-r42.txt:  exit=0 wall=531ms 
+flood-bgdrop-r43.txt:  exit=0 wall=380ms 
+flood-bgdrop-r44.txt:  exit=0 wall=340ms 
+flood-bgdrop-r45.txt:  exit=0 wall=338ms 
+flood-bgdrop-r46.txt:  exit=0 wall=384ms 
+flood-bgdrop-r47.txt:  exit=0 wall=355ms 
+flood-bgdrop-r48.txt:  exit=0 wall=379ms 
+flood-bgdrop-r49.txt:  exit=137 wall=8044ms HANG-killed-at-limit
+flood-bgdrop-r4.txt:  exit=0 wall=1560ms 
+flood-bgdrop-r50.txt:  exit=0 wall=325ms 
+flood-bgdrop-r51.txt:  exit=0 wall=690ms 
+flood-bgdrop-r52.txt:  exit=0 wall=348ms 
+flood-bgdrop-r53.txt:  exit=137 wall=8086ms HANG-killed-at-limit
+flood-bgdrop-r54.txt:  exit=137 wall=8016ms HANG-killed-at-limit
+flood-bgdrop-r55.txt:  exit=0 wall=363ms 
+flood-bgdrop-r56.txt:  exit=137 wall=8171ms HANG-killed-at-limit
+flood-bgdrop-r57.txt:  exit=0 wall=338ms 
+flood-bgdrop-r58.txt:  exit=0 wall=333ms 
+flood-bgdrop-r59.txt:  exit=137 wall=8226ms HANG-killed-at-limit
+flood-bgdrop-r5.txt:  exit=0 wall=772ms 
+flood-bgdrop-r60.txt:  exit=0 wall=1818ms 
+flood-bgdrop-r61.txt:  exit=0 wall=357ms 
+flood-bgdrop-r62.txt:  exit=0 wall=999ms 
+flood-bgdrop-r63.txt:  exit=0 wall=461ms 
+flood-bgdrop-r64.txt:  exit=137 wall=8021ms HANG-killed-at-limit
+flood-bgdrop-r65.txt:  exit=0 wall=472ms 
+flood-bgdrop-r66.txt:  exit=0 wall=648ms 
+flood-bgdrop-r67.txt:  exit=0 wall=346ms 
+flood-bgdrop-r68.txt:  exit=0 wall=357ms 
+flood-bgdrop-r69.txt:  exit=137 wall=8030ms HANG-killed-at-limit
+flood-bgdrop-r6.txt:  exit=0 wall=1699ms 
+flood-bgdrop-r70.txt:  exit=0 wall=339ms 
+flood-bgdrop-r71.txt:  exit=0 wall=441ms 
+flood-bgdrop-r72.txt:  exit=0 wall=334ms 
+flood-bgdrop-r73.txt:  exit=0 wall=602ms 
+flood-bgdrop-r74.txt:  exit=0 wall=341ms 
+flood-bgdrop-r75.txt:  exit=0 wall=336ms 
+flood-bgdrop-r76.txt:  exit=0 wall=345ms 
+flood-bgdrop-r77.txt:  exit=0 wall=332ms 
+flood-bgdrop-r78.txt:  exit=1 wall=523ms 
+flood-bgdrop-r79.txt:  exit=0 wall=468ms 
+flood-bgdrop-r7.txt:  exit=0 wall=464ms 
+flood-bgdrop-r80.txt:  exit=0 wall=475ms 
+flood-bgdrop-r81.txt:  exit=0 wall=354ms 
+flood-bgdrop-r82.txt:  exit=0 wall=344ms 
+flood-bgdrop-r83.txt:  exit=0 wall=352ms 
+flood-bgdrop-r84.txt:  exit=137 wall=8044ms HANG-killed-at-limit
+flood-bgdrop-r85.txt:  exit=0 wall=345ms 
+flood-bgdrop-r86.txt:  exit=0 wall=451ms 
+flood-bgdrop-r87.txt:  exit=0 wall=545ms 
+flood-bgdrop-r88.txt:  exit=0 wall=358ms 
+flood-bgdrop-r89.txt:  exit=0 wall=475ms 
+flood-bgdrop-r8.txt:  exit=0 wall=359ms 
+flood-bgdrop-r90.txt:  exit=137 wall=8090ms HANG-killed-at-limit
+flood-bgdrop-r91.txt:  exit=0 wall=324ms 
+flood-bgdrop-r92.txt:  exit=0 wall=537ms 
+flood-bgdrop-r93.txt:  exit=0 wall=424ms 
+flood-bgdrop-r94.txt:  exit=137 wall=8066ms HANG-killed-at-limit
+flood-bgdrop-r95.txt:  exit=0 wall=347ms 
+flood-bgdrop-r96.txt:  exit=0 wall=315ms 
+flood-bgdrop-r97.txt:  exit=0 wall=366ms 
+flood-bgdrop-r98.txt:  exit=0 wall=461ms 
+flood-bgdrop-r99.txt:  exit=0 wall=354ms 
+flood-bgdrop-r9.txt:  exit=0 wall=427ms 

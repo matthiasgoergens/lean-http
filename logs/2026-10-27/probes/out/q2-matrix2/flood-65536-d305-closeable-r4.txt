@@ -1,0 +1,8 @@
+### server=flood delay=305ms size=65536 | client variant=closeable arg=0ms hold=300ms n=1
+  [client] bg selector finished: closed
+  [client] loop ended: some "closed"
+  [client] main returning
+  exit=0 wall=321ms 
+  [server] listening 27005
+  [server] server[0]: flood stopped after 65536: [Errno 32] Broken pipe
+  [server] server[0]: client closed

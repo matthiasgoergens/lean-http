@@ -1,0 +1,6 @@
+### server=data delay=310ms size=1000 | client variant=bg arg=0ms hold=300ms n=1
+  [client] main returning
+  exit=0 wall=325ms 
+  [server] listening 39079
+  [server] server[0]: sent 1000
+  [server] server[0]: client closed

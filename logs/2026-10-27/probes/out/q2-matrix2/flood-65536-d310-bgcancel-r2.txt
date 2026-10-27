@@ -1,0 +1,5 @@
+### server=flood delay=310ms size=65536 | client variant=bgcancel arg=0ms hold=300ms n=1
+  [client] cancelRecv done
+  [client] main returning
+  exit=0 wall=317ms 
+  [server] listening 36935
