@@ -13,8 +13,8 @@ The client proposed for `Std.Http` (leanprover/lean4 #14546-#14548) held up well
 
 - One connection per request, `Connection: close`.  No pool, no reuse, so none of the stale-connection, idle-bytes or unread-body hazards can arise.
 - `Client.request : Request ByteArray → Async (Except Error (Response ByteArray))`, with a throwing variant.  The body is read whole, up to a limit.
-- The calling task does everything: DNS, connect, write, read.  No background tasks.
-- DNS answers de-duplicated; addresses tried with a per-attempt connect timeout and a short stagger between families; IPv6 literals bypass DNS; `TCP_NODELAY` on.
+- The calling task does everything: DNS, connect, write, read.  Other tasks exist only where a timer races an operation.
+- DNS answers de-duplicated and interleaved by family; addresses tried with a per-attempt connect timeout and a short stagger between attempts; IPv6 literals bypass DNS; `TCP_NODELAY` on.
 - Retries only of connects that failed, with exponential backoff and full jitter seeded from the operating system (the seed is logged so a run can be replayed), within a retry budget.
 - One deadline for the whole call; a per-gap read timeout on top; a cap on interim (1xx) responses.
 - No redirect following yet.
@@ -50,11 +50,11 @@ From v4.34.1: `Request`, `Response`, `Headers` (with validated names and values,
 
 ## Socket lifecycle
 
-v4.34.1's TCP client socket has `shutdown` (closing the write side) but no explicit close; the descriptor is released when the last reference is dropped.  The design therefore keeps references to a socket in exactly two places, the exchange in progress and the pool entry, and drops both when the connection ends.  An exit test checks that a process with connections closed in each way (end of response, abandoned body, timeout, error) exits promptly: the review saw processes hang at exit after a body was closed unread.  Losing connect attempts are cancelled rather than left running.
+v4.34.1's TCP client socket has `shutdown` (closing the write side) but no explicit close; the descriptor is released when the last reference is dropped.  The design therefore keeps references to a socket in exactly two places, the exchange in progress and the pool entry, and drops both when the connection ends.  An exit test checks that a process with connections closed in each way (end of response, abandoned body, timeout, error) exits promptly: the review saw processes hang at exit after a body was closed unread.  A pending receive can be cancelled, but a pending connect, write or name lookup cannot, and each holds its socket (or a thread of libuv's pool) until it ends: losing connect attempts are therefore abandoned rather than cancelled, and their sockets close when the kernel gives up on them.  `NOTES.md` records what each of these costs, measured.
 
 ## Defaults
 
-`TCP_NODELAY` on; connect timeout 10 s per attempt, with a 250 ms stagger between address families; whole-call deadline 5 minutes; read gap 30 s; at most 10 interim responses; buffered body limit 64 MiB; up to 2 retries of failed connects (full jitter, base 100 ms, cap 5 s); idle connections: 4 per origin, 4 s; at most 10 redirects, then an error.  Slow upstream APIs (model calls that think for minutes before answering) need the deadline and the read gap raised; the defaults suit ordinary web APIs.
+`TCP_NODELAY` on; connect timeout 10 s per attempt, with a 250 ms stagger between attempts; whole-call deadline 5 minutes, which alone bounds name resolution; read gap 30 s, which also bounds each 64 KiB slice of a request write; at most 10 interim responses; buffered body limit 64 MiB; up to 2 retries of failed connects (full jitter, base 100 ms, cap 5 s); idle connections: 4 per origin, 4 s; at most 10 redirects, then an error.  Slow upstream APIs (model calls that think for minutes before answering) need the deadline and the read gap raised; the defaults suit ordinary web APIs.
 
 ## Verification
 
