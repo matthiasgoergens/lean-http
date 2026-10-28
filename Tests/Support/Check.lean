@@ -174,6 +174,8 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
     | .read _ =>
       found := flag found "one read in flight" m.readOutstanding
         fun _ => "read while a read is in flight"
+      found := flag found "no read before the request head is written" (m.acked < m.headBytes)
+        fun _ => s!"read with {m.acked} of {m.headBytes} head bytes written"
       m := { m with readOutstanding := true }
     | .deliverHead head =>
       found := flag found "one head" m.headDelivered fun _ => s!"second head {head.status.toCode}"
@@ -235,8 +237,10 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
     found := flag found "a stale tick changes nothing"
       (now < due && (!actions.isEmpty || fingerprint post != fingerprint pre))
       fun _ => s!"tick at {now}, due {due}"
+  -- Every deadline that has passed was acted on: what is left is in the future, and no later than
+  -- the exchange's own deadline.
   if !post.terminal then
-    found := flag found "a live exchange has a deadline"
-      (match post.nextDeadline with | none => true | some d => d > post.deadline)
-      fun _ => s!"{post.nextDeadline} with deadline {post.deadline}"
+    found := flag found "a live exchange has a deadline ahead"
+      (match post.nextDeadline with | none => true | some d => d ≤ m.now || d > post.deadline)
+      fun _ => s!"next deadline {post.nextDeadline} at {m.now}, deadline {post.deadline}"
   return (m, found)
