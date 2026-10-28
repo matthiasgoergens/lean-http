@@ -1,0 +1,21 @@
+# lean-http 49cac66 (branch core), on the build host in localhost/b8perf-lean with Lean v4.34.1
+$ .lake/build/bin/core-tests props 1000000 3
+PASS 1000000 runs from seed 3: 6892531 steps checked
+  runs with bytes sent when no response could be due: 190962
+  runs with a final head before the request was written in full: 8146
+  runs that drained an abandoned body: 2658
+  ended fail: the connection closed before a complete response [maybe delivered]: 169548
+  ended fail: invalid response [maybe delivered]: 161421
+  ended fail: write timeout [maybe delivered]: 134065
+  ended finish reusable=false: 128462
+  ended fail: deadline timeout [maybe delivered]: 118785
+  ended fail: read timeout [maybe delivered]: 74135
+  ended finish reusable=true: 66812
+  ended fail: the client closed the connection [maybe delivered]: 60166
+  ended fail: body size limit exceeded [response received]: 51183
+  ended fail: deadline timeout [response received]: 12867
+  ended fail: interim responses limit exceeded [maybe delivered]: 12330
+  ended fail: the connection closed before a complete response [response received]: 7416
+  ended fail: read timeout [response received]: 2810
+  runs per script: [101 without upgrade=52725, 204 with Content-Length=52335, 300-byte body=52720, HEAD, Content-Length=52778, HEAD, chunked=52380, HEAD, then stray bytes=52227, HTTP/1.0=52516, chunked=52664, chunked, extensions and trailers=52569, close-delimited=52640, conflicting Content-Length=52641, content-length=52544, content-length, Connection: close=52856, early 413=52867, early 413, then close=52734, interim responses, then the final one=52801, not HTTP=52885, truncated body=52560, two responses=52558]
+exit status 0, wall 17779 ms

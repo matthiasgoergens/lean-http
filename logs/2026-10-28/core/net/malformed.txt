@@ -1,0 +1,5 @@
+$ net-client call GET http://127.0.0.1:18080/badstatus
+call 0 error delivery=maybe delivered ms=2.062 rounds=1 seed=17581721467194549886 status=none cause="invalid response: Bad message" detail=""
+fds_after_calls=11
+main returning at ms=2.404
+exit status=0 wall_ms=16 exit_after_main_ms=14

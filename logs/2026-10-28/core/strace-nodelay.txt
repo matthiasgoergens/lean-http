@@ -1,0 +1,24 @@
+# lean-http 49cac66 (branch core), net-client built by 'LEAN_HTTP_REMOTE_DIR=lean-http-core-net scripts/remote.sh lake build net-client'
+$ ssh buildhost 'cd ~/lean-http-core-net && bash tests/net/strace-nodelay.sh'
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:45844/echo body=100 nodelay=1
+call 0 ok status=200 bytes=165 ms=11.107 rounds=1 address=127.0.0.1:45844 seed=14302818046034538093 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=16
+main returning at ms=11.661
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+2251777 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 13
+2251777 connect(13, {sa_family=AF_INET, sin_port=htons(45844), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+2251777 setsockopt(13, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+2251782 write(13, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+PASS nodelay=1: TCP_NODELAY set once on the connected socket (fd 13)
+PASS nodelay=1: the 186-byte request went out in one write (1 writes on the socket)
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:45844/echo body=100 nodelay=0
+call 0 ok status=200 bytes=165 ms=5.636 rounds=1 address=127.0.0.1:45844 seed=15946820465524753353 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=16
+main returning at ms=5.964
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+2251873 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 13
+2251873 connect(13, {sa_family=AF_INET, sin_port=htons(45844), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+2251881 write(13, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+PASS nodelay=0 (control): TCP_NODELAY not set (fd 13)
+PASS nodelay=0: the 186-byte request went out in one write (1 writes on the socket)
+### 0 failed

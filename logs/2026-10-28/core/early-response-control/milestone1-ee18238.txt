@@ -1,0 +1,14 @@
+Build completed successfully (42 jobs).
+### 2026-10-28T07:42:46Z 7.0.0-38-generic; syn_retries=6
+PASS early-response: process exited 22 ms after main returned
+FAIL early-response: a server that answers 413 after the head and stops reading: the response is delivered (no match for: call 0 ok status=413 bytes=3 .*body_start="big")
+FAIL early-response: before the 1 s write gap: 1020 ms, expected 0-900
+### 1 passed, 2 failed, 0 known limitations
+$ net-client call POST http://127.0.0.1:18089/ body=32000000 gap=1000
+call 0 error delivery=maybe delivered ms=1020.431 rounds=1 seed=3318045773511616410 status=none cause="write timeout" detail="1769472 of 32000087 request bytes accepted"
+fds_after_calls=12
+main returning at ms=1106.838
+exit status=0 wall_ms=1128 exit_after_main_ms=22
+listening on 127.0.0.1:18089
+     147.3 accepted ('127.0.0.1', 35460)
+     148.0 read the head 'POST / HTTP/1.1'; answering 413, reading no more

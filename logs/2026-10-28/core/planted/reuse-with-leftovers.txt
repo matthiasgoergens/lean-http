@@ -1,0 +1,93 @@
+# planted bug: reuse-with-leftovers (diff in reuse-with-leftovers.diff), on 49cac66
+# LEAN_HTTP_REMOTE_DIR=lean-http-core-planted scripts/remote.sh bash controls.sh, where controls.sh is:
+#   lake build core-tests 2>&1 | grep -v "^✔" | tail -3
+#   echo '### core-tests traces'
+#   .lake/build/bin/core-tests traces; echo "exit status $?"
+#   echo '### core-tests props 200000 1'
+#   .lake/build/bin/core-tests props 200000 1; echo "exit status $?"
+#   echo '### core-tests explore 10'
+#   .lake/build/bin/core-tests explore 10; echo "exit status $?"
+Build completed successfully (36 jobs).
+### core-tests traces
+PASS bytes before the request head is written are never parsed
+PASS bytes after part of the request head was written are never parsed either
+FAIL a second response in the same read: the first is delivered, the connection is not reusable
+  step 3 at 2, received "HTTP/1.1 200 OK\x0d\nContent-Length: 2\x0d\n\x0d\nokHTTP/1.1 200 OK\x0d\nContent-Length: 2\x0d\n\x0d\nno": expected [head 200, body "ok", finish reusable=false]
+         got      [head 200, body "ok", finish reusable=true]
+PASS a second response in a later read: the exchange has ended and ignores it
+FAIL HEAD with stray body bytes in the same read: not reusable
+  step 3 at 2, received "HTTP/1.1 200 OK\x0d\nContent-Length: 5\x0d\n\x0d\nhello": expected [head 200, finish reusable=false]
+         got      [head 200, finish reusable=true]
+PASS HEAD, then stray bytes in a later read: the exchange has ended and ignores them
+PASS an early response during an upload is read to its end, delivered, and not reusable
+PASS an early response whose upload then completes is still not reusable
+PASS an early response whose upload stalls: the upload stops, the response completes
+PASS an early response whose upload fails: the response still completes
+PASS a failed write before the request head is out fails the exchange, maybe delivered
+PASS a failed write after the request head stops the upload; the end of input then fails the exchange
+PASS a failed write after the request head: an early response waiting to be read is still delivered
+PASS abandoning mid-body: the read gap ends the drain, not reusable
+PASS write slices: one write in flight, a partial write is resumed where it stopped
+PASS abandoning mid-body: the rest arrives within the drain limit, reusable
+PASS abandoning mid-body: the rest takes longer than the drain time, not reusable
+PASS abandoning mid-body: more than the drain limit is announced, not reusable at once
+PASS abandoning a chunked body: the drained bytes overrun the limit, not reusable
+PASS abandoning without keep-alive ends at once, not reusable
+PASS abandoning before the response head fails the exchange as a local close
+PASS end of input mid-body fails, with the response received
+PASS end of input before any response byte fails, maybe delivered
+PASS a close-delimited body ends with the input, not reusable
+PASS Connection: close from the server: not reusable
+PASS without keep-alive a complete response is not reusable
+PASS an interim response is not delivered; the final one is
+PASS body credit: nothing is read while the caller wants no more
+PASS body credit used up exactly by a chunked body: its end is noticed without more credit
+PASS body credit used up and then the end of input mid-body: the failure is not left for the deadline
+PASS a close-delimited body read with exactly enough credit ends when the caller asks once more
+PASS a stalled write that fails late does not restart the read gap
+PASS a stale tick changes nothing; the write gap is the next deadline
+PASS a tick from the past changes nothing
+PASS the deadline ends an exchange waiting for the head
+PASS the deadline ends an exchange mid-body, with the response received
+PASS the deadline has passed when the exchange begins: nothing sent
+PASS the read gap ends a silent exchange
+PASS the read gap and the deadline at the same instant: the deadline wins
+PASS bytes that complete the response at the deadline: delivered
+PASS bytes at the deadline that leave the response incomplete: delivered so far, then the deadline
+PASS a write that completes after the deadline: the deadline, nothing more written
+42 traces, 2 failing
+exit status 1
+### core-tests props 200000 1
+FAIL run 17 (seed 1), step 9: reusable only when safe: the 43 bytes read are not exactly one reusable response
+  case: script="HEAD, then stray bytes" method=HEAD body=0 keepAlive=true writeChunk=16 gap=50 drainBytes=0 drainMs=50 maxBody=100 maxInterim=10 deadline=2000
+  shrunk from 9 to 7 events, failing reusable only when safe: the 43 bytes read are not exactly one reusable response:
+  begin at 0 -> [write 16]
+  at 0: written 16 -> [write 16]
+  at 20: written 16 -> [write 7]
+  at 20: written 7 -> [read]
+  at 21: received "HTTP/1.1 200 OK\x0d\nContent-Lengt" -> [read]
+  at 22: received "h:" -> [read]
+  at 22: received " 5\x0d\n\x0d" -> [read]
+  at 23: received "\nhello" -> [head 200, finish reusable=true]
+exit status 1
+### core-tests explore 10
+PASS GET, content-length, keepAlive=true: 6818 states, 17528 steps checked, 4211 terminal (375 reusable); new states per depth #[1, 5, 18, 43, 85, 143, 226, 325, 449, 583, 729]
+PASS GET, content-length, keepAlive=false: 6267 states, 15991 steps checked, 3907 terminal (0 reusable); new states per depth #[1, 5, 18, 43, 84, 138, 210, 295, 402, 517, 647]
+FAIL GET, two responses, keepAlive=true: reusable only when safe: the 83 bytes read are not exactly one reusable response
+  begin at 0 -> [write 38]
+  at 0: written 38 -> [read]
+  at 0: received "HTTP/1.1 200 OK\x0d\nContent-Length: 5\x0d\n\x0d\nhelloHTTP/1.1 200 OK\x0d\nContent-Length: 2\x0d\n\x0d\nno" -> [head 200]
+  at 0: wantBody 1 -> [body "hello", finish reusable=true]
+PASS GET, interim responses, then the final one, keepAlive=true: 6668 states, 17100 steps checked, 4133 terminal (315 reusable); new states per depth #[1, 5, 18, 43, 85, 142, 222, 316, 436, 563, 704]
+PASS GET, chunked, keepAlive=true: 10809 states, 25974 steps checked, 6630 terminal (488 reusable); new states per depth #[1, 5, 18, 44, 92, 166, 282, 462, 707, 1026, 1376]
+PASS GET, close-delimited, keepAlive=true: 7711 states, 18850 steps checked, 4717 terminal (0 reusable); new states per depth #[1, 5, 18, 44, 92, 159, 255, 377, 521, 677, 845]
+PASS GET, not HTTP, keepAlive=true: 4768 states, 11913 steps checked, 3015 terminal (0 reusable); new states per depth #[1, 5, 16, 35, 64, 101, 152, 214, 293, 384, 488]
+PASS GET, truncated body, keepAlive=true: 12075 states, 29086 steps checked, 7013 terminal (0 reusable); new states per depth #[1, 5, 18, 46, 104, 206, 376, 609, 905, 1225, 1567]
+PASS GET, content-length, Connection: close, keepAlive=true: 5509 states, 14212 steps checked, 3422 terminal (0 reusable); new states per depth #[1, 5, 18, 42, 79, 124, 186, 258, 351, 453, 570]
+FAIL HEAD, then stray bytes, keepAlive=true: reusable only when safe: the 43 bytes read are not exactly one reusable response
+  begin at 0 -> [write 39]
+  at 0: written 39 -> [read]
+  at 0: received "HTTP/1.1 200 OK\x0d\nContent-Length: 5\x0d\n\x0d\nhello" -> [head 200, finish reusable=true]
+PASS POST of 20 bytes in 32-byte writes, early 413, keepAlive=true: 23035 states, 58355 steps checked, 13537 terminal (139 reusable); new states per depth #[1, 5, 18, 49, 122, 263, 516, 927, 1553, 2433, 3611]
+11 searches to depth 10: 83734 states, 209091 steps checked, 2 failing
+exit status 1

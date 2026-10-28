@@ -1,0 +1,53 @@
+### Review of `core.diff`
+
+#### 1. Passed `readBy` deadline is not acted on in `.draining` (refutes "every passed deadline acted on")
+* **Locations:** [`Exchange.nextDeadline`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L544-L550), [`Exchange.handle` (`.abandon`)](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L812-L826), [`Exchange.expireOne`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L833-L840), [`Exchange.schedule`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L889-L893).
+* **Mechanism:**
+  1. When `.abandon` transitions `.receiving → .draining` ([lines 821–822](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L821-L822)), it sets `drainBy := some (ex.now + ex.config.drainMs)` but leaves any existing `readBy` intact. Furthermore, if `schedule` issues a new `.read` while in `.draining` ([lines 889–893](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L889-L893)), `wantsInput` is `true` ([line 563](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L563)) and `uploadOver` is `true`, so `schedule` sets `readBy := some (ex.now + ex.config.gapMs)`.
+  2. [`nextDeadline`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L548-L549) includes `ex.readBy` in `[ex.writeBy, ex.readBy, ex.drainBy].filterMap id`.
+  3. However, [`expireOne`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L837-L840) in `.draining` only checks `if now ≥ ex.deadline || ex.drainBy.any (now ≥ ·) then finishNow false`, completely ignoring `ex.readBy`.
+* **Refuting event sequence:**
+  With `keepAlive := true`, `gapMs := 100`, `drainMs := 100`, `deadline := 1000` on `GET /`:
+  1. `begin` at `0` $\to$ `[.write N]`, `writeBy = some 100`.
+  2. `step 1 (.written N)` $\to$ `[.read]`, `phase = .awaitingHead`, `readBy = some 101`.
+  3. `step 1 (.wantBody 1000)` $\to$ `[]`.
+  4. `step 2 (.received "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nhello")` $\to$ `[.deliverHead 200, .deliverBody "hello", .read]`, `phase = .receiving`, `readBy = some 102`.
+  5. `step 50 .abandon` $\to$ `[]`, `phase = .draining`, `drainBy = some 150`, `readBy = some 102`. Now `ex.nextDeadline = some 102`.
+  6. `step 102 .tick` $\to$ `[]`: `102 ≥ nextDeadline` (`stale = false`), yet `expireOne` neither ends the exchange nor clears `readBy`. After the step at `now = 102`, `ex.nextDeadline` is still `some 102` ($\le \text{now}$), leaving a passed deadline unacted on (and causing a driver waiting for `nextDeadline - now` to spin with `wait = 0` from `t = 102` until `t = 150`).
+
+---
+
+#### 2. Close-delimited and truncated bodies with exhausted/zero body credit (`pullAvailable` / `settle` vs `H1.Machine`)
+* **Locations:** [`Exchange.pullAvailable`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L683-L707), [`Exchange.settle`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L728-L745), [`Exchange.handle` (`.endOfInput`)](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L778-L786), [`H1.Machine.canPullBodyNow`](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L524-L535), [`H1.Machine.noMoreInput`](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L883-L884), [`H1.Machine.parseCloseDelimitedBody`](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L1526-L1538).
+* **Mechanism:**
+  1. **Close-delimited body does not finish on `endOfInput` or exact credit:**
+     In [`H1.Machine.parseCloseDelimitedBody`](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L1529-L1537), when `reader.input.atEnd` is `false`, a pull consumes the buffered bytes and returns `final := false` while staying in `.readBody .closeDelimited`, even if `reader.noMoreInput` is already `true`. Only a *subsequent* `pullBody` call when `reader.input.atEnd && reader.noMoreInput` emits the empty chunk with `final := true` and `.closeBody` ([line 1531](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L1531)).
+     In [`pullAvailable`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L689), `if ex.credit == 0 then return progressed` stops before calling `pullBody` once `credit` hits `0`.
+     * **Sequence A:** `written N` $\to$ `received "HTTP/1.1 200 OK\r\n\r\nabc"` (with `credit = 0`) $\to$ `endOfInput` $\to$ `wantBody 3`.
+       `wantBody 3` pulls `"abc"` (`final = false`), reducing `credit` to `0`, and stops on the next `pullAvailable` recursion because `ex.credit == 0`. `bodyDone` remains `false`, `callerCanPull` in [`settle`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L737-L739) is `true` (`ex.credit == 0 && ex.machine.canPullBodyNow`), and the exchange never emits `.finish false` even though all 3 bytes and `endOfInput` were received and all 3 bytes were requested and delivered.
+     * **Sequence B:** `written N` $\to$ `wantBody 3` $\to$ `received "HTTP/1.1 200 OK\r\n\r\nabc"` (delivers `"abc"`, `credit` becomes `0`) $\to$ `endOfInput`.
+       When `endOfInput` arrives, `reader.input.atEnd` is already `true` (the machine holds no unread bytes), yet `pullAvailable` does not run because `credit == 0` and `settle` suppresses termination because `callerCanPull` is `true`. (The same happens for a chunked response `"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"` with `wantBody 5`: `"hello"` uses up all 5 bytes of credit, leaving `"0\r\n\r\n"` unpulled in `.readBody .chunkedSize`.)
+  2. **Truncated fixed-length or chunked body with `credit == 0` fails to report `.peerClosed` on `endOfInput`:**
+     [`settle`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L737-L739) assumes `ex.machine.canPullBodyNow` means the machine still holds buffered body bytes for the caller to pull. In [`H1.Machine`](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L524-L535), `canPullBodyNow` is merely `reader.state matches .readBody _ && !pullBodyStalled`—it does not check `hasBufferedInput`. Moreover, [`H1.Machine.noMoreInput`](file:///home/matthias/prog/lean-http-wt-core/vendor/LeanHttpProto/Http/Protocol/H1.lean#L883-L884) resets `pullBodyStalled := false`, and [`pullAvailable`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L689) never sets `pullBodyStalled := true` when `credit` drops to `0` on the last buffered byte.
+     * **Sequence:** `written N` $\to$ `wantBody 5` $\to$ `received "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nhello"` (delivers `"hello"`, `credit` becomes `0`, `reader.input.atEnd` is `true`, `reader.state` is `.readBody (.fixed 5)`) $\to$ `endOfInput`.
+       Even though the machine holds zero buffered bytes and 5 of the 10 `Content-Length` bytes can never arrive, `canPullBodyNow` is `true`, so `callerCanPull` is `true` and `settle` does not emit `.fail { cause := .peerClosed, .. }` on `endOfInput` (if a tick later reaches `deadline`, it misreports `.timeout .deadline` instead of `.peerClosed`).
+
+---
+
+#### 3. Stale `writeInFlight` after write-gap timeout during an early response resets `readBy` on late `writeFailed`
+* **Locations:** [`Exchange.stopUpload`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L621-L624), [`Exchange.handle` (`.writeFailed`)](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L799-L803), [`Exchange.expireOne`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L854-L857).
+* **Mechanism:**
+  When a write in flight times out (`TimeoutKind.write`) after an early response head has arrived (`ex.head.isSome`), [`expireOne`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L856) calls [`stopUpload`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L621-L624), which sets `uploadStopped := true`, `writeBy := none`, and arms `readBy := some (ex.now + ex.config.gapMs)`, while `writeInFlight` remains `some len`.
+  Unlike [`handle (.written count)`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L795) (which guards `ex.readBy.isNone`), [`handle (.writeFailed detail)`](file:///home/matthias/prog/lean-http-wt-core/LeanHttp/Exchange.lean#L803) unconditionally calls `stopUpload` again when the stalled write later fails in the OS, overwriting `readBy` with `some (ex.now + ex.config.gapMs)` and extending the read-gap deadline without any read progress.
+* **Refuting event sequence:**
+  With `writeChunk := 64`, `gapMs := 100`, `deadline := 1000`, `POST /` with 100-byte body:
+  1. `begin` at `0` $\to$ `[.write 64]`.
+  2. `step 1 (.written 64)` $\to$ `[.write 64, .read]`.
+  3. `step 1 (.wantBody 1000)` $\to$ `[]`.
+  4. `step 3 (.received "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 3\r\n\r\n")` $\to$ `[.deliverHead 413, .read]`, `writeBy = some 101`, `readBy = none`.
+  5. `step 101 .tick` $\to$ `[]`: write timeout fires `stopUpload`, setting `readBy = some 201`.
+  6. `step 190 (.writeFailed "broken pipe")` $\to$ `[]`: calls `stopUpload` again, resetting `readBy` from `201` to `290`.
+  7. `step 201 .tick` $\to$ `[]`: fails to expire the read gap at `201` despite 198 ms of read silence (`90 ms` after `uploadOver`).
+
+DEFECTS FOUND
+agy exit 0
