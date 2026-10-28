@@ -14,8 +14,10 @@ lean_lib LeanHttpProto where
 @[default_target]
 lean_lib LeanHttp where
   leanOptions := #[⟨`autoImplicit, false⟩]
-  -- The proofs about the exchange core are checked by every build, but no other module imports them.
-  roots := #[`LeanHttp, `LeanHttp.Exchange.Proofs, `LeanHttp.Exchange.Liveness]
+  -- The proofs about the exchange core and the codec are checked by every build, but no other module
+  -- imports them.
+  roots := #[`LeanHttp, `LeanHttp.Codec, `LeanHttp.Codec.Proofs, `LeanHttp.Exchange.Proofs,
+    `LeanHttp.Exchange.Liveness]
 
 /-- Helpers shared by the test executables. -/
 lean_lib TestSupport where
@@ -24,6 +26,18 @@ lean_lib TestSupport where
 /-- Drives the HTTP/1.1 machine as a client over recorded response shapes. -/
 lean_exe «codec-tests» where
   root := `Tests.Codec
+
+/-- Runs the response codec over the same response shapes. -/
+lean_exe «response-codec-tests» where
+  root := `Tests.ResponseCodec
+
+/-- Differential test of the response codec against the vendored machine. -/
+lean_exe «codec-diff» where
+  root := `Tests.CodecDiff
+
+/-- Times the response codec and the vendored machine on large bodies. -/
+lean_exe «codec-bench» where
+  root := `Tests.CodecBench
 
 /-- Pure unit tests: backoff schedule, address ordering, error classification. -/
 lean_exe «unit-tests» where
