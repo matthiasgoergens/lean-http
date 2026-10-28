@@ -1,0 +1,51 @@
+$ .lake/build/bin/unit-tests
+PASS ceiling doubles from the base
+PASS ceiling stays at the cap
+PASS ceiling with a zero base
+PASS a delay does not depend on the schedule's length
+PASS draw is SplitMix64
+PASS pinned schedule for seed 42
+PASS pinned schedule for seed 0
+PASS delays within [0, ceiling] for 1000 seeds and 12 attempts
+PASS attempt 0 draws have mean near 50 ms
+PASS attempt 0 draws reach 0 and 100 ms
+PASS attempt 0 draws fill every tenth of the range
+PASS 1000 seeds give at least 990 distinct schedules
+PASS dedup keeps the first occurrence, in order
+PASS dedup of getaddrinfo's triplicates
+PASS interleave starts with the first family
+PASS interleave from IPv4 first
+PASS interleave keeps a single family
+PASS interleave of nothing
+PASS connect order de-duplicates, then interleaves
+PASS withPort for IPv6
+PASS an IPv6 literal bypasses resolution
+PASS an IPv4 literal bypasses resolution
+PASS a name is resolved
+PASS plan for a name with a path and query
+PASS plan for an empty path
+PASS plan for an IPv6 literal and a port
+PASS plan drops the user information from Host
+PASS plan keeps a Host the caller set
+PASS plan refuses https
+PASS plan refuses an origin-form target
+PASS a zero read gap is an invalid request
+PASS a read gap of 1 ms is accepted
+PASS machine error Entity too large is LeanHttp.Cause.limit (LeanHttp.LimitKind.body)
+PASS machine error Too many headers is LeanHttp.Cause.limit (LeanHttp.LimitKind.headers)
+PASS machine error Headers too large is LeanHttp.Cause.limit (LeanHttp.LimitKind.headers)
+PASS machine error Connection closed is LeanHttp.Cause.peerClosed
+PASS machine error Bad message is LeanHttp.Cause.protocol "Bad message"
+PASS machine error Invalid chunk is LeanHttp.Cause.protocol "Invalid chunk"
+PASS machine error Unsupported version is LeanHttp.Cause.protocol "Unsupported version"
+PASS nothing received: maybe delivered
+PASS half a head: maybe delivered
+PASS an interim response only: maybe delivered
+PASS a final head: response received
+PASS and the body cut short is peerClosed
+PASS an announced body over the limit fails at once
+PASS with the response received
+PASS an error's text names the delivery and the seed
+PASS only connect failures count as connect
+48 checks, 0 failing
+exit status 0
