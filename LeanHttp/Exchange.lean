@@ -700,7 +700,18 @@ private partial def pullAvailable (progressed : Bool) : StepM Bool := do
   match ex.phase with
   | .receiving =>
     if ex.credit == 0 then
-      return progressed
+      -- Without credit nothing may be delivered, but a pull that yields no bytes (the end of a
+      -- chunked or close-delimited body, or the news that more input is needed) is kept: the core
+      -- is pure, so the pull can be tried and dropped if it yields bytes.
+      let (machine, chunk?) := ex.machine.pullBody
+      match chunk? with
+      | some pulled =>
+        if !pulled.chunk.data.isEmpty then return progressed
+        setEx { ex with machine, bodyDone := ex.bodyDone || pulled.final }
+        return (← pullAvailable true)
+      | none =>
+        setEx { ex with machine }
+        return progressed
     if announcedOver ex ex.bodyBytes ex.config.maxBody then
       failNow (.limit .body)
       return true
@@ -745,8 +756,8 @@ private def settle : StepM Unit := do
   if ending && ex.bodyDone then
     finishNow true
   else if ex.inputEnded then
-    -- With no credit the caller may still pull body the machine holds (a close-delimited body
-    -- ends only when pulled after the end of input), so nothing is decided yet.
+    -- With no credit the caller may still pull body bytes the machine holds, so nothing is decided
+    -- yet; `pullAvailable` has already found out whether the machine needs input it cannot get.
     let callerCanPull := match ex.phase with
       | .receiving => ex.credit == 0 && ex.machine.canPullBodyNow
       | _ => false
@@ -816,6 +827,8 @@ private def handle : ExchangeEvent → StepM Unit
     match ex.phase with
     | .sending => failNow .peerClosed detail
     | _ =>
+      -- A write that had already stalled (and stopped the upload) failing at last changes nothing.
+      if ex.uploadStopped then return
       -- Once the request head is out a response may be due, perhaps already waiting to be read (a
       -- server that answers early and then closes): stop the upload and keep reading.
       setEx { (← getEx) with writeError := some detail }

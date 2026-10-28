@@ -238,6 +238,36 @@ def traces : List Trace := [
       (3, .wantBody 1, ["body \"ab\""]),
       (4, .wantBody 5, ["read"]),
       (5, recv "cd", ["body \"cd\"", "finish reusable=true"])] },
+  { name := "body credit used up exactly by a chunked body: its end is noticed without more credit"
+    steps := fun p => [
+      (1, .written p.bytes.size, ["read"]),
+      (1, .wantBody 5, []),
+      (2, recv "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+        ["head 200", "body \"hello\"", "finish reusable=true"])] },
+  { name := "body credit used up and then the end of input mid-body: the failure is not left for the deadline"
+    steps := fun p => [
+      (1, .written p.bytes.size, ["read"]),
+      (1, .wantBody 5, []),
+      (2, recv tenHello, ["head 200", "body \"hello\""]),
+      (3, .endOfInput,
+        [s!"fail the connection closed before a complete response [response received, written={p.bytes.size}]"])] },
+  { name := "a close-delimited body read with exactly enough credit ends when the caller asks once more"
+    steps := fun p => [
+      (1, .written p.bytes.size, ["read"]),
+      (1, .wantBody 3, []),
+      (2, recv "HTTP/1.1 200 OK\r\n\r\nabc", ["head 200", "body \"abc\""]),
+      (3, .wantBody 1, ["read"]),
+      (4, .endOfInput, ["finish reusable=false"])] },
+  { name := "a stalled write that fails late does not restart the read gap"
+    method := .post
+    body := upload
+    config := { keepAlive := true, writeChunk := 64, gapMs := 100 }
+    begins := fun _ => ["write 64"]
+    steps := fun _ => uploadSteps ++ [
+      (3, recv early413, ["head 413", "read"]),
+      (101, .tick, []),
+      (190, .writeFailed "broken pipe", []),
+      (201, .tick, ["fail read timeout [response received, written=64]"])] },
   { name := "a stale tick changes nothing; the write gap is the next deadline"
     deadline := 60000
     steps := fun p => [
