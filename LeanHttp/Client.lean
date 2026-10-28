@@ -181,9 +181,21 @@ private structure Driver where
   head : Option Response.Head := none
 
   /--
-  The body delivered so far.
+  The body chunks delivered so far, last first.
   -/
-  body : ByteArray := .empty
+  chunks : List ByteArray := []
+
+  /--
+  Their total size.
+  -/
+  bodySize : Nat := 0
+
+/--
+Joins body chunks given last first.  The result is allocated here, so appending to it is done in
+place.
+-/
+private def joinChunks (chunks : List ByteArray) (size : Nat) : ByteArray :=
+  chunks.reverse.foldl (init := ByteArray.emptyWithCapacity size) (· ++ ·)
 
 /--
 How an exchange ended, as the shell saw it.
@@ -203,6 +215,11 @@ private inductive Ended where
 Drives `ex` on `socket`: performs `actions`, waits for the first operation to complete or the next
 deadline, reports what happened, and repeats until the core finishes or fails.  It decides nothing
 itself.  A receive still pending at the end is cancelled, so that none outlives the call.
+
+The body is kept as a list of chunks and joined at the end.  Everything carried across a wait is
+captured by a continuation that another thread may run, which marks it as shared between threads,
+and the runtime never updates such an object in place: appending each chunk to one byte array
+copied the whole body every time, quadratic in its length (both here and in milestone 1).
 -/
 private partial def drive (socket : TCP.Socket.Client) (ex : Exchange)
     (actions : Array ExchangeAction) (driver : Driver) : Async Ended := do
@@ -216,11 +233,13 @@ private partial def drive (socket : TCP.Socket.Client) (ex : Exchange)
       let task ← start (socket.recv? max.toUInt64)
       driver := { driver with reading := some (Task.map (sync := true) Completion.read task) }
     | .deliverHead head => driver := { driver with head := some head }
-    | .deliverBody bytes => driver := { driver with body := driver.body ++ bytes }
+    | .deliverBody bytes =>
+      driver := { driver with
+        chunks := bytes :: driver.chunks, bodySize := driver.bodySize + bytes.size }
     | .finish _ =>
       if driver.reading.isSome then cancelReceive socket
       return match driver.head with
-        | some head => .response head driver.body
+        | some head => .response head (joinChunks driver.chunks driver.bodySize)
         | none => .failure { cause := .peerClosed, delivery := ex.delivery, written := ex.written }
     | .fail failure =>
       if driver.reading.isSome then cancelReceive socket
