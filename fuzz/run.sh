@@ -7,6 +7,8 @@
 #
 # PIN_CPUS pins the container to a CPU list with taskset (rootless podman on the host cannot use
 # --cpuset-cpus); CTR_EXTRA adds podman options (for example -d --name ... to detach a campaign).
+# The image sets AFL_TRY_AFFINITY, with which afl-fuzz binds itself to a CPU of its choice, outside
+# the list, even with AFL_NO_AFFINITY; it is unset here.
 #
 # Usage: fuzz/run.sh <command> [args...]
 #   e.g. fuzz/run.sh fuzz/build.sh
@@ -25,5 +27,5 @@ quoted=$(printf '%q ' "$@")
 pin=${PIN_CPUS:+taskset --cpu-list $PIN_CPUS}
 ssh "$host" "cd ~/$rdir && $pin nice ionice podman run --rm --network none ${CTR_EXTRA:-} \
   -v b8perf-elan:/root/.elan:ro -v \"\$PWD\":/w -w /w -v $py:/py:ro $image \
-  env AFL_SKIP_CPUFREQ=1 AFL_NO_AFFINITY=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 \
+  env -u AFL_TRY_AFFINITY AFL_SKIP_CPUFREQ=1 AFL_NO_AFFINITY=1 AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1 \
   LEAN_ABORT_ON_PANIC=1 LEAN_BACKTRACE=0 $quoted"
