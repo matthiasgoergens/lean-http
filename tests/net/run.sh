@@ -128,6 +128,7 @@ CLOSED=18085    # nothing listens
 HOLE2=18086     # blackhole on ::1 only, for the connect deadline
 NOREAD=18087    # accepts and never reads
 LARGE=18088     # onewrite.py, for a large POST
+EARLY=18089     # early.py: answers 413 after the head, then reads no more
 
 # Names for the resolver tests.  getaddrinfo without a socket type returns each of these addresses
 # once per socket type, three times in all.
@@ -355,6 +356,14 @@ if scenario write-timeout; then
   client write-timeout call POST "http://127.0.0.1:$NOREAD/" body=32000000 gap=1000
   expect write-timeout 'call 0 error delivery=maybe delivered .*cause="write timeout" detail="[0-9]+ of 32000[0-9]+ request bytes accepted"' \
     "a peer that stops reading stalls the upload; the write gap ends it"
+fi
+
+if scenario early-response; then
+  start early-response early "listening" "$PY" -I "$here/early.py" $EARLY || exit 1
+  client early-response call POST "http://127.0.0.1:$EARLY/" body=32000000 gap=1000
+  expect early-response 'call 0 ok status=413 bytes=3 .*body_start="big"' \
+    "a server that answers 413 after the head and stops reading: the response is delivered"
+  within early-response 0 900 "before the 1 s write gap"
 fi
 
 # Last, because it points the resolver at a name server that never answers.
