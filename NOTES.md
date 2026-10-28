@@ -19,6 +19,34 @@ The exchange core still refuses `101` itself and counts interim responses itself
 
 The three informational cases record behaviour without asserting it: a status line without the space before an empty reason phrase, bare LF line endings and obsolete line folding are all rejected as bad messages, by both versions.
 
+## A response parser written for proof
+
+Built on 2026-10-28; the client does not use it yet.  `LeanHttp/Codec/` parses an HTTP/1.1 response in the client direction, given the request method, and every function in it is total.  `Parser.stepByte` reads one byte with no loop and is the meaning of the parser; `Parser.feed` reads body bytes in bulk, slicing them out of its input, and is proved to compute the same (`feed_eq_run`).  `LeanHttp/Codec/Proofs.lean` lists what is proved, and `scripts/codec-axioms.lean` prints the axioms of the main theorems, which use `propext`, `Classical.choice` and `Quot.sound` at most.
+
+Its rules and limits are those of the vendored machine, with the exchange core's interim limit, `101` refusal and body limit built in, except in these deliberate differences, each of which the differential test below finds and attributes:
+
+- A chunk whose size line announces more than the body limit leaves is rejected at its size line.  The core rejects it only once the data arrives, so its outcome then depends on what the data holds and on how the bytes are cut: a bad message, still pending, a premature close, or the body limit.
+- A chunk-size line longer than its limit is rejected at the byte that exceeds it.  The vendored machine measures an incomplete line only up to its last complete extension, and keeps waiting.
+- Chunk extensions are counted at each `;`, so one too many is refused when its `;` arrives rather than when it is complete.
+- A `Content-Length` of 2^62 or more is reported with its head and then rejected as over the body limit, like any oversized length.  The core lifts its machine's body limit to 2^62, and the machine refuses such a head before reporting it.
+- `Connection: close` ends the connection whatever the version (RFC 9112 section 9.3).  The vendored machine looks for `close` only in HTTP/1.1, so it keeps an HTTP/1.0 connection whose response says both `keep-alive` and `close`.
+- There is no `maxStartLineLength`: a status line is bounded by the reason-phrase limit, 527 bytes with the defaults, well inside the machine's default of 8192.
+
+Measured on the build host (`logs/2026-10-28/codec/final/`, commit c94d1e6):
+
+- The 37 response shapes of `Tests/Codec.lean` pass, each fed whole, byte by byte and split in two at every position (`response-codec-tests`).
+- `codec-diff` ran 120,037 inputs for each of four seeds: the shapes, responses generated with deliberate faults, and mutations of both, with GET, HEAD or POST and default or partly small limits, each run whole and cut at random points, without and with the end of input.  Every disagreement with the core falls under one of the differences above (the tool finds the cause by relaxing one limit at a time until the two agree), and the codec's outcome never depended on the cut.  The core's did, on 43 inputs, all with a chunk beyond the body limit.  A control run with the codec's limits off by one shows the comparison sees disagreements.
+- Parsing a 60 MB body fed in 64 KiB reads, the codec took 0.94 times the core's time for a `Content-Length` body, 0.93 with 16 KiB chunks and 0.75 with 1 KiB chunks (median per-block ratios over 100 randomised blocks on one pinned CPU of a loaded machine; the codec was faster in 60, 61 and 100 of the 100 blocks).  Body bytes are slices of the bytes fed, so nothing carried across calls grows with the body.
+
+Left before it can replace the vendored machine in the client:
+
+- The exchange core has to drive it: feed it the bytes read, turn its events into actions, and account for the caller's body credit itself, since the codec delivers every body byte it is fed (read no more than the credit, or hold the excess).
+- Requests are still encoded by the vendored writer (`Exchange.prepare`), and the machine's `maxMessages` and the request's own keep-alive go with it.
+- The core's reuse verdict would use `Parser.reusable`, and its proofs could then rest on the certainty lemmas (`LeanHttp/Codec/Proofs/Certain.lean`) instead of treating the machine as opaque.
+- Completeness is not proved: no theorem says that a well-formed response within the limits is accepted.  The shape tests and the differential run are the evidence that it is.
+- The interim heads' `Connection` fields enter the keep-alive verdict, but no theorem ties that to the bytes.
+- CONNECT and protocol upgrades are not handled; the client sends neither.
+
 ## What can outlive a call, and other limits of milestone 1
 
 Measured on 2026-10-27 (`logs/2026-10-27/net/`); v4.34.1 can cancel a pending receive but not a pending connect, write or name lookup.
