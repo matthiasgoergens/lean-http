@@ -1,15 +1,18 @@
 import LeanHttp.Codec
 import LeanHttp.Exchange
 import Tests.Support.Drive
+import Tests.Support.MachineCore
 
 /-!
-# Parsing large bodies: the response codec against the exchange core over the vendored machine
+# Parsing large bodies: the exchange core, the codec alone, and the former core
 
 Times how long each takes to parse a response with a 60 MB body, fed in 64 KiB pieces as the shell
-reads them: one with a `Content-Length`, and two chunked, with 16 KiB and with 1 KiB chunks.  The
-codec is timed alone (`Parser.feed` per piece); the vendored machine is timed as the client uses it,
-through `Exchange.step` with `received` events.  Both only count the body bytes delivered, which
-must come to the whole body.
+reads them: one with a `Content-Length`, and two chunked, with 16 KiB and with 1 KiB chunks.  Three
+parsers: the exchange core as the client uses it (`core`, through `Exchange.step` with `received`
+events, with the credit `Client.request` gives), the codec alone (`codec`, `Parser.feed` per piece),
+and the former exchange core over the vendored machine (`machine`, `Tests/Support/MachineCore.lean`,
+the core the client used before it ran the codec), driven the same way.  Each only counts the body
+bytes delivered, which must come to the whole body.
 
 The cells run in randomised blocks: each block runs every cell once, in an order drawn afresh, so
 that drift in the machine's load falls on all cells alike.
@@ -75,6 +78,25 @@ def runCodec (input : Array ByteArray) : Nat × Bool := Id.run do
       | _ => pure ()
   return (total, done)
 
+/-- Parses with the former exchange core; returns the body bytes delivered and whether it finished. -/
+def runMachine (input : Array ByteArray) : Nat × Bool := Id.run do
+  let prepared := MachineCore.prepare! {} (requestHead .get) .empty
+  let (ex, _) := MachineCore.Exchange.begin prepared 0 1000000000
+  let (ex, _) := ex.step 0 (.written prepared.bytes.size)
+  let (ex, _) := ex.step 0 (.wantBody (prepared.config.maxBody + 1))
+  let mut ex := ex
+  let mut total := 0
+  let mut done := false
+  for piece in input do
+    let (ex', actions) := ex.step ex.now (.received piece)
+    ex := ex'
+    for a in actions do
+      match a with
+      | .deliverBody b => total := total + b.size
+      | .finish _ => done := true
+      | _ => pure ()
+  return (total, done)
+
 /-- Parses with the exchange core; returns the body bytes delivered and whether it finished. -/
 def runCore (input : Array ByteArray) : Nat × Bool := Id.run do
   let prepared := prepare! {} (requestHead .get) .empty
@@ -122,13 +144,17 @@ def main (args : List String) : IO UInt32 := do
   let cl := pieces (lengthResponse body)
   let ch16 := pieces (chunkedResponse body (16 * 1024))
   let ch1 := pieces (chunkedResponse body 1024)
+  -- In threes per workload: core, machine, codec.
   let cells : Array Cell := #[
-    { name := "codec-length", run := runCodec, input := cl },
     { name := "core-length", run := runCore, input := cl },
-    { name := "codec-chunked16k", run := runCodec, input := ch16 },
+    { name := "machine-length", run := runMachine, input := cl },
+    { name := "codec-length", run := runCodec, input := cl },
     { name := "core-chunked16k", run := runCore, input := ch16 },
-    { name := "codec-chunked1k", run := runCodec, input := ch1 },
-    { name := "core-chunked1k", run := runCore, input := ch1 }]
+    { name := "machine-chunked16k", run := runMachine, input := ch16 },
+    { name := "codec-chunked16k", run := runCodec, input := ch16 },
+    { name := "core-chunked1k", run := runCore, input := ch1 },
+    { name := "machine-chunked1k", run := runMachine, input := ch1 },
+    { name := "codec-chunked1k", run := runCodec, input := ch1 }]
   IO.println s!"body={bodySize} piece={pieceSize} blocks={blocks} seed={seed}"
   let mut times : Array (Array Nat) := cells.map fun _ => #[]
   let mut s := seed.toUInt64
@@ -150,13 +176,16 @@ def main (args : List String) : IO UInt32 := do
     let ts := (times[k]!.toList.mergeSort (· ≤ ·)).toArray
     let median := ts[ts.size / 2]!
     IO.println s!"median {cells[k]!.name} {median / 1000000} ms (min {ts[0]! / 1000000}, max {ts[ts.size - 1]! / 1000000})"
-  -- Paired within blocks: codec time over core time, per workload (cells come in codec, core pairs).
-  for w in [0:cells.size / 2] do
-    let codec := times[2 * w]!
-    let core := times[2 * w + 1]!
-    let ratios := (List.range codec.size).map fun b => (codec[b]!.toFloat / core[b]!.toFloat)
+  -- Paired within blocks, per workload: the core over the former core, and the core over the codec.
+  let ratio (a b : Nat) : IO Unit := do
+    let num := times[a]!
+    let den := times[b]!
+    let ratios := (List.range num.size).map fun k => (num[k]!.toFloat / den[k]!.toFloat)
     let rs := (ratios.mergeSort (· ≤ ·)).toArray
     let q (f : Float) := rs[(f * (rs.size - 1).toFloat).toUInt64.toNat]!
     let faster := ratios.filter (· < 1) |>.length
-    IO.println s!"ratio {cells[2 * w]!.name}/{cells[2 * w + 1]!.name}: median {q 0.5}, quartiles {q 0.25} {q 0.75}, range {q 0} {q 1}; codec faster in {faster} of {rs.size} blocks"
+    IO.println s!"ratio {cells[a]!.name}/{cells[b]!.name}: median {q 0.5}, quartiles {q 0.25} {q 0.75}, range {q 0} {q 1}; {cells[a]!.name} faster in {faster} of {rs.size} blocks"
+  for w in [0:cells.size / 3] do
+    ratio (3 * w) (3 * w + 1)
+    ratio (3 * w) (3 * w + 2)
   return if failed then 1 else 0

@@ -23,7 +23,7 @@ lean_lib LeanHttp where
 lean_lib TestSupport where
   globs := #[.submodules `Tests.Support]
 
-/-- Drives the HTTP/1.1 machine as a client over recorded response shapes. -/
+/-- Drives the exchange core, and through it the codec, over recorded response shapes. -/
 lean_exe «codec-tests» where
   root := `Tests.Codec
 
@@ -31,11 +31,11 @@ lean_exe «codec-tests» where
 lean_exe «response-codec-tests» where
   root := `Tests.ResponseCodec
 
-/-- Differential test of the response codec against the vendored machine. -/
+/-- Differential test of the codec and the exchange core against the vendored machine. -/
 lean_exe «codec-diff» where
   root := `Tests.CodecDiff
 
-/-- Times the response codec and the vendored machine on large bodies. -/
+/-- Times the exchange core, the codec alone and the former core over the machine on large bodies. -/
 lean_exe «codec-bench» where
   root := `Tests.CodecBench
 
