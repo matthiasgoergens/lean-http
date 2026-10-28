@@ -15,7 +15,7 @@ It started from a review of the client proposed for `Std.Http` (leanprover/lean4
 
 - One connection per request, `Connection: close`.  No pool, no reuse, so none of the stale-connection, idle-bytes or unread-body hazards can arise.
 - `Client.request : Request ByteArray → Async (Except Error (Response ByteArray))`, with a throwing variant.  The body is read whole, up to a limit.
-- The calling task does everything: DNS, connect, write, read.  Other tasks exist only where a timer races an operation.
+- The calling task does everything: DNS, connect, and then the exchange, whose writes and reads it performs for the exchange core, at most one of each in flight, racing them against the core's next deadline.  Other tasks exist only for those operations and the timers.
 - DNS answers de-duplicated and interleaved by family; addresses tried with a per-attempt connect timeout and a short stagger between attempts; IPv6 literals bypass DNS; `TCP_NODELAY` on.
 - Retries only of connects that failed, with exponential backoff and full jitter seeded from the operating system (the seed is logged so a run can be replayed), within a retry budget.
 - One deadline for the whole call; a per-gap read timeout on top; a cap on interim (1xx) responses.
@@ -36,7 +36,8 @@ Following httpcore (Python) rather than a task per connection: the task that mak
    - Events: bytes read, end of input, bytes written (with a count), the caller asking for more body (with a size), a tick, the caller abandoning the response, a write or read failure.
    - Actions: write these bytes (one write in flight at a time), read up to this many bytes (or not now: the core says whether it wants input), deliver the response head, deliver body bytes, finish, fail with an error.
    - The core decides reuse at the end: the connection goes back to the pool only if the response was framed with certainty and read to its end, and the request was written in full.  A HEAD or 204/304 response followed by stray bytes, an early response to an unfinished upload, or a response whose body was abandoned all make the connection non-reusable; it is shut down for writing and dropped, never pooled.  An early response is still read to its end and delivered.
-   - Errors carry a cause (`localClose`, `peerClosed`, `timeout`, `protocol`, `limit`) and the number of request bytes written.  "Nothing written" is the evidence that makes a retry safe for any method.  A 408 on a reused connection before any response byte counts as "nothing processed", as Go treats it.
+   - No response can be due before the server has the request head, so the core asks for no read until the head has been written, and bytes that arrive earlier fail the exchange without being parsed.  From then on it reads while the body is still going out, so an early response is heard even from a server that stops reading; once the final response head has arrived, a failed or stalled upload only stops the upload.  The read gap counts only once the request has been written in full: a server is silent while it receives a request.
+   - Errors carry a cause (`localClose`, `peerClosed`, `timeout`, `protocol`, `limit`) and the number of request bytes written.  "Nothing written" (no write ever issued: the bytes of a write in flight may already be on the wire) is the evidence that makes a retry safe for any method.  A 408 on a reused connection before any response byte counts as "nothing processed", as Go treats it.
 
 A **per-call planner** (`LeanHttp.Call`) runs in the caller's task: redirects (a hop limit ending in an error, credential headers stripped across origins, `Host` rewritten, content headers dropped when the method changes to GET, no URL-based cycle detection), retries (per hop, never across a redirect), backoff, the whole-call deadline, and opt-in retries of 429 and 503 honouring `Retry-After`.  This is the split Go makes between `Client` and `Transport`.
 
@@ -56,7 +57,7 @@ v4.34.1's TCP client socket has `shutdown` (closing the write side) but no expli
 
 ## Defaults
 
-`TCP_NODELAY` on; connect timeout 10 s per attempt, with a 250 ms stagger between attempts; whole-call deadline 5 minutes, which alone bounds name resolution; read gap 30 s, which also bounds each 64 KiB slice of a request write; at most 10 interim responses; buffered body limit 64 MiB; up to 2 retries of failed connects (full jitter, base 100 ms, cap 5 s); idle connections: 4 per origin, 4 s; at most 10 redirects, then an error.  Slow upstream APIs (model calls that think for minutes before answering) need the deadline and the read gap raised; the defaults suit ordinary web APIs.
+`TCP_NODELAY` on; connect timeout 10 s per attempt, with a 250 ms stagger between attempts; whole-call deadline 5 minutes, which alone bounds name resolution; read gap 30 s, which also bounds each 64 KiB slice of a request write; at most 10 interim responses; buffered body limit 64 MiB; up to 2 retries of failed connects (full jitter, base 100 ms, cap 5 s); idle connections: 4 per origin, 4 s; an abandoned body is drained for reuse if the rest is at most 64 KiB and arrives within 100 ms; at most 10 redirects, then an error.  Slow upstream APIs (model calls that think for minutes before answering) need the deadline and the read gap raised; the defaults suit ordinary web APIs.
 
 ## Verification
 
@@ -64,7 +65,7 @@ In order of value per effort; each stage stands alone.
 
 1. **Known defects as traces** against the exchange and pool cores (the review's defects plus the survey's cases: early response during an upload, stray bytes after HEAD).
 2. **Properties at every step** on random event sequences (seeded generator; Plausible where it fits), shrinking failures:
-   - no response is delivered for an exchange that has not written its request;
+   - no response head is delivered before the request head has been written (an early response may arrive while the body is still going out);
    - an error with cause `localClose` is never retried;
    - a connection returns to the pool only if its exchange ended with certain framing and fully read;
    - every checked-out connection is returned or dropped exactly once;
