@@ -574,6 +574,40 @@ def wantsInput (ex : Exchange) : Bool :=
     | _ => false
 
 /--
+`Reaches body s r`: running `body` zero or more times from `s` can end in `r`.
+-/
+inductive Reaches {σ : Type} (body : σ → Bool × σ) : σ → σ → Prop where
+  /--
+  Zero runs.
+  -/
+  | refl (s : σ) : Reaches body s s
+
+  /--
+  One more run.
+  -/
+  | tail {s t : σ} : Reaches body s t → Reaches body s (body t).2
+
+instance {σ : Type} (body : σ → Bool × σ) (s : σ) : Inhabited { r // Reaches body s r } :=
+  ⟨⟨s, .refl s⟩⟩
+
+/--
+Runs `body` from `s` until it returns `false`, and returns the last state.  Nothing bounds how often
+`body` runs (it runs the HTTP/1.1 machine, which may always make progress as far as a proof can
+tell), so this is a `partial def`, whose result no proof can compute; its type says all that can be
+known of it, that the result is reached from `s` by runs of `body`.
+-/
+partial def loopWhile {σ : Type} (body : σ → Bool × σ) (s : σ) : { r // Reaches body s r } :=
+  go s (.refl s)
+where
+  /--
+  Carries the evidence for the state reached so far.
+  -/
+  go (t : σ) (h : Reaches body s t) : { r // Reaches body s r } :=
+    match hb : body t with
+    | (true, t') => go t' (by simpa [hb] using h.tail)
+    | (false, t') => ⟨t', by simpa [hb] using h.tail⟩
+
+/--
 The state of one step: the exchange and the actions emitted so far.
 -/
 abbrev StepM := StateM (Exchange × Array ExchangeAction)
@@ -690,13 +724,14 @@ private def handleH1Events (events : Array (H1.Event .sending)) : StepM Bool :=
     return progressed || p
 
 /--
-Pulls the body chunks the machine can produce now: as many as the caller's credit allows while
-receiving, and all of them, discarded, while draining.  Returns whether anything changed.
+One round of `pullAvailable`: pulls at most one body chunk.  Returns `none` when it pulled one and
+another round may follow, and otherwise `some changed`, where `changed` is whether this round changed
+anything the caller must act on beyond what the rounds before it changed.
 -/
-private partial def pullAvailable (progressed : Bool) : StepM Bool := do
+private def pullOnce : StepM (Option Bool) := do
   let ex ← getEx
   if ex.terminal || ex.bodyDone || !ex.machine.canPullBodyNow then
-    return progressed
+    return some false
   match ex.phase with
   | .receiving =>
     if ex.credit == 0 then
@@ -706,44 +741,63 @@ private partial def pullAvailable (progressed : Bool) : StepM Bool := do
       let (machine, chunk?) := ex.machine.pullBody
       match chunk? with
       | some pulled =>
-        if !pulled.chunk.data.isEmpty then return progressed
+        if !pulled.chunk.data.isEmpty then return some false
         setEx { ex with machine, bodyDone := ex.bodyDone || pulled.final }
-        return (← pullAvailable true)
+        return none
       | none =>
         setEx { ex with machine }
-        return progressed
+        return some false
     if announcedOver ex ex.bodyBytes ex.config.maxBody then
       failNow (.limit .body)
-      return true
+      return some true
     let (machine, chunk?) := ex.machine.pullBody
     let ex := { ex with machine }
     setEx ex
-    let some pulled := chunk? | return progressed
+    let some pulled := chunk? | return some false
     let data := pulled.chunk.data
     if ex.bodyBytes + data.size > ex.config.maxBody then
       failNow (.limit .body)
-      return true
+      return some true
     setEx { ex with
       bodyBytes := ex.bodyBytes + data.size
       credit := ex.credit - min ex.credit data.size
       bodyDone := ex.bodyDone || pulled.final }
     unless data.isEmpty do emit (.deliverBody data)
-    pullAvailable true
+    return none
   | .draining =>
     if announcedOver ex ex.drained ex.config.drainBytes then
       finishNow false
-      return true
+      return some true
     let (machine, chunk?) := ex.machine.pullBody
     let ex := { ex with machine }
     setEx ex
-    let some pulled := chunk? | return progressed
+    let some pulled := chunk? | return some false
     let ex := { ex with drained := ex.drained + pulled.chunk.data.size }
     setEx { ex with bodyDone := ex.bodyDone || pulled.final }
     if ex.drained > ex.config.drainBytes then
       finishNow false
-      return true
-    pullAvailable true
-  | _ => return progressed
+      return some true
+    return none
+  | _ => return some false
+
+/--
+One round of `pullAvailable` on the state and the flag that says whether anything changed so far;
+returns whether to go on.
+-/
+private def pullRound : Bool × (Exchange × Array ExchangeAction) →
+    Bool × (Bool × (Exchange × Array ExchangeAction))
+  | (progressed, s) =>
+    match pullOnce.run s with
+    | (none, s) => (true, (true, s))
+    | (some changed, s) => (false, (progressed || changed, s))
+
+/--
+Pulls the body chunks the machine can produce now: as many as the caller's credit allows while
+receiving, and all of them, discarded, while draining.  Returns whether anything changed, or
+`progressed` if nothing did.
+-/
+private def pullAvailable (progressed : Bool) : StepM Bool := fun s =>
+  (loopWhile pullRound (progressed, s)).1
 
 /--
 After the machine has made all the progress it can: finishes the exchange if the body ended, or
@@ -768,11 +822,12 @@ private def settle : StepM Unit := do
         failOrDrop .peerClosed
 
 /--
-Runs the machine until it can make no more progress without new input or credit.
+One round of `absorb`: steps the machine once and acts on what it reports.  Returns whether another
+round may make progress.
 -/
-private partial def absorb : StepM Unit := do
+private def absorbOnce : StepM Bool := do
   let ex ← getEx
-  if ex.terminal then return
+  if ex.terminal then return false
   let (machine, result) := ex.machine.step
   setEx { ex with machine }
   let p₁ ← handleH1Events result.events
@@ -781,7 +836,13 @@ private partial def absorb : StepM Unit := do
   let (machine, events) := ex.machine.takeEvents
   setEx { ex with machine }
   let p₃ ← handleH1Events events
-  if (p₁ || p₂ || p₃) && !(← getEx).terminal then absorb else settle
+  return (p₁ || p₂ || p₃) && !(← getEx).terminal
+
+/--
+Runs the machine until it can make no more progress without new input or credit, then settles.
+-/
+private def absorb : StepM Unit := fun s =>
+  settle.run (loopWhile absorbOnce.run s).1
 
 /--
 Handles one event from the shell.

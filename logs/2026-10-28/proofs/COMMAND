@@ -1,0 +1,8 @@
+Runs for the proofs of the exchange core (branch proofs), on the build host in localhost/b8perf-lean with Lean v4.34.1.
+
+Behaviour unchanged by the restructuring of the core (the two `partial def` loops as rounds of a certified `loopWhile`):
+$ scp core-run.sh buildhost:lean-http-proofs/out/ && LEAN_HTTP_REMOTE_DIR=lean-http-proofs scripts/remote.sh bash out/core-run.sh <tag>
+  base/     the core before the restructuring (git archive 6ae7b67, remote dir lean-http-proofs-base)
+  loops/    the core after it
+  Each has unit.txt, codec.txt, traces.txt, props-seed{1,2}.txt (200,000 random runs each), explore-10.txt.
+  The outputs of base/ and loops/ are identical file for file, including the random runs' statistics.
