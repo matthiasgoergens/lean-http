@@ -50,3 +50,11 @@ lean_exe «core-tests» where
 /-- Real-socket test driver, run by `tests/net/run.sh` against local servers. -/
 lean_exe «net-client» where
   root := `Tests.Net
+
+/-- The fuzzing harness: invariants over one exchange, exported to C for AFL++ (`fuzz/`). -/
+lean_lib Fuzz where
+  roots := #[`Fuzz.Harness]
+
+/-- Replays fuzz inputs through the harness and prints what happened. -/
+lean_exe «fuzz-replay» where
+  root := `Fuzz.Replay
