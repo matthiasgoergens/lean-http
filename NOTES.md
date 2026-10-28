@@ -28,7 +28,6 @@ Its rules and limits are those of the vendored machine, with the exchange core's
 - A chunk whose size line announces more than the body limit leaves is rejected at its size line.  The core rejects it only once the data arrives, so its outcome then depends on what the data holds and on how the bytes are cut: a bad message, still pending, a premature close, or the body limit.
 - A chunk-size line longer than its limit is rejected at the byte that exceeds it.  The vendored machine measures an incomplete line only up to its last complete extension, and keeps waiting.
 - Chunk extensions are counted at each `;`, so one too many is refused when its `;` arrives rather than when it is complete.
-- A `Content-Length` of 2^62 or more is reported with its head and then rejected as over the body limit, like any oversized length.  The core lifts its machine's body limit to 2^62, and the machine refuses such a head before reporting it.
 - `Connection: close` ends the connection whatever the version (RFC 9112 section 9.3).  The vendored machine looks for `close` only in HTTP/1.1, so it keeps an HTTP/1.0 connection whose response says both `keep-alive` and `close`.
 - There is no `maxStartLineLength`: a status line is bounded by the reason-phrase limit, 527 bytes with the defaults, well inside the machine's default of 8192.
 

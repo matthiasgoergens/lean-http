@@ -210,7 +210,15 @@ def traces : List Trace := [
     steps := fun p => writtenSteps p ++ [
       (2, recv tenHello, ["head 200", "body \"hello\"", "read"]),
       (3, .endOfInput,
-        [s!"fail the connection closed before a complete response [response received, written={p.bytes.size}]"])] },
+        [s!"fail the connection closed before a complete response [response received, written={p.bytes.size}, status=200]"])] },
+  { name := "a Content-Length over the body limit fails at once, with the response received and its status"
+    steps := fun p => writtenSteps p ++ [
+      (2, recv "HTTP/1.1 200 OK\r\nContent-Length: 70000000\r\n\r\n",
+        ["head 200", s!"fail body size limit exceeded [response received, written={p.bytes.size}, status=200]"])] },
+  { name := "a Content-Length above 2^62 fails the same way, not before the head"
+    steps := fun p => writtenSteps p ++ [
+      (2, recv "HTTP/1.1 200 OK\r\nContent-Length: 99999999999999999999999999\r\n\r\n",
+        ["head 200", s!"fail body size limit exceeded [response received, written={p.bytes.size}, status=200]"])] },
   { name := "end of input before any response byte fails, maybe delivered"
     steps := fun p => writtenSteps p ++ [
       (2, .endOfInput,
@@ -250,7 +258,7 @@ def traces : List Trace := [
       (1, .wantBody 5, []),
       (2, recv tenHello, ["head 200", "body \"hello\""]),
       (3, .endOfInput,
-        [s!"fail the connection closed before a complete response [response received, written={p.bytes.size}]"])] },
+        [s!"fail the connection closed before a complete response [response received, written={p.bytes.size}, status=200]"])] },
   { name := "a close-delimited body read with exactly enough credit ends when the caller asks once more"
     steps := fun p => [
       (1, .written p.bytes.size, ["read"]),
@@ -267,7 +275,7 @@ def traces : List Trace := [
       (3, recv early413, ["head 413", "read"]),
       (101, .tick, []),
       (190, .writeFailed "broken pipe", []),
-      (201, .tick, ["fail read timeout [response received, written=64]"])] },
+      (201, .tick, ["fail read timeout [response received, written=64, status=413]"])] },
   { name := "a stale tick changes nothing; the write gap is the next deadline"
     deadline := 60000
     steps := fun p => [
@@ -302,7 +310,7 @@ def traces : List Trace := [
     deadline := 500
     steps := fun p => writtenSteps p 10 ++ [
       (20, recv tenHello, ["head 200", "body \"hello\"", "read"]),
-      (500, .tick, [s!"fail deadline timeout [response received, written={p.bytes.size}]"])] },
+      (500, .tick, [s!"fail deadline timeout [response received, written={p.bytes.size}, status=200]"])] },
   { name := "the deadline has passed when the exchange begins: nothing sent"
     deadline := 0
     begins := fun _ => ["fail deadline timeout [not sent, written=0]"]
@@ -324,7 +332,7 @@ def traces : List Trace := [
     deadline := 500
     steps := fun p => writtenSteps p 10 ++ [
       (500, recv tenHello,
-        ["head 200", "body \"hello\"", s!"fail deadline timeout [response received, written={p.bytes.size}]"])] },
+        ["head 200", "body \"hello\"", s!"fail deadline timeout [response received, written={p.bytes.size}, status=200]"])] },
   { name := "a write that completes after the deadline: the deadline, nothing more written"
     method := .post
     body := upload

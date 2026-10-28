@@ -51,6 +51,8 @@ structure Model where
   headDelivered : Bool := false
   /-- `acked` when the head was delivered. -/
   ackedAtHead : Nat := 0
+  /-- The status code of the final head, once delivered. -/
+  headStatus : Option Nat := none
   /-- Every byte received, in order. -/
   fed : ByteArray := .empty
   /-- Whether bytes arrived before the request head was written. -/
@@ -130,7 +132,10 @@ def renderAction : ExchangeAction → String
   | .finish reusable => s!"finish reusable={reusable}"
   | .fail f =>
     let detail := if f.detail.isEmpty then "" else s!" ({f.detail})"
-    s!"fail {f.cause.describe}{detail} [{f.delivery.name}, written={f.written}]"
+    let status := match f.status with
+      | some s => s!", status={s.toCode}"
+      | none => ""
+    s!"fail {f.cause.describe}{detail} [{f.delivery.name}, written={f.written}{status}]"
 
 /-- A short rendering of an event. -/
 def renderEvent : ExchangeEvent → String
@@ -185,7 +190,8 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
         fun _ => s!"head {head.status.toCode} with {m.acked} of {m.headBytes} head bytes written"
       found := flag found "unsolicited bytes never make a response" m.unsolicited
         fun _ => s!"head {head.status.toCode}"
-      m := { m with headDelivered := true, ackedAtHead := m.acked }
+      m := { m with headDelivered := true, ackedAtHead := m.acked,
+                    headStatus := some head.status.toCode.toNat }
     | .deliverBody bytes =>
       found := flag found "no body before the head" (!m.headDelivered) fun _ => s!"{bytes.size} bytes"
       m := { m with body := m.body ++ bytes }
@@ -226,6 +232,9 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
         fun _ => s!"{f.delivery.name}, wrote={m.everWrote}, head={m.headDelivered}"
       found := flag found "a failure counts the bytes written" (f.written != m.acked)
         fun _ => s!"{f.written}, model {m.acked}"
+      found := flag found "a failure carries the status of the delivered head"
+        (f.status.map (·.toCode.toNat) != m.headStatus)
+        fun _ => s!"{f.status.map (·.toCode)}, model {m.headStatus}"
   -- Properties of the state after the step.
   found := flag found "the core ends only with an action" (post.terminal != m.ended)
     fun _ => s!"terminal={post.terminal}, ended={m.ended}"

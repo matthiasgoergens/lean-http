@@ -1341,8 +1341,9 @@ theorem step_finish_reusable {ex : Exchange} (hi : Inv ex) {now : Timestamp} {e 
 
 /--
 **A failure says how far the request got** (checker: "delivery follows what was written", "a failure
-counts the bytes written").  A failure reported by a step carries the delivery, the count of written
-request bytes and the status of the exchange it ends.  `Exchange.delivery` is `notSent` exactly when
+counts the bytes written", "a failure carries the status of the delivered head").  A failure reported
+by a step carries the delivery, the count of written request bytes and the status of the final head
+of the exchange it ends.  `Exchange.delivery` is `notSent` exactly when
 no write was ever issued and no head delivered, `responseReceived` exactly when a final head was
 delivered, and `maybeDelivered` otherwise (`delivery_iff`); `Observed.agrees` shows that `sentAny`
 and `head` record whether the run emitted a write and a final head, and `observed_fail` states the

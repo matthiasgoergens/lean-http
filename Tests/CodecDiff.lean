@@ -10,7 +10,7 @@ on the same responses, and compares what they make of them: the outcome (done wi
 interim count and body, failed with its cause, or pending), the head (version and fields) and the
 reuse verdict.  The exchange core runs with `keepAlive` on, so that its verdict means something.
 
-The responses are the 37 shapes of `Tests/Codec.lean`, responses generated at random from a grammar
+The responses are the shapes of `Tests/Support/CodecCases.lean`, responses generated at random from a grammar
 with deliberate faults, and mutations of both (bytes flipped, inserted, deleted, lines duplicated,
 line endings changed, truncation).  Each is run with a GET or HEAD request, default or small limits,
 and both without and with the end of input.  Besides the comparison (whole input to both), each
@@ -367,16 +367,12 @@ def relaxBody (l : Limits) : Limits := { l with maxBody := 2 ^ 40 }
 def relaxChunkLine (l : Limits) : Limits := { l with h1 := { l.h1 with maxChunkLineLength := 2 ^ 20 } }
 
 /--
-Why the codec and the exchange core disagree on an input: a `Content-Length` the core's machine
-refuses before reporting the head (2^62 or more), an HTTP/1.0 response saying both `keep-alive` and
-`close` (which the codec does not keep, RFC 9112 section 9.3), or a limit, found by relaxing one
-limit at a time until they agree.
+Why the codec and the exchange core disagree on an input: an HTTP/1.0 response saying both
+`keep-alive` and `close` (which the codec does not keep, RFC 9112 section 9.3), or a limit, found by
+relaxing one limit at a time until they agree.
 -/
 def attributeCodec (i : Input) (eof : Bool) (control : Bool) : String := Id.run do
   let head := (codecRun (codecConfig i.limits) i.method [i.bytes] false).head?
-  if let some h := head then
-    if let .length n := h.framing then
-      if 2 ^ 62 ≤ n then return "Content-Length of 2^62 or more"
   let agree (i' : Input) : Bool :=
     let (a, ae) := runCore i' [i'.bytes]
     let (b, be) := runCodec i' [i'.bytes] control

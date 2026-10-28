@@ -510,17 +510,23 @@ refuses the head.
 
 The body limit, `config.maxBody` decoded bytes, is enforced by the core rather than by the machine,
 which would refuse an oversized `Content-Length` before reporting the head: a caller is better served
-by an error that carries the status and says the response was received.  The machine still bounds
-the input it buffers by `maxBody` plus its header allowances.
+by an error that carries the status and says the response was received.  So the machine's body limit
+is set above every `Content-Length` it can parse: a field value has at most
+`config.h1.maxHeaderValueLength` characters, and fewer than `config.h1.maxHeaderBytes` (which its
+whole field line counts against), so a length of at most that many digits is below `10` to that
+power.  Building that number costs about 0.42 bytes per digit, a few kilobytes with the defaults.  Its
+chunk limit only applies once the head has been reported, and both are at least `2 ^ 62`, far above
+any body the core accepts.  The machine still bounds the input it buffers by `maxBody` plus its
+header allowances.
 -/
 def prepare (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) :
     Except Cause PreparedRequest := do
   -- The machine's own limits are lifted out of the way of the core's (`pullAvailable`).
-  let unlimited := 2 ^ 62
+  let lifted := 2 ^ 62
   let h1 := { config.h1 with
     enableKeepAlive := config.keepAlive
-    maxBodySize := unlimited
-    maxChunkSize := unlimited
+    maxBodySize := max lifted (10 ^ min config.h1.maxHeaderValueLength config.h1.maxHeaderBytes)
+    maxChunkSize := lifted
     maxBufferedBodyBytes := some config.maxBody }
   let headers := head.headers
     |>.erase Header.Name.contentLength
