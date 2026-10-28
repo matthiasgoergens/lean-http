@@ -6,6 +6,9 @@
 # Runs inside the AFL++ image (fuzz/run.sh), in the tree, after fuzz/build.sh.  Pin it with
 # PIN_CPUS on fuzz/run.sh, one CPU per instance; AFL_NO_AFFINITY is set there.
 #
+# EXTRA_SEEDS names a directory whose files are added to the seeds (an earlier campaign's corpus,
+# reduced with afl-cmin, say).
+#
 # Usage: fuzz/fuzz.sh <out dir> <seconds> [instances (default 1)] [timeout ms (default 200)]
 out=${1:?out dir}
 secs=${2:?seconds}
@@ -17,6 +20,9 @@ cmp=.lake/fuzz/cmplog/lean-http-fuzz
 [ ! -e "$out/sync" ] || { echo "fuzz.sh: $out/sync exists; use a fresh directory" >&2; exit 1; }
 mkdir --parents "$out" || exit 1
 /py/bin/python3 -I fuzz/seeds.py "$out/seeds" || exit 1
+if [ -n "${EXTRA_SEEDS:-}" ]; then
+  cp "$EXTRA_SEEDS"/* "$out/seeds/" || exit 1
+fi
 # -G: the control byte, 15 split-table entries and Fuzz/Harness.lean's maxResponse (2432 bytes).
 common=(-i "$out/seeds" -o "$out/sync" -x fuzz/http-response.dict -t "$tmo" -G 2448 -V "$secs")
 { echo "afl-fuzz $(afl-fuzz -h 2>&1 | head -1)"; sha256sum "$bin" "$cmp"; date --utc; } > "$out/build-info.txt"
