@@ -10,7 +10,9 @@ an invariant.  Used to triage AFL++ findings and to check the seeds without AFL+
 With `--brief`, prints one line per file.  With `--class`, prints for each file only the class of
 the broken invariant (the first 120 characters of the failure's first line, digits replaced by
 `N`), or `ok`; `fuzz/triage.sh` groups crashes by it.  With `--framing`, prints one JSON line
-per file with the framing decisions, for `fuzz/h11-diff.py`.
+per file with the framing decisions, for `fuzz/h11-diff.py`.  With `--allowances`, prints for each
+file the codec's deliberate differences from the machine that the cross-check allowed for it
+(`allowances`), or `none`, so that what the allowances excuse can be counted.
 -/
 
 open LeanHttpFuzz
@@ -80,6 +82,8 @@ inductive Mode where
   | classOnly
   /-- JSON framing decisions, per input. -/
   | framing
+  /-- The allowances each input relies on. -/
+  | allowances
 
 def main (args : List String) : IO UInt32 := do
   let (modes, files) := args.partition (·.startsWith "--")
@@ -88,7 +92,9 @@ def main (args : List String) : IO UInt32 := do
     | ["--brief"] => pure .brief
     | ["--class"] => pure .classOnly
     | ["--framing"] => pure .framing
-    | _ => throw (IO.userError s!"usage: fuzz-replay [--brief | --class | --framing] <file>...")
+    | ["--allowances"] => pure .allowances
+    | _ => throw (IO.userError
+      s!"usage: fuzz-replay [--brief | --class | --framing | --allowances] <file>...")
   let mut bad := 0
   for f in files do
     let data ← IO.FS.readBinFile f
@@ -97,6 +103,9 @@ def main (args : List String) : IO UInt32 := do
     match mode, result with
     | .classOnly, .ok _ => IO.println "ok"
     | .classOnly, .error msg => IO.println (failureClass msg)
+    | .allowances, _ =>
+      let used := allowances data
+      IO.println (if used.isEmpty then "none" else "; ".intercalate used)
     | .framing, _ =>
       match run data with
       | .ok rep => IO.println (framingJson f rep)

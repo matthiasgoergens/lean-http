@@ -947,6 +947,48 @@ def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) (method : Meth
   | _, _ =>
     ensure (phase == .awaitHead || phase == .inBody) s!"{who}: exchange pending, machine not: {both}"
 
+/--
+The codec's deliberate differences from the machine that `crossCheck` allowed in a run of the core
+against the direct driver over the same reads, by name: the allowances on which an input relies.
+-/
+def allowancesIn (c : Core) (r : Run) (whole : Bool) (method : Method) (eof : Bool)
+    (reads : List ByteArray) : List String :=
+  let phaseFailed := r.failedRun
+  let reuseDiff := match c.ended, c.head with
+    | some (.finish reuse), some head =>
+      whole && !reuse && c.ex.config.keepAlive && reusableBeforeEnd r && http10KeepAliveAndClose head
+    | _, _ => false
+  let byFailure := match c.ended with
+    | some (.fail f) =>
+      match f.cause with
+      | .limit .body =>
+        let announced := (c.head.bind singleLength?).getD 0
+        let machineRefused := r.trace.contains (.failed (toString H1.Error.entityTooLarge))
+        if r.body.size > maxBody || announced > maxBody || machineRefused then []
+        else if chunkOverLimit method reads then ["a chunk announced beyond the body limit"] else []
+      | .protocol msg =>
+        if msg.startsWith "101" || msg.startsWith "a transfer coding" || phaseFailed then []
+        else if chunkLineStricter method eof reads then ["a chunk-size line measured more strictly"]
+        else []
+      | _ => []
+    | _ => []
+  byFailure ++ (if reuseDiff then ["HTTP/1.0 saying both keep-alive and close"] else [])
+
+/-- The allowances an input relies on, over the whole response and over its reads. -/
+def allowances (data : ByteArray) : List String :=
+  let input := decode data
+  let reads := pieces input
+  let m := input.method
+  match machineFor? m with
+  | none => []
+  | some machine =>
+    let keep := prepared m true
+    let whole := [input.response]
+    (allowancesIn (runCore keep input.eof whole) (runMachine machine input.eof whole) true m
+        input.eof whole ++
+      allowancesIn (runCore keep input.eof reads) (runMachine machine input.eof reads) false m
+        input.eof reads).eraseDups
+
 /-! ## The whole check -/
 
 /-- Everything one input produces, for the replay tool. -/
