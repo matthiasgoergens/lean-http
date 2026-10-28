@@ -1,0 +1,3 @@
+Independent clean build of branch live at 6e2a887, 2026-10-28, the build host, v4.34.1 container, fresh remote dir lean-http-live2-verify:
+$ LEAN_HTTP_REMOTE_DIR=lean-http-live2-verify scripts/remote.sh bash -c "lake build; lake env lean scripts/proof-axioms.lean; lake build unit-tests core-tests; unit-tests; core-tests traces; core-tests props 100000 13"
+Result: 37 main theorems, each [propext, Classical.choice, Quot.sound]; 54 checks, 44 traces, 100000 runs (692456 steps), 0 failing.  No sorry, admit or axiom (grep).
