@@ -1,4 +1,4 @@
-import LeanHttp.Exchange
+import Tests.Support.Drive
 
 /-!
 # Codec tests
@@ -14,13 +14,13 @@ Prints one line per case and split mode, then a summary; exits with status 1 if 
 open Std.Http LeanHttp
 
 /-- A comparable rendering of an outcome. -/
-def render (ex : Exchange) : String :=
-  match ex.outcome with
-  | .pending => "pending"
-  | .done head body =>
-    let text := String.fromUTF8? body |>.getD s!"<{body.size} bytes>"
-    s!"done {head.status.toCode} interim={ex.interim} body={repr text}"
-  | .failed cause => s!"failed {repr cause}"
+def render (r : Run) : String :=
+  match r.ended, r.head with
+  | some (.fail f), _ => s!"failed {repr f.cause}"
+  | some (.finish _), some head =>
+    let text := String.fromUTF8? r.body |>.getD s!"<{r.body.size} bytes>"
+    s!"done {head.status.toCode} interim={r.ex.interim} body={repr text}"
+  | _, _ => "pending"
 
 /-- The request every case answers, unless it says otherwise. -/
 def requestHead (method : Method) : Request.Head :=
@@ -34,10 +34,11 @@ structure Limits where
   h1 : LeanHttpProto.Http.Protocol.H1.Config := {}
 
 /-- Feeds `pieces` in order, then end of input if `eof`. -/
-def run (limits : Limits) (method : Method) (pieces : List ByteArray) (eof : Bool) : Exchange :=
-  let (ex, _) := Exchange.start limits.h1 limits.maxInterim limits.maxBody (requestHead method) .empty
-  let ex := pieces.foldl Exchange.feed ex
-  if eof then ex.endOfInput else ex
+def run (limits : Limits) (method : Method) (pieces : List ByteArray) (eof : Bool) : Run :=
+  let config := { h1 := limits.h1, maxInterim := limits.maxInterim, maxBody := limits.maxBody }
+  let r := Run.written (prepare! config (requestHead method) .empty)
+  let r := pieces.foldl Run.feed r
+  if eof then r.endOfInput else r
 
 /-- Every way of feeding `bytes` that the tests try, with a label. -/
 def splits (bytes : ByteArray) (allPairs : Bool) : List (String × List ByteArray) :=
@@ -220,7 +221,7 @@ def runCase (c : Case) : IO Nat := do
     IO.println s!"INFO {c.name}: {String.intercalate " | " outcomes}"
     return 0
 
-/-- Request encodings: the exact bytes `Exchange.start` produces. -/
+/-- Request encodings: the exact bytes `Exchange.prepare` produces. -/
 def requestCases : List (String × Method × String × String) := [
   ("GET without body", .get, "",
     "GET / HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\n\r\n"),
@@ -233,7 +234,7 @@ def requestCases : List (String × Method × String × String) := [
 /-- Checks one request encoding; returns whether it matched. -/
 def runRequestCase (c : String × Method × String × String) : IO Bool := do
   let (name, method, body, expected) := c
-  let (_, bytes) := Exchange.start {} 10 1024 (requestHead method) body.toUTF8
+  let bytes := (prepare! { maxBody := 1024 } (requestHead method) body.toUTF8).bytes
   let got := String.fromUTF8? bytes |>.getD "<invalid UTF-8>"
   if got == expected then
     IO.println s!"PASS request {name}: {repr got}"

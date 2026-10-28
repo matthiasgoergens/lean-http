@@ -1,4 +1,5 @@
 import LeanHttp
+import Tests.Support.Drive
 
 /-!
 # Unit tests
@@ -144,20 +145,18 @@ def errorChecks : Checks Unit := do
   let head : Request.Head := {
     method := .get, version := .v11, uri := rootTarget,
     headers := Headers.empty.insert Header.Name.host (.mk "t") }
-  let (ex, _) := Exchange.start {} 10 1024 head .empty
-  checkEq "nothing received: maybe delivered" ex.delivery .maybeDelivered
-  let ex1 := ex.feed "HTTP/1.1 200 OK\r\nContent-Le".toUTF8
-  checkEq "half a head: maybe delivered" ex1.delivery .maybeDelivered
-  let ex2 := ex.feed "HTTP/1.1 100 Continue\r\n\r\n".toUTF8
-  checkEq "an interim response only: maybe delivered" ex2.delivery .maybeDelivered
-  let ex3 := ex.feed "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nabc".toUTF8
-  checkEq "a final head: response received" ex3.delivery .responseReceived
-  checkEq "and the body cut short is peerClosed"
-    (match ex3.endOfInput.outcome with | .failed c => some c | _ => none) (some .peerClosed)
-  let big := ex.feed "HTTP/1.1 200 OK\r\nContent-Length: 2000\r\n\r\n".toUTF8
-  checkEq "an announced body over the limit fails at once"
-    (match big.outcome with | .failed c => some c | _ => none) (some (.limit .body))
-  checkEq "with the response received" big.delivery .responseReceived
+  let r := Run.written (prepare! { maxBody := 1024 } head .empty)
+  checkEq "nothing received: maybe delivered" r.ex.delivery .maybeDelivered
+  let r1 := r.feed "HTTP/1.1 200 OK\r\nContent-Le".toUTF8
+  checkEq "half a head: maybe delivered" r1.ex.delivery .maybeDelivered
+  let r2 := r.feed "HTTP/1.1 100 Continue\r\n\r\n".toUTF8
+  checkEq "an interim response only: maybe delivered" r2.ex.delivery .maybeDelivered
+  let r3 := r.feed "HTTP/1.1 200 OK\r\nContent-Length: 9\r\n\r\nabc".toUTF8
+  checkEq "a final head: response received" r3.ex.delivery .responseReceived
+  checkEq "and the body cut short is peerClosed" r3.endOfInput.failedCause? (some .peerClosed)
+  let big := r.feed "HTTP/1.1 200 OK\r\nContent-Length: 2000\r\n\r\n".toUTF8
+  checkEq "an announced body over the limit fails at once" big.failedCause? (some (.limit .body))
+  checkEq "with the response received" big.ex.delivery .responseReceived
   let e : Error := { cause := .connect #[], delivery := .notSent, target := "h:1", seed := 7 }
   check "an error's text names the delivery and the seed"
     ((toString e).contains "not sent" && (toString e).contains "seed 7") (toString e)

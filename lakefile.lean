@@ -15,6 +15,10 @@ lean_lib LeanHttpProto where
 lean_lib LeanHttp where
   leanOptions := #[⟨`autoImplicit, false⟩]
 
+/-- Helpers shared by the test executables. -/
+lean_lib TestSupport where
+  globs := #[.submodules `Tests.Support]
+
 /-- Drives the HTTP/1.1 machine as a client over recorded response shapes. -/
 lean_exe «codec-tests» where
   root := `Tests.Codec

@@ -14,9 +14,10 @@ public section
 # The client
 
 `Client.request` makes one HTTP/1.1 call on a connection of its own (`Connection: close`) and reads
-the whole response into memory.  The calling task does all the work in order: name resolution,
-connecting, writing the request, reading the response.  Other tasks exist only where a timer races
-an operation.
+the whole response into memory.  The calling task does all the work: name resolution, connecting,
+and then driving the exchange core (`Exchange`), whose writes and reads it performs (at most one of
+each in flight, so the response is read while a large request is still being written) and whose
+deadlines it races against them.  Every decision about the exchange is the core's.
 
 v4.34.1 can cancel a pending receive but not a pending connect, write or name lookup, so three
 things can outlive a call that gave up on them: a connect attempt that was abandoned (its socket is
@@ -139,48 +140,109 @@ private def cancelReceive (socket : TCP.Socket.Client) : Async Unit :=
   (socket.recvSelector 0).unregisterFn
 
 /--
-Reads the response into `ex` until it is complete or fails.  Returns the exchange and, if reading
-stopped for a reason the exchange does not record (a timeout, a transport error), that reason with
-a detail.
+The exchange core's settings for one call of `config`: no reuse in this version.
 -/
-private partial def readResponse (config : Config) (socket : TCP.Socket.Client) (ex : Exchange)
-    (deadline : Nat) : Async (Exchange × Option (Cause × String)) := do
-  if ex.finished then
-    return (ex, none)
-  let left ← remainingMs deadline
-  if left == 0 then
-    return (ex, some (.timeout .deadline, ""))
-  let receiving ← start (socket.recv? config.readChunkBytes.toUInt64)
-  match ← awaitWithin receiving (min config.readGapMs left) with
-  | none =>
-    cancelReceive socket
-    let which := if config.readGapMs < left then TimeoutKind.read else .deadline
-    return (ex, some (.timeout which, ""))
-  | some (.error err) => return (ex, some (.peerClosed, toString err))
-  | some (.ok none) => readResponse config socket ex.endOfInput deadline
-  | some (.ok (some data)) => readResponse config socket (ex.feed data) deadline
+def exchangeConfig (config : Config) : ExchangeConfig :=
+  { h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
+    maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes,
+    writeChunk := config.writeChunkBytes, gapMs := config.readGapMs }
 
 /--
-Writes `bytes[offset:]` in slices of at most `Config.writeChunkBytes`, each of which must be accepted
-within the gap (`Config.readGapMs`) and the deadline.  Returns the reason if writing stopped early.
-A small request goes out in one write.
+A socket operation the shell started for the exchange core, once it has completed.
 -/
-private partial def writeRequest (config : Config) (socket : TCP.Socket.Client) (bytes : ByteArray)
-    (offset : Nat) (deadline : Nat) : Async (Option (Cause × String)) := do
-  if offset ≥ bytes.size then
-    return none
-  let left ← remainingMs deadline
-  if left == 0 then
-    return some (.timeout .deadline, "")
-  let stop := min bytes.size (offset + max 1 config.writeChunkBytes)
-  let slice := if offset == 0 && stop == bytes.size then bytes else bytes.extract offset stop
-  let writing ← start (socket.send slice)
-  match ← awaitWithin writing (min config.readGapMs left) with
-  | none =>
-    let which := if config.readGapMs < left then TimeoutKind.write else .deadline
-    return some (.timeout which, s!"{offset} of {bytes.size} request bytes accepted")
-  | some (.error err) => return some (.peerClosed, toString err)
-  | some (.ok ()) => writeRequest config socket bytes stop deadline
+private inductive Completion where
+  /--
+  A read ended: bytes, end of input, or an error.
+  -/
+  | read (result : Except IO.Error (Option ByteArray))
+
+  /--
+  A write of `length` bytes ended.
+  -/
+  | wrote (length : Nat) (result : Except IO.Error Unit)
+
+/--
+What the shell holds while it drives an exchange: the operations in flight and what was delivered.
+-/
+private structure Driver where
+  /--
+  The read in flight.
+  -/
+  reading : Option (Task Completion) := none
+
+  /--
+  The write in flight.
+  -/
+  writing : Option (Task Completion) := none
+
+  /--
+  The final response head, once delivered.
+  -/
+  head : Option Response.Head := none
+
+  /--
+  The body delivered so far.
+  -/
+  body : ByteArray := .empty
+
+/--
+How an exchange ended, as the shell saw it.
+-/
+private inductive Ended where
+  /--
+  The response arrived in full.
+  -/
+  | response (head : Response.Head) (body : ByteArray)
+
+  /--
+  The exchange failed.
+  -/
+  | failure (failure : Failure)
+
+/--
+Drives `ex` on `socket`: performs `actions`, waits for the first operation to complete or the next
+deadline, reports what happened, and repeats until the core finishes or fails.  It decides nothing
+itself.  A receive still pending at the end is cancelled, so that none outlives the call.
+-/
+private partial def drive (socket : TCP.Socket.Client) (ex : Exchange)
+    (actions : Array ExchangeAction) (driver : Driver) : Async Ended := do
+  let mut driver := driver
+  for action in actions do
+    match action with
+    | .write bytes =>
+      let task ← start (socket.send bytes)
+      driver := { driver with writing := some (Task.map (sync := true) (Completion.wrote bytes.size) task) }
+    | .read max =>
+      let task ← start (socket.recv? max.toUInt64)
+      driver := { driver with reading := some (Task.map (sync := true) Completion.read task) }
+    | .deliverHead head => driver := { driver with head := some head }
+    | .deliverBody bytes => driver := { driver with body := driver.body ++ bytes }
+    | .finish _ =>
+      if driver.reading.isSome then cancelReceive socket
+      return match driver.head with
+        | some head => .response head driver.body
+        | none => .failure { cause := .peerClosed, delivery := ex.delivery, written := ex.written }
+    | .fail failure =>
+      if driver.reading.isSome then cancelReceive socket
+      return .failure failure
+  let now ← IO.monoMsNow
+  let wait := (ex.nextDeadline.getD now) - now
+  let pending := driver.reading.toArray ++ driver.writing.toArray
+  let (event, next) ← match ← awaitFirst pending wait with
+    | none => pure (ExchangeEvent.tick, driver)
+    | some (.read result) =>
+      let event := match result with
+        | .ok (some bytes) => ExchangeEvent.received bytes
+        | .ok none => .endOfInput
+        | .error err => .readFailed (toString err)
+      pure (event, { driver with reading := none })
+    | some (.wrote length result) =>
+      let event := match result with
+        | .ok () => ExchangeEvent.written length
+        | .error err => .writeFailed (toString err)
+      pure (event, { driver with writing := none })
+  let (ex, actions) := ex.step (← IO.monoMsNow) event
+  drive socket ex actions next
 
 /--
 Sends `req` and reads the whole response.  The request's target must be an absolute `http` URI;
@@ -213,36 +275,28 @@ def request (client : Client) (req : Request ByteArray) :
     | .ok plan => pure plan
     | .error msg => return fail (.invalidRequest msg) .notSent
   let target := s!"{plan.host}:{plan.port}"
-  let (ex, bytes) :=
-    Exchange.start config.h1 config.maxInterimResponses config.maxBodyBytes plan.head req.body
-  if let .failed cause := ex.outcome then
-    return fail cause .notSent target
+  let prepared ← match Exchange.prepare (exchangeConfig config) plan.head req.body with
+    | .ok prepared => pure prepared
+    | .error cause => return fail cause .notSent target
   let connected ← match ← Connect.run config (.ofHost plan.host) plan.port seed deadline with
     | .ok connected => pure connected
     | .error (.resolve host detail) => return fail (.resolve host detail) .notSent target
     | .error (.exhausted attempts rounds) => return fail (.connect attempts) .notSent target rounds
     | .error (.deadline attempts rounds) =>
       return fail (.timeout .deadline) .notSent target rounds (detail := (Cause.connect attempts).describe)
-  let socket := connected.socket
   let rounds := connected.rounds
-  if (← remainingMs deadline) == 0 then
-    return fail (.timeout .deadline) .notSent target rounds
-  if let some (cause, detail) ← writeRequest config socket bytes 0 deadline then
-    return fail cause .maybeDelivered target rounds (detail := detail)
-  let (ex, stopped) ← readResponse config socket ex deadline
-  let delivery := ex.delivery
-  let status := ex.head.map (·.status)
-  if let some (cause, detail) := stopped then
-    return fail cause delivery target rounds status detail
-  match ex.outcome with
-  | .done head body =>
+  let now ← IO.monoMsNow
+  let (ex, actions) := Exchange.begin prepared now deadline
+  -- The whole body is wanted, up to the limit, which the core enforces.
+  let (ex, more) := ex.step now (.wantBody (config.maxBodyBytes + 1))
+  match ← drive connected.socket ex (actions ++ more) {} with
+  | .response head body =>
     let finished ← IO.monoMsNow
     let info : CallInfo := {
       seed, connectRounds := rounds, address := connected.address,
       failedAttempts := connected.attempts, elapsedMs := finished - started }
     return .ok { line := head, body, extensions := Extensions.empty.insert info }
-  | .failed cause => return fail cause delivery target rounds status
-  | .pending => return fail .peerClosed delivery target rounds status "the response ended early"
+  | .failure f => return fail f.cause f.delivery target rounds f.status f.detail
 
 /--
 Like `request`, but throws the error as an `IO.Error` (its message says how far the request got).
