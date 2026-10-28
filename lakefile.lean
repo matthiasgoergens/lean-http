@@ -27,6 +27,10 @@ lean_exe «codec-tests» where
 lean_exe «unit-tests» where
   root := `Tests.Unit
 
+/-- Executable verification of the exchange core: traces, random properties, exploration. -/
+lean_exe «core-tests» where
+  root := `Tests.Core
+
 /-- Real-socket test driver, run by `tests/net/run.sh` against local servers. -/
 lean_exe «net-client» where
   root := `Tests.Net
