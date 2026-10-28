@@ -128,6 +128,20 @@ def planChecks : Checks Unit := do
     (Client.exchangeConfig { readGapMs := 0 } matches .error (.invalidRequest _))
   check "a read gap of 1 ms is accepted"
     (match Client.exchangeConfig { readGapMs := 1 } with | .ok c => c.gapMs == 1 | .error _ => false)
+  -- A zero read size asks for reads that can return nothing.
+  check "a zero read size is an invalid request"
+    (Client.exchangeConfig { readChunkBytes := 0 } matches .error (.invalidRequest _))
+  check "a read size of 1 byte is accepted"
+    (match Client.exchangeConfig { readChunkBytes := 1 } with | .ok c => c.readChunk == 1 | .error _ => false)
+  -- No call can meet a zero deadline; a zero connect timeout connects only within one turn of the
+  -- event loop; a zero stagger starts every attempt at once.
+  check "a zero deadline is an invalid request"
+    (Client.checkConfig { deadlineMs := 0 } matches .error (.invalidRequest _))
+  check "a zero connect timeout is an invalid request"
+    (Client.checkConfig { connectTimeoutMs := 0 } matches .error (.invalidRequest _))
+  check "a zero connect stagger is accepted" (Client.checkConfig { connectStaggerMs := 0 } matches .ok ())
+  check "the default settings are accepted"
+    (Client.checkConfig {} matches .ok () && Client.exchangeConfig {} matches .ok _)
 
 /-! ## Error classification -/
 

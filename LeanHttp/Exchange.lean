@@ -86,6 +86,11 @@ structure ExchangeConfig where
   readChunk : Nat := 64 * 1024
 
   /--
+  The read size is positive: a read of zero bytes can return nothing, and so make no progress.
+  -/
+  readChunk_pos : 0 < readChunk := by omega
+
+  /--
   Largest slice of the request handed to the connection in one write.
   -/
   writeChunk : Nat := 64 * 1024

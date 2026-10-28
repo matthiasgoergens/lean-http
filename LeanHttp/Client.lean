@@ -142,16 +142,32 @@ private def cancelReceive (socket : TCP.Socket.Client) : Async Unit :=
 /--
 The exchange core's settings for one call of `config`: no reuse in this version.  Fails with
 `invalidRequest` if `readGapMs` is zero, which would make every write and read due the moment it is
-issued.
+issued, or if `readChunkBytes` is zero, which would ask for reads that can return nothing.
 -/
 def exchangeConfig (config : Config) : Except Cause ExchangeConfig :=
-  if h : 0 < config.readGapMs then
-    .ok {
-      h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
-      maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes,
-      writeChunk := config.writeChunkBytes, gapMs := config.readGapMs, gapMs_pos := h }
+  if hg : 0 < config.readGapMs then
+    if hr : 0 < config.readChunkBytes then
+      .ok {
+        h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
+        maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes, readChunk_pos := hr,
+        writeChunk := config.writeChunkBytes, gapMs := config.readGapMs, gapMs_pos := hg }
+    else
+      .error (.invalidRequest "readChunkBytes must be positive")
   else
     .error (.invalidRequest "readGapMs must be positive")
+
+/--
+Checks the settings that bound a call before its exchange starts.  Fails with `invalidRequest` if
+`deadlineMs` is zero, which no call can meet (and which would still start a name lookup, only to
+abandon it), or if `connectTimeoutMs` is zero, which lets an attempt connect only if the connection
+completes before a timer of zero milliseconds fires: on loopback it does, over any real network it
+would not.  A zero `connectStaggerMs` is accepted: it starts every attempt of a round at once.
+-/
+def checkConfig (config : Config) : Except Cause Unit := do
+  if config.deadlineMs == 0 then
+    throw (.invalidRequest "deadlineMs must be positive")
+  if config.connectTimeoutMs == 0 then
+    throw (.invalidRequest "connectTimeoutMs must be positive")
 
 /--
 A socket operation the shell started for the exchange core, once it has completed.
@@ -301,7 +317,10 @@ def request (client : Client) (req : Request ByteArray) :
     | .ok plan => pure plan
     | .error msg => return fail (.invalidRequest msg) .notSent
   let target := s!"{plan.host}:{plan.port}"
-  let prepared ← match exchangeConfig config >>= (Exchange.prepare · plan.head req.body) with
+  let checked := do
+    checkConfig config
+    Exchange.prepare (← exchangeConfig config) plan.head req.body
+  let prepared ← match checked with
     | .ok prepared => pure prepared
     | .error cause => return fail cause .notSent target
   let connected ← match ← Connect.run config (.ofHost plan.host) plan.port seed deadline with

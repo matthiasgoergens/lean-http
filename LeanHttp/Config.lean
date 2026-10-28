@@ -23,18 +23,20 @@ answers) needs `deadlineMs` and `readGapMs` raised.
 structure Config where
   /--
   Deadline for the whole call, across name resolution, connects, retries and the exchange
-  (default: 5 minutes).
+  (default: 5 minutes).  Must be positive: `Client.request` refuses zero as an invalid request.
   -/
   deadlineMs : Nat := 5 * 60 * 1000
 
   /--
-  Time limit for one connect attempt to one address (default: 10 s).
+  Time limit for one connect attempt to one address (default: 10 s).  Must be positive:
+  `Client.request` refuses zero as an invalid request.
   -/
   connectTimeoutMs : Nat := 10 * 1000
 
   /--
   Delay before the next address is tried while the current attempt is still pending (default:
-  250 ms).  The first attempt to succeed wins; the others are abandoned.
+  250 ms).  The first attempt to succeed wins; the others are abandoned.  Zero starts every
+  attempt of a round at once.
   -/
   connectStaggerMs : Nat := 250
 
@@ -84,7 +86,8 @@ structure Config where
   noDelay : Bool := true
 
   /--
-  Bytes asked for in each read from the socket (default: 64 KiB).
+  Bytes asked for in each read from the socket (default: 64 KiB).  Must be positive:
+  `Client.request` refuses zero as an invalid request.
   -/
   readChunkBytes : Nat := 64 * 1024
 
