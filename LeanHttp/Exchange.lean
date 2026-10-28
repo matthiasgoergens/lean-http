@@ -1,6 +1,7 @@
 module
 
-public import LeanHttpProto.Http.Protocol.H1
+public import LeanHttp.Codec.Response
+public import LeanHttp.Codec.Request
 public import LeanHttp.Error
 
 public section
@@ -8,47 +9,48 @@ public section
 /-!
 # The exchange core
 
-One request and its response on one connection, as a pure step function over the HTTP/1.1 machine
-of the upstream client stack (`LeanHttpProto.Http.Protocol.H1.Machine`, a renamed copy of
-`Std.Http.Protocol.H1.Machine` with the stack's changes, in the client direction).
+One request and its response on one connection, as a pure step function over the response codec
+(`LeanHttp.Codec.Parser`), which parses the response, and the request serialiser
+(`LeanHttp.Codec.encodeRequest`), which encodes the request.
 
-`Exchange.prepare` encodes the request (and refuses one the machine will not write) before any I/O.
-`Exchange.begin` starts the exchange on an open connection and returns the first actions; from then
-on the shell reports everything that happens as an `ExchangeEvent` to `Exchange.step`, performs the
-`ExchangeAction`s it returns, and sleeps no later than `Exchange.nextDeadline`.  Time is an
-argument of `step`, deadlines are state, and nothing here performs I/O, so every interleaving of
-events can be replayed and checked.
+`Exchange.prepare` encodes the request before any I/O.  `Exchange.begin` starts the exchange on an
+open connection and returns the first actions; from then on the shell reports everything that
+happens as an `ExchangeEvent` to `Exchange.step`, performs the `ExchangeAction`s it returns, and
+sleeps no later than `Exchange.nextDeadline`.  Time is an argument of `step`, deadlines are state,
+and nothing here performs I/O, so every interleaving of events can be replayed and checked.
 
 What the core guarantees, by construction:
 
-- **No response without a request.**  Bytes are handed to the machine only once the whole request
+- **No response without a request.**  Bytes are handed to the parser only once the whole request
   head has been written: the core asks for no read before that, and bytes reported earlier anyway
   fail the exchange unparsed.  Bytes a server sent before it saw the request (on a reused
   connection, a 408 before closing) wait in the socket and are read as the response; catching
   those is the job of the idle check before a pooled connection is reused.
 - **One write in flight.**  The request goes out in slices of `ExchangeConfig.writeChunk` bytes, the
   next one only after the previous one completed.
-- **Reuse only when it is safe.**  The verdict of `finish` is `true` only when the response's
-  framing was certain (not delimited by the end of input), the response was read to its end with no
-  byte left over, the request was written in full before the response head arrived, the peer did
-  not close, and both sides agreed to keep the connection alive.
+- **Reuse only when it is safe.**  The verdict of `finish` is `true` only when the parser says the
+  connection could carry another exchange (`Codec.Parser.reusable`: the response ended, framed with
+  certainty, with nothing after it, before the end of input, and its keep-alive verdict allowed it),
+  the caller has received the whole body, the request asked for keep-alive and was written in full
+  before the response head arrived, and the peer did not close.
 - **Early responses are delivered.**  The response is read while the request body is still being
   written, so a server that answers early (a 413, say) and stops reading is heard, and a write that
   fails once the request head is out only stops the upload; the connection is not reused
   afterwards.
 - **Errors say how far the request got** (`Failure.delivery`, `Failure.written`).
 
-On top of the machine the core counts interim (1xx) responses against a limit, refuses
-`101 Switching Protocols` (the client never asks for an upgrade), refuses a body with a transfer
-coding other than chunked (which it cannot decode), enforces the body limit, and turns the machine's
-errors into a `Cause`.
+The parser enforces the limits on interim responses and on the body, refuses
+`101 Switching Protocols` and a body with a transfer coding other than chunked, and delivers every
+body byte it is fed.  The core holds the body bytes the caller has not asked for yet: it reads from
+the connection only while the caller wants more, so what it holds never exceeds what one read
+returned, and it replaces that list rather than growing it across steps.
 -/
 
 namespace LeanHttp
 
 set_option linter.all true
 
-open Std.Http LeanHttpProto.Http.Protocol
+open Std.Http
 
 /--
 A point in time, in milliseconds of a monotonic clock (`IO.monoMsNow` in the shell).
@@ -60,10 +62,10 @@ The limits and timeouts of one exchange.
 -/
 structure ExchangeConfig where
   /--
-  Parser limits for the response head and framing.  The core sets `enableKeepAlive`, `maxBodySize`,
-  `maxChunkSize` and `maxBufferedBodyBytes` itself.
+  Parser limits for the response head and framing.  Their `maxInterim` and `maxBody` are replaced by
+  the fields of the same names below (`ExchangeConfig.codec`).
   -/
-  h1 : H1.Config := {}
+  limits : Codec.Config := {}
 
   /--
   Whether the connection may be reused after the exchange.  When `false`, the request carries
@@ -122,77 +124,10 @@ structure ExchangeConfig where
   drainMs : Nat := 100
 
 /--
-How the end of a response body is marked.
+The parser's configuration: the limits, with the interim and body limits of the exchange.
 -/
-inductive Framing where
-  /--
-  The response has no body: it answers a HEAD request, or its status is 1xx, 204 or 304.
-  -/
-  | none
-
-  /--
-  The body has a `Content-Length`.
-  -/
-  | length (bytes : Nat)
-
-  /--
-  The body is chunked.
-  -/
-  | chunked
-
-  /--
-  The body ends when the peer closes the connection.
-  -/
-  | untilClose
-deriving Repr, BEq, DecidableEq, Inhabited
-
-namespace Framing
-
-/--
-`true` when the end of the body is known without the peer closing the connection.
--/
-def certain : Framing → Bool
-  | .untilClose => false
-  | _ => true
-
-/--
-The framing of a response to a request with `method`, as RFC 9112 section 6.3 defines it.  A head
-with conflicting or malformed framing fields, which the machine refuses, counts as `untilClose`.
--/
-def ofResponse (method : Method) (head : Response.Head) : Framing :=
-  let code := head.status.toCode.toNat
-  if method == .head || (100 ≤ code && code < 200) || code == 204 || code == 304 then
-    .none
-  else
-    match H1.Message.Head.getSize (dir := .sending) head false with
-    | some (.fixed n) => .length n
-    | some .chunked => .chunked
-    | Option.none => .untilClose
-
-end Framing
-
-/--
-`true` when the head's `Transfer-Encoding` is exactly `chunked`.  The machine removes the chunked
-coding and no other, and the client decodes no other, so a body with any further coding
-(`Transfer-Encoding: gzip, chunked`, say) would reach the caller still coded.
--/
-def onlyChunked (head : Response.Head) : Bool :=
-  match head.headers.getAll? Header.Name.transferEncoding with
-  | some #[value] => (Header.TransferEncoding.parse value).map (·.codings) == some #["chunked"]
-  | _ => false
-
-/--
-Why the core refuses a final response head whose framing is `framing` as soon as it arrives, if it
-does: a `Content-Length` over the body limit, or a body with a transfer coding other than chunked,
-until the client can decode transfer codings.  A response that has no body is not refused for the
-transfer codings its head names: there is nothing they could apply to.
--/
-def refusal (config : ExchangeConfig) (head : Response.Head) : Framing → Option Cause
-  | .length n => if n > config.maxBody then some (.limit .body) else none
-  | .chunked =>
-    if onlyChunked head then none
-    else some (.protocol "a transfer coding other than chunked, which the client cannot decode")
-  | _ => none
+def ExchangeConfig.codec (config : ExchangeConfig) : Codec.Config :=
+  { config.limits with maxInterim := config.maxInterim, maxBody := config.maxBody }
 
 /--
 Why an exchange failed, and how far its request got.
@@ -232,7 +167,7 @@ inductive ExchangeEvent where
   /--
   A read returned these bytes.  An empty read counts as a `tick`: the read is still in flight as far
   as the core is concerned and its read gap still runs, so a shell that reports empty reads cannot
-  hold the exchange open past the gap.
+  hold the exchange open past the gap.  Bytes reported after the end of input are ignored.
   -/
   | received (bytes : ByteArray)
 
@@ -247,7 +182,10 @@ inductive ExchangeEvent where
   | written (count : Nat)
 
   /--
-  The caller wants up to `bytes` more bytes of the response body.
+  The caller wants more of the response body: while it has asked for more than it has received, the
+  core delivers what it holds and reads more.  Body bytes come in the pieces the parser cut them
+  into, and whatever the core holds goes out at once, so a delivery may exceed what is left of
+  `bytes`, by at most what one read returned.
   -/
   | wantBody (bytes : Nat)
 
@@ -314,14 +252,10 @@ A request encoded for the wire, ready to be started on a connection.
 -/
 structure PreparedRequest where
   /--
-  The limits and timeouts of the exchange.
+  The limits and timeouts of the exchange.  `keepAlive` is on only if it was asked for and the
+  request head allows it (`Codec.requestKeepAlive`).
   -/
   config : ExchangeConfig
-
-  /--
-  The HTTP/1.1 machine after encoding the request, in the client direction.
-  -/
-  machine : H1.Machine .sending
 
   /--
   The request method, which decides whether the response can have a body.
@@ -339,7 +273,7 @@ structure PreparedRequest where
   headBytes : Nat
 
 instance : Inhabited PreparedRequest :=
-  ⟨{ config := {}, machine := { config := {} }, method := .get, bytes := .empty, headBytes := 0 }⟩
+  ⟨{ config := {}, method := .get, bytes := .empty, headBytes := 0 }⟩
 
 /--
 Where an exchange stands.
@@ -388,9 +322,9 @@ structure Exchange where
   config : ExchangeConfig := {}
 
   /--
-  The HTTP/1.1 machine, in the client direction.
+  The response parser, fed every byte read once the request head was written.
   -/
-  machine : H1.Machine .sending := { config := {} }
+  parser : Codec.Parser := Codec.Parser.start {} .get
 
   /--
   The request method.
@@ -470,19 +404,9 @@ structure Exchange where
   inputEnded : Bool := false
 
   /--
-  Interim responses seen so far.
-  -/
-  interim : Nat := 0
-
-  /--
   The final response head, once delivered.
   -/
   head : Option Response.Head := none
-
-  /--
-  The framing of the final response, once its head arrived.
-  -/
-  framing : Framing := .none
 
   /--
   Whether the final response head arrived before the request was written in full.
@@ -495,14 +419,16 @@ structure Exchange where
   credit : Nat := 0
 
   /--
-  Body bytes delivered so far.
+  Body bytes the parser delivered and the caller has not received yet, in order.  Bytes are held
+  only while the caller has no credit, and no read is issued while any are held, so this is never
+  more than one read's worth.
   -/
-  bodyBytes : Nat := 0
+  held : List ByteArray := []
 
   /--
-  Whether the body of the final response ended.
+  Whether the caller abandoned the exchange.
   -/
-  bodyDone : Bool := false
+  abandoned : Bool := false
 
   /--
   Body bytes discarded since the caller abandoned the body.
@@ -518,55 +444,30 @@ deriving Inhabited
 namespace Exchange
 
 /--
-Maps an error of the HTTP/1.1 machine to a cause.
+The cause the core reports for a rejection by the parser.
 -/
-def causeOfH1Error : H1.Error → Cause
-  | .entityTooLarge => .limit .body
+def causeOf : Codec.Error → Cause
+  | .badMessage => .protocol "Bad message"
+  | .unsupportedVersion => .protocol "Unsupported version"
   | .tooManyHeaders | .headersTooLarge => .limit .headers
-  | .connectionClosed => .peerClosed
-  | err => .protocol (toString err)
+  | .bodyTooLarge => .limit .body
+  | .tooManyInterim => .limit .interim
+  | .switchingProtocols => .protocol "101 Switching Protocols, but no upgrade was requested"
+  | .unsupportedCoding =>
+    .protocol "a transfer coding other than chunked, which the client cannot decode"
+  | .closed => .peerClosed
 
 /--
-Encodes a request.  `head` must already carry its `Host` field; framing fields are replaced by a
-`Content-Length` for `body` (none for a bodiless request whose method does not anticipate one), and
-`Connection: close` is added unless `config.keepAlive`.  Fails with `invalidRequest` if the machine
-refuses the head.
-
-The body limit, `config.maxBody` decoded bytes, is enforced by the core rather than by the machine,
-which would refuse an oversized `Content-Length` before reporting the head: a caller is better served
-by an error that carries the status and says the response was received.  So the machine's body limit
-is set above every `Content-Length` it can parse: a field value has at most
-`config.h1.maxHeaderValueLength` characters, and fewer than `config.h1.maxHeaderBytes` (which its
-whole field line counts against), so a length of at most that many digits is below `10` to that
-power.  Building that number costs about 0.42 bytes per digit, a few kilobytes with the defaults.  Its
-chunk limit only applies once the head has been reported, and both are at least `2 ^ 62`, far above
-any body the core accepts.  The machine still bounds the input it buffers by `maxBody` plus its
-header allowances.
+Encodes a request.  `head` must already carry its `Host` field; its framing fields are replaced by
+a `Content-Length` for `body` (none for a bodiless request whose method does not anticipate one), and
+its `Connection` fields by `Connection: close` unless the connection is to be kept alive
+(`Codec.encodeRequest`).  The prepared configuration keeps `keepAlive` on only if the head allows
+it.
 -/
-def prepare (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) :
-    Except Cause PreparedRequest := do
-  -- The machine's own limits are lifted out of the way of the core's (`pullAvailable`).
-  let lifted := 2 ^ 62
-  let h1 := { config.h1 with
-    enableKeepAlive := config.keepAlive
-    maxBodySize := max lifted (10 ^ min config.h1.maxHeaderValueLength config.h1.maxHeaderBytes)
-    maxChunkSize := lifted
-    maxBufferedBodyBytes := some config.maxBody }
-  let headers := head.headers
-    |>.erase Header.Name.contentLength
-    |>.erase Header.Name.transferEncoding
-  let head := { head with headers }
-  let machine : H1.Machine .sending := { config := h1 }
-  let machine := machine.setKnownSize (.fixed body.size)
-  let machine := machine.send head
-  let machine := if body.isEmpty then machine else machine.sendData #[{ data := body }]
-  let machine := machine.userClosedBody
-  let (machine, result) := machine.step
-  let refused := result.events.any fun | .failed _ => true | _ => false
-  if refused || machine.failed || machine.error.isSome then
-    throw (.invalidRequest "the HTTP/1.1 machine refused the request head")
-  let bytes := result.output.toByteArray
-  return { config, machine, method := head.method, bytes, headBytes := bytes.size - body.size }
+def prepare (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) : PreparedRequest :=
+  let encoded := Codec.encodeRequest config.keepAlive head body
+  { config := { config with keepAlive := encoded.keepAlive }, method := head.method,
+    bytes := encoded.bytes, headBytes := encoded.headBytes }
 
 /--
 `true` once the exchange has finished or failed.
@@ -601,11 +502,23 @@ def nextDeadline (ex : Exchange) : Option Timestamp :=
     some (timers.foldl min ex.deadline)
 
 /--
+Interim responses read so far.
+-/
+def interim (ex : Exchange) : Nat :=
+  ex.parser.interim
+
+/--
+`true` once the response ended and the caller has received all of its body.
+-/
+def bodyDone (ex : Exchange) : Bool :=
+  ex.parser.complete && ex.held.isEmpty
+
+/--
 Whether the connection may be reused if the exchange ended now.
 -/
 def reusableNow (ex : Exchange) : Bool :=
-  ex.config.keepAlive && ex.machine.keepAlive && ex.framing.certain && ex.bodyDone &&
-    ex.written == ex.request.size && !ex.early && !ex.inputEnded && !ex.machine.hasBufferedInput
+  ex.config.keepAlive && ex.parser.reusable && ex.held.isEmpty &&
+    ex.written == ex.request.size && !ex.early && !ex.inputEnded
 
 /--
 Whether the core wants input now.
@@ -614,42 +527,16 @@ def wantsInput (ex : Exchange) : Bool :=
   !ex.inputEnded &&
     match ex.phase with
     | .awaitingHead | .draining => true
-    | .receiving => !ex.bodyDone && ex.credit > 0
+    | .receiving => !ex.parser.complete && ex.held.isEmpty && ex.credit > 0
     | _ => false
 
 /--
-`Reaches body s r`: running `body` zero or more times from `s` can end in `r`.
+`true` when the body still to come is announced larger than what `limit` leaves, given `used`.
 -/
-inductive Reaches {σ : Type} (body : σ → Bool × σ) : σ → σ → Prop where
-  /--
-  Zero runs.
-  -/
-  | refl (s : σ) : Reaches body s s
-
-  /--
-  One more run.
-  -/
-  | tail {s t : σ} : Reaches body s t → Reaches body s (body t).2
-
-instance {σ : Type} (body : σ → Bool × σ) (s : σ) : Inhabited { r // Reaches body s r } :=
-  ⟨⟨s, .refl s⟩⟩
-
-/--
-Runs `body` from `s` until it returns `false`, and returns the last state.  Nothing bounds how often
-`body` runs (it runs the HTTP/1.1 machine, which may always make progress as far as a proof can
-tell), so this is a `partial def`, whose result no proof can compute; its type says all that can be
-known of it, that the result is reached from `s` by runs of `body`.
--/
-partial def loopWhile {σ : Type} (body : σ → Bool × σ) (s : σ) : { r // Reaches body s r } :=
-  go s (.refl s)
-where
-  /--
-  Carries the evidence for the state reached so far.
-  -/
-  go (t : σ) (h : Reaches body s t) : { r // Reaches body s r } :=
-    match hb : body t with
-    | (true, t') => go t' (by simpa [hb] using h.tail)
-    | (false, t') => ⟨t', by simpa [hb] using h.tail⟩
+def announcedOver (ex : Exchange) (used limit : Nat) : Bool :=
+  match ex.parser.phase with
+  | .body (.fixed remaining) => used + remaining > limit
+  | _ => false
 
 /--
 The state of one step: the exchange and the actions emitted so far.
@@ -713,179 +600,115 @@ private def stopUpload : StepM Unit :=
     { ex with uploadStopped := true, writeBy := none, readBy }
 
 /--
-`true` when the body still to come is announced larger than what `limit` leaves, given `used`.
+Delivers every held body piece, in order, if the caller has credit (all of them, so that bytes
+already read are never held back from a caller that wants more, as the machine's buffered bytes were
+not); returns the credit left, the pieces still held and the actions.
 -/
-private def announcedOver (ex : Exchange) (used limit : Nat) : Bool :=
-  match ex.machine.reader.state with
-  | .readBody (.fixed remaining) => used + remaining > limit
-  | _ => false
+def releaseList : Nat → List ByteArray → Array ExchangeAction →
+    Nat × List ByteArray × Array ExchangeAction
+  | 0, held, acts => (0, held, acts)
+  | credit + 1, held, acts =>
+    (credit + 1 - min (credit + 1) (held.foldl (· + ·.size) 0), [],
+      held.foldl (fun a b => a.push (.deliverBody b)) acts)
 
 /--
-Handles one event of the machine.  Returns whether it changed anything the loop must act on.
+Delivers the held body bytes the caller has credit for, while receiving.
 -/
-private def handleH1Event : H1.Event .sending → StepM Bool
-  | .endHeaders head => do
-    let head : Response.Head := head
-    let ex ← getEx
-    if ex.terminal then
-      return false
-    if head.status.isInformational then
-      if head.status.toCode == 101 then
-        failNow (.protocol "101 Switching Protocols, but no upgrade was requested")
-      else
-        let ex := { ex with interim := ex.interim + 1 }
-        setEx ex
-        if ex.interim > ex.config.maxInterim then failNow (.limit .interim)
-      return true
-    else if ex.head.isSome then
-      failNow (.protocol "a second final response head")
-      return true
-    else
-      let framing := Framing.ofResponse ex.method head
-      setEx { ex with
-        head := some head, framing, phase := .receiving, early := ex.written < ex.request.size }
-      emit (.deliverHead head)
-      if let some cause := refusal ex.config head framing then failNow cause
-      return true
-  | .closeBody => do
-    -- The machine also closes the (empty) body of each interim response; only the final
-    -- response's counts.
-    let ex ← getEx
-    if ex.head.isSome then setEx { ex with bodyDone := true }
-    return true
-  | .failed err => do
-    failOrDrop (causeOfH1Error err)
-    return true
-  | .needMoreData _ | .close | .needAnswer | .next | .continue => return false
-
-/--
-Handles a batch of events of the machine in order.
--/
-private def handleH1Events (events : Array (H1.Event .sending)) : StepM Bool :=
-  events.foldlM (init := false) fun progressed event => do
-    let p ← handleH1Event event
-    return progressed || p
-
-/--
-One round of `pullAvailable`: pulls at most one body chunk.  Returns `none` when it pulled one and
-another round may follow, and otherwise `some changed`, where `changed` is whether this round changed
-anything the caller must act on beyond what the rounds before it changed.
--/
-private def pullOnce : StepM (Option Bool) := do
-  let ex ← getEx
-  if ex.terminal || ex.bodyDone || !ex.machine.canPullBodyNow then
-    return some false
-  match ex.phase with
+private def release : StepM Unit := fun s =>
+  match s.1.phase with
   | .receiving =>
-    if ex.credit == 0 then
-      -- Without credit nothing may be delivered, but a pull that yields no bytes (the end of a
-      -- chunked or close-delimited body, or the news that more input is needed) is kept: the core
-      -- is pure, so the pull can be tried and dropped if it yields bytes.
-      let (machine, chunk?) := ex.machine.pullBody
-      match chunk? with
-      | some pulled =>
-        if !pulled.chunk.data.isEmpty then return some false
-        setEx { ex with machine, bodyDone := ex.bodyDone || pulled.final }
-        return none
-      | none =>
-        setEx { ex with machine }
-        return some false
-    if announcedOver ex ex.bodyBytes ex.config.maxBody then
-      failNow (.limit .body)
-      return some true
-    let (machine, chunk?) := ex.machine.pullBody
-    let ex := { ex with machine }
-    setEx ex
-    let some pulled := chunk? | return some false
-    let data := pulled.chunk.data
-    if ex.bodyBytes + data.size > ex.config.maxBody then
-      failNow (.limit .body)
-      return some true
-    setEx { ex with
-      bodyBytes := ex.bodyBytes + data.size
-      credit := ex.credit - min ex.credit data.size
-      bodyDone := ex.bodyDone || pulled.final }
-    unless data.isEmpty do emit (.deliverBody data)
-    return none
+    let r := releaseList s.1.credit s.1.held s.2
+    ((), ({ s.1 with credit := r.1, held := r.2.1 }, r.2.2))
+  | _ => ((), s)
+
+/--
+Delivers the final head the parser reported.
+-/
+private def onHead (h : Codec.Head) : StepM Unit := do
+  let ex ← getEx
+  if ex.terminal || ex.head.isSome then return
+  setEx { ex with
+    head := some h.response, phase := .receiving, early := decide (ex.written < ex.request.size) }
+  emit (.deliverHead h.response)
+
+/--
+Takes body bytes the parser delivered: while draining they are counted and discarded, within the
+drain limit; otherwise they are held, and delivered as far as the caller's credit goes.
+-/
+private def onBodies (bodies : List ByteArray) : StepM Unit := do
+  let ex ← getEx
+  match ex.phase with
   | .draining =>
-    if announcedOver ex ex.drained ex.config.drainBytes then
-      finishNow false
-      return some true
-    let (machine, chunk?) := ex.machine.pullBody
-    let ex := { ex with machine }
-    setEx ex
-    let some pulled := chunk? | return some false
-    let ex := { ex with drained := ex.drained + pulled.chunk.data.size }
-    setEx { ex with bodyDone := ex.bodyDone || pulled.final }
-    if ex.drained > ex.config.drainBytes then
-      finishNow false
-      return some true
-    return none
-  | _ => return some false
+    let drained := bodies.foldl (· + ·.size) ex.drained
+    setEx { ex with drained }
+    if drained > ex.config.drainBytes then finishNow false
+  | _ =>
+    setEx { ex with held := ex.held ++ bodies }
+    release
 
 /--
-One round of `pullAvailable` on the state and the flag that says whether anything changed so far;
-returns whether to go on.
+The head among a batch of the parser's events, if there is one.
 -/
-private def pullRound : Bool × (Exchange × Array ExchangeAction) →
-    Bool × (Bool × (Exchange × Array ExchangeAction))
-  | (progressed, s) =>
-    match pullOnce.run s with
-    | (none, s) => (true, (true, s))
-    | (some changed, s) => (false, (progressed || changed, s))
+def headOf (events : Array Codec.Event) : Option Codec.Head :=
+  events.findSome? fun | .head h => some h | _ => none
 
 /--
-Pulls the body chunks the machine can produce now: as many as the caller's credit allows while
-receiving, and all of them, discarded, while draining.  Returns whether anything changed, or
-`progressed` if nothing did.
+The non-empty body pieces among a batch of the parser's events, in order.
 -/
-private def pullAvailable (progressed : Bool) : StepM Bool := fun s =>
-  (loopWhile pullRound (progressed, s)).1
+def bodiesOf (events : Array Codec.Event) : List ByteArray :=
+  events.toList.filterMap fun | .body b => if b.isEmpty then none else some b | _ => none
 
 /--
-After the machine has made all the progress it can: finishes the exchange if the body ended, or
-fails it if input ended and what is missing can never come.
+The rejection among a batch of the parser's events, if there is one.
+-/
+def errorOf (events : Array Codec.Event) : Option Codec.Error :=
+  events.findSome? fun | .error e => some e | _ => none
+
+/--
+Delivers a head the parser reported, if it reported one.
+-/
+private def onHead? : Option Codec.Head → StepM Unit
+  | some h => onHead h
+  | none => pure ()
+
+/--
+Fails the exchange for a rejection by the parser, if there was one.
+-/
+private def onError? : Option Codec.Error → StepM Unit
+  | some e => failOrDrop (causeOf e)
+  | none => pure ()
+
+/--
+Acts on a batch of the parser's events.  A batch is a head, body bytes, then the end or a rejection,
+each perhaps missing (`Codec.reach_shape`), so the three are taken in that order.
+-/
+private def onEvents (events : Array Codec.Event) : StepM Unit := do
+  onHead? (headOf events)
+  onBodies (bodiesOf events)
+  onError? (errorOf events)
+
+/--
+After the parser has taken what it was given: finishes the exchange once the response ended and the
+caller has the whole body, and gives up a drain whose announced rest exceeds the drain limit.
 -/
 private def settle : StepM Unit := do
   let ex ← getEx
   if ex.terminal then return
-  let ending := match ex.phase with | .receiving | .draining => true | _ => false
-  if ending && ex.bodyDone then
-    finishNow true
-  else if ex.inputEnded then
-    -- With no credit the caller may still pull body bytes the machine holds, so nothing is decided
-    -- yet; `pullAvailable` has already found out whether the machine needs input it cannot get.
-    let callerCanPull := match ex.phase with
-      | .receiving => ex.credit == 0 && ex.machine.canPullBodyNow
-      | _ => false
-    unless callerCanPull do
-      if ex.machine.failed then
-        failOrDrop (.protocol (ex.machine.error.map toString |>.getD "failed"))
-      else
-        failOrDrop .peerClosed
+  match ex.phase with
+  | .receiving =>
+    if ex.bodyDone then finishNow true
+  | .draining =>
+    if ex.bodyDone then finishNow true
+    else if ex.announcedOver ex.drained ex.config.drainBytes then finishNow false
+  | _ => pure ()
 
 /--
-One round of `absorb`: steps the machine once and acts on what it reports.  Returns whether another
-round may make progress.
+Hands what the parser made of new input to `onEvents`, then settles.
 -/
-private def absorbOnce : StepM Bool := do
-  let ex ← getEx
-  if ex.terminal then return false
-  let (machine, result) := ex.machine.step
-  setEx { ex with machine }
-  let p₁ ← handleH1Events result.events
-  let p₂ ← pullAvailable false
-  let ex ← getEx
-  let (machine, events) := ex.machine.takeEvents
-  setEx { ex with machine }
-  let p₃ ← handleH1Events events
-  return (p₁ || p₂ || p₃) && !(← getEx).terminal
-
-/--
-Runs the machine until it can make no more progress without new input or credit, then settles.
--/
-private def absorb : StepM Unit := fun s =>
-  settle.run (loopWhile absorbOnce.run s).1
+private def absorb (r : Codec.Parser × Array Codec.Event) : StepM Unit := do
+  modifyEx ({ · with parser := r.1 })
+  onEvents r.2
+  settle
 
 /--
 Handles one event from the shell.
@@ -902,17 +725,17 @@ private def handle : ExchangeEvent → StepM Unit
         -- No response can be due before the server has the whole request head: never parse this.
         failNow (.protocol "bytes arrived before the request head was written")
       | _ =>
-        setEx { ex with machine := ex.machine.feed bytes }
-        absorb
+        -- Bytes after the end of input (which no read can return) are ignored.
+        unless ex.inputEnded do absorb (ex.parser.feed bytes)
   | .endOfInput => do
     let ex ← getEx
+    let wasEnded := ex.inputEnded
     let ex := { ex with readInFlight := false, readBy := none, inputEnded := true }
     setEx ex
+    if wasEnded then return
     match ex.phase with
     | .sending => failNow .peerClosed
-    | _ =>
-      setEx { ex with machine := ex.machine.noMoreInput }
-      absorb
+    | _ => absorb ex.parser.finish
   | .written count => do
     let ex ← getEx
     let some len := ex.writeInFlight | return
@@ -944,20 +767,26 @@ private def handle : ExchangeEvent → StepM Unit
   | .wantBody bytes => do
     let ex ← getEx
     setEx { ex with credit := ex.credit + bytes }
-    if ex.phase matches .receiving then absorb
+    if ex.phase matches .receiving then
+      release
+      settle
   | .tick => pure ()
   | .abandon => do
     let ex ← getEx
+    let ex := { ex with abandoned := true }
+    setEx ex
     match ex.phase with
     | .sending | .awaitingHead => failNow .localClose
     | .receiving =>
+      let drained := ex.held.foldl (· + ·.size) 0
       let worthDraining :=
-        ex.config.keepAlive && ex.machine.keepAlive && ex.framing.certain && !ex.early &&
-          ex.written == ex.request.size && !ex.inputEnded &&
-          !announcedOver ex 0 ex.config.drainBytes
+        ex.config.keepAlive && ex.parser.head.any (·.keepAlive) && ex.parser.certain && !ex.early &&
+          ex.written == ex.request.size && !ex.inputEnded && drained ≤ ex.config.drainBytes &&
+          !ex.announcedOver drained ex.config.drainBytes
       if worthDraining then
-        setEx { ex with phase := .draining, drainBy := some (ex.now + ex.config.drainMs) }
-        absorb
+        setEx { ex with
+          phase := .draining, held := [], drained, drainBy := some (ex.now + ex.config.drainMs) }
+        settle
       else
         finishNow false
     | _ => pure ()
@@ -1036,8 +865,8 @@ the exchange and the first actions: the first write, or a failure if the deadlin
 -/
 def begin (req : PreparedRequest) (now deadline : Timestamp) : Exchange × Array ExchangeAction :=
   let ex : Exchange := {
-    config := req.config, machine := req.machine, method := req.method, request := req.bytes,
-    headBytes := req.headBytes, deadline, now }
+    config := req.config, parser := Codec.Parser.start req.config.codec req.method,
+    method := req.method, request := req.bytes, headBytes := req.headBytes, deadline, now }
   let ((), (ex, actions)) := (do expire; schedule : StepM Unit).run (ex, #[])
   (ex, actions)
 

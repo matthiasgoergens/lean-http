@@ -1,14 +1,19 @@
 import Tests.Support.Gen
 import Tests.Support.Drive
 import Tests.Support.CodecDrive
+import Tests.Support.MachineCore
 
 /-!
 # Differential test: the response codec against the vendored machine
 
-Runs the response codec (`LeanHttp.Codec`) and the exchange core over the vendored HTTP/1.1 machine
-on the same responses, and compares what they make of them: the outcome (done with its status,
-interim count and body, failed with its cause, or pending), the head (version and fields) and the
-reuse verdict.  The exchange core runs with `keepAlive` on, so that its verdict means something.
+Runs the response codec (`LeanHttp.Codec`) and the former exchange core over the vendored HTTP/1.1
+machine (`Tests/Support/MachineCore.lean`, the "machine" below) on the same responses, and compares
+what they make of them: the outcome (done with its status, interim count and body, failed with its
+cause, or pending), the head (version and fields) and the reuse verdict.  Both cores run with
+`keepAlive` on, so that their verdicts mean something.  The exchange core, which now runs the codec
+(the "core"), is compared with the codec alone in the same way, and must agree with it on every input
+and every cut.  Request encodings are compared too: the core's serialiser against the machine's
+writer, on generated request heads.
 
 The responses are the shapes of `Tests/Support/CodecCases.lean`, responses generated at random from a grammar
 with deliberate faults, and mutations of both (bytes flipped, inserted, deleted, lines duplicated,
@@ -64,6 +69,16 @@ def coreOutcome (r : Run) : Outcome :=
       reuse := some reusable }
   | _, _ => { kind := "pending", head }
 
+/-- The machine core's outcome. -/
+def machineOutcome (r : MachineCore.Run) : Outcome :=
+  let head := r.head.map renderHead |>.getD ""
+  match r.ended, r.head with
+  | some (.fail f), _ => { kind := s!"failed {repr f.cause}", head }
+  | some (.finish reusable), some h =>
+    { kind := s!"done {h.status.toCode} interim={r.ex.interim}", body := r.body, head,
+      reuse := some reusable }
+  | _, _ => { kind := "pending", head }
+
 /-- The codec's outcome. -/
 def codecOutcome (r : CodecRun) : Outcome :=
   let head := r.head?.map (renderHead ·.response) |>.getD ""
@@ -94,6 +109,10 @@ def compare (a b : Outcome) (withReuse : Bool) (na : String := "core") (nb : Str
 
 /-- The exchange core's configuration for some limits, with keep-alive on. -/
 def coreConfig (l : Limits) : ExchangeConfig :=
+  { limits := codecConfig l, maxInterim := l.maxInterim, maxBody := l.maxBody, keepAlive := true }
+
+/-- The machine core's configuration for some limits, with keep-alive on. -/
+def machineConfig (l : Limits) : MachineCore.ExchangeConfig :=
   { h1 := l.h1, maxInterim := l.maxInterim, maxBody := l.maxBody, keepAlive := true }
 
 /-- One input, with how to run it. -/
@@ -115,8 +134,15 @@ def runCore (i : Input) (pieces : List ByteArray) : Outcome × Outcome :=
   let r := pieces.foldl Run.feed r
   (coreOutcome r, coreOutcome r.endOfInput)
 
+/-- Runs the machine core over `pieces`; returns the outcomes without and with end of input. -/
+def runMachine (i : Input) (pieces : List ByteArray) : Outcome × Outcome :=
+  let r := MachineCore.Run.written
+    (MachineCore.prepare! (machineConfig i.limits) (requestHead i.method) .empty)
+  let r := pieces.foldl MachineCore.Run.feed r
+  (machineOutcome r, machineOutcome r.endOfInput)
+
 /-- Runs the codec over `pieces`; returns the outcomes without and with end of input.  With `control`,
-the codec runs with limits one off from the exchange core's, so that disagreements must appear. -/
+the codec runs with limits one off from the machine core's, so that disagreements must appear. -/
 def runCodec (i : Input) (pieces : List ByteArray) (control : Bool := false) : Outcome × Outcome :=
   let cfg := codecConfig i.limits
   let cfg := if control then
@@ -367,14 +393,14 @@ def relaxBody (l : Limits) : Limits := { l with maxBody := 2 ^ 40 }
 def relaxChunkLine (l : Limits) : Limits := { l with h1 := { l.h1 with maxChunkLineLength := 2 ^ 20 } }
 
 /--
-Why the codec and the exchange core disagree on an input: an HTTP/1.0 response saying both
+Why the codec and the machine core disagree on an input: an HTTP/1.0 response saying both
 `keep-alive` and `close` (which the codec does not keep, RFC 9112 section 9.3), or a limit, found by
 relaxing one limit at a time until they agree.
 -/
 def attributeCodec (i : Input) (eof : Bool) (control : Bool) : String := Id.run do
   let head := (codecRun (codecConfig i.limits) i.method [i.bytes] false).head?
   let agree (i' : Input) : Bool :=
-    let (a, ae) := runCore i' [i'.bytes]
+    let (a, ae) := runMachine i' [i'.bytes]
     let (b, be) := runCodec i' [i'.bytes] control
     if eof then (compare ae be false).isNone else (compare a b true).isNone
   if let some h := head then
@@ -388,11 +414,11 @@ def attributeCodec (i : Input) (eof : Bool) (control : Bool) : String := Id.run 
   if agree (i.withLimits (relaxChunkLine ∘ relaxBody)) then return "body and chunk-size line limits"
   return "UNEXPLAINED"
 
-/-- Why the exchange core's outcome depends on how its input is cut, found the same way. -/
-def attributeCore (i : Input) (pieces : List ByteArray) (eof : Bool) : String :=
+/-- Why the machine core's outcome depends on how its input is cut, found the same way. -/
+def attributeMachine (i : Input) (pieces : List ByteArray) (eof : Bool) : String :=
   let agree (i' : Input) : Bool :=
-    let (a, ae) := runCore i' [i'.bytes]
-    let (b, be) := runCore i' pieces
+    let (a, ae) := runMachine i' [i'.bytes]
+    let (b, be) := runMachine i' pieces
     if eof then (compare ae be false).isNone else (compare a b false).isNone
   if agree (i.withLimits relaxBody) then "body limit"
   else if agree (i.withLimits relaxChunkLine) then "chunk-size line limit"
@@ -401,29 +427,85 @@ def attributeCore (i : Input) (pieces : List ByteArray) (eof : Bool) : String :=
 /-- Runs one input through every comparison. -/
 def check (f : Findings) (i : Input) (pieces : List ByteArray) (control : Bool) : Findings := Id.run do
   let mut f := f
-  let (core, coreEof) := runCore i [i.bytes]
+  let (machine, machineEof) := runMachine i [i.bytes]
   let (codec, codecEof) := runCodec i [i.bytes] control
+  let (core, coreEof) := runCore i [i.bytes]
   -- How often each outcome occurs, to show what the inputs exercise.
-  f := f.add s!"(outcome, open) {core.kind}" ""
-  f := f.add s!"(outcome, eof) {coreEof.kind}" ""
-  let (coreS, coreEofS) := runCore i pieces
+  f := f.add s!"(outcome, open) {machine.kind}" ""
+  f := f.add s!"(outcome, eof) {machineEof.kind}" ""
+  let (machineS, machineEofS) := runMachine i pieces
   let (codecS, codecEofS) := runCodec i pieces control
+  let (coreS, coreEofS) := runCore i pieces
   let desc := s!"[{i.origin} {repr i.method} limits={describeLimits i.limits}] {escape i.bytes}"
   let cutDesc := s!"{desc} cut={pieces.map (·.size)}"
   let detail (d : String) (base : String) := if d.isEmpty then base else s!"{d}: {base}"
-  if let some (k, d) := compare core codec true then
-    f := f.add s!"codec vs core, open: {k} [{attributeCodec i false control}]" (detail d desc)
-  if let some (k, d) := compare coreEof codecEof false then
-    f := f.add s!"codec vs core, eof: {k} [{attributeCodec i true control}]" (detail d desc)
-  if let some (k, d) := compare core coreS false "whole" "cut" then
-    f := f.add s!"core split-dependence, open: {k} [{attributeCore i pieces false}]" (detail d cutDesc)
-  if let some (k, d) := compare coreEof coreEofS false "whole" "cut" then
-    f := f.add s!"core split-dependence, eof: {k} [{attributeCore i pieces true}]" (detail d cutDesc)
+  if let some (k, d) := compare machine codec true "machine" "codec" then
+    f := f.add s!"codec vs machine, open: {k} [{attributeCodec i false control}]" (detail d desc)
+  if let some (k, d) := compare machineEof codecEof false "machine" "codec" then
+    f := f.add s!"codec vs machine, eof: {k} [{attributeCodec i true control}]" (detail d desc)
+  if let some (k, d) := compare machine machineS false "whole" "cut" then
+    f := f.add s!"machine split-dependence, open: {k} [{attributeMachine i pieces false}]" (detail d cutDesc)
+  if let some (k, d) := compare machineEof machineEofS false "whole" "cut" then
+    f := f.add s!"machine split-dependence, eof: {k} [{attributeMachine i pieces true}]" (detail d cutDesc)
   if let some (k, d) := compare codec codecS true "whole" "cut" then
     f := f.add s!"CODEC split-dependence, open: {k}" (detail d cutDesc)
   if let some (k, d) := compare codecEof codecEofS true "whole" "cut" then
     f := f.add s!"CODEC split-dependence, eof: {k}" (detail d cutDesc)
+  -- The core runs the codec: it must agree with it, whole and cut, open and at end of input.
+  -- The reuse verdict is compared over the whole input without end of input only, as for the
+  -- machine: the core decides it when the response ends, before any later read or end of input,
+  -- which the codec run over everything then sees.  Without `control` only: with it, the codec's
+  -- limits are off by one on purpose.
+  if !control then
+    if let some (k, d) := compare core codec true "core" "codec" then
+      f := f.add s!"CORE vs codec, open: {k}" (detail d desc)
+    if let some (k, d) := compare coreEof codecEof false "core" "codec" then
+      f := f.add s!"CORE vs codec, eof: {k}" (detail d desc)
+    if let some (k, d) := compare coreS codecS false "core" "codec" then
+      f := f.add s!"CORE vs codec, open, cut: {k}" (detail d cutDesc)
+    if let some (k, d) := compare coreEofS codecEofS false "core" "codec" then
+      f := f.add s!"CORE vs codec, eof, cut: {k}" (detail d cutDesc)
   return f
+
+/-! ## Request encodings -/
+
+/-- A random request head: method, version, and fields that bear on framing and keep-alive. -/
+def genRequest : Gen (Request.Head × ByteArray × Bool) := do
+  let method ← pick [Method.get, .head, .post, .put, .delete, .options, .patch, .trace]
+  let version ← pickWeighted [(9, Version.v11), (1, .v10)]
+  let candidates : List (String × List String) := [
+    ("Connection", ["close", "keep-alive", "upgrade", "Keep-Alive, foo", "close, keep-alive", "x y"]),
+    ("Content-Length", ["0", "5", "12"]),
+    ("Transfer-Encoding", ["chunked", "gzip, chunked"]),
+    ("Content-Type", ["application/json"]),
+    ("User-Agent", ["t/1"]),
+    ("X-Custom", ["a", "b c"])]
+  let mut headers := Headers.empty.insert Header.Name.host (.mk "example.test")
+  for _ in [0:(← below 5)] do
+    let (name, values) ← pick candidates
+    headers := headers.insert (Header.Name.ofString! name) (Header.Value.ofString! (← pick values))
+  let body := ByteArray.mk (Array.replicate (← pick [0, 0, 1, 7, 300]) 'b'.toUInt8)
+  let keepAlive := (← below 2) == 0
+  let head : Request.Head :=
+    { method, version, uri := .originForm { segments := #[], absolute := true } none, headers }
+  return (head, body, keepAlive)
+
+/-- Compares the two encodings of one request; records a disagreement or a refusal. -/
+def checkRequest (f : Findings) (head : Request.Head) (body : ByteArray) (keepAlive : Bool) :
+    Findings := Id.run do
+  let mine := Exchange.prepare { keepAlive } head body
+  let desc := s!"{escape mine.bytes} keepAlive={keepAlive}"
+  match MachineCore.Exchange.prepare { keepAlive } head body with
+  | .error _ => return f.add "REQUEST refused by the machine" desc
+  | .ok theirs =>
+    let mut f := f.add "(requests) compared" ""
+    if theirs.bytes.data != mine.bytes.data then
+      f := f.add "REQUEST bytes differ" s!"machine {escape theirs.bytes} / core {desc}"
+    if theirs.headBytes != mine.headBytes then
+      f := f.add "REQUEST head length differs" s!"machine {theirs.headBytes} / core {mine.headBytes}: {desc}"
+    if theirs.machine.keepAlive != mine.config.keepAlive then
+      f := f.add "REQUEST keep-alive differs" s!"machine {theirs.machine.keepAlive}: {desc}"
+    return f
 
 def main (args : List String) : IO UInt32 := do
   let seed := (args[0]?.bind String.toNat?).getD 1
@@ -463,9 +545,16 @@ def main (args : List String) : IO UInt32 := do
     f := check f i pieces control
     total := total + 1
   IO.println s!"{total} inputs, each run whole and cut, open and at end of input"
+  -- Request encodings.
+  let requests := generated / 10
+  for _ in [0:requests] do
+    let ((head, body, keepAlive), r) := genRequest.run rng
+    rng := r
+    f := checkRequest f head body keepAlive
+  IO.println s!"{requests} generated requests encoded by both"
   let all := f.toList.mergeSort fun a b => a.1 ≤ b.1
-  let (stats, classes) := all.partition (·.1.startsWith "(outcome")
-  IO.println "outcomes of the exchange core (whole input):"
+  let (stats, classes) := all.partition (·.1.startsWith "(")
+  IO.println "outcomes of the machine core (whole input), and requests compared:"
   for (key, (n, _)) in stats do
     IO.println s!"  {n} {key}"
   IO.println s!"{classes.length} classes of disagreement"

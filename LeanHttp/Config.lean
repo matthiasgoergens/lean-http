@@ -1,6 +1,6 @@
 module
 
-public import LeanHttpProto.Http.Protocol.H1.Config
+public import LeanHttp.Codec.Basic
 
 public section
 
@@ -98,9 +98,9 @@ structure Config where
   writeChunkBytes : Nat := 64 * 1024
 
   /--
-  Parser limits for the response head and framing.  The client sets `enableKeepAlive`,
-  `maxBodySize` and `maxChunkSize` itself from the fields above.
+  Parser limits for the response head and framing.  Their `maxInterim` and `maxBody` are replaced
+  by `maxInterimResponses` and `maxBodyBytes` above.
   -/
-  h1 : LeanHttpProto.Http.Protocol.H1.Config := {}
+  limits : Codec.Config := {}
 
 end LeanHttp

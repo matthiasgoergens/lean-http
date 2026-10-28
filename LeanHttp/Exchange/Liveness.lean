@@ -7,7 +7,7 @@ import all LeanHttp.Exchange.Proofs
 # Deadlines ahead, and liveness
 
 Two properties of the exchange core beyond those of `LeanHttp.Exchange.Proofs`, which this module
-builds on.  Like those, they hold whatever the HTTP/1.1 machine does.
+builds on.  Like those, they hold whatever the response parser returns.
 
 - **A live exchange has a deadline ahead** (`Reachable.deadlineAhead`).  Every reachable exchange
   that has not ended has a next deadline strictly after its clock and no later than the deadline of
@@ -38,7 +38,7 @@ reaches the next deadline) is not proved.
 
 namespace LeanHttp.Exchange
 
-open Std.Http LeanHttpProto.Http.Protocol
+open Std.Http
 
 /-! ## The timers' invariant -/
 
@@ -119,8 +119,8 @@ theorem stopUpload_timers {s : S} (h : Timers s.1) : Timers (stopUpload.run s).2
 
 /-- Delivering the final head: no head yet, so not draining, so no drain deadline. -/
 theorem Timers.receive {ex : Exchange} (h : Timers ex) (hh : ex.head.isSome = false)
-    (head : Response.Head) (fr : Framing) (early : Bool) :
-    Timers { ex with head := some head, framing := fr, phase := .receiving, early } := by
+    (head : Response.Head) (early : Bool) :
+    Timers { ex with head := some head, phase := .receiving, early } := by
   have hdb : ex.drainBy.isSome = false := by
     cases hd : ex.drainBy.isSome
     · rfl
@@ -130,170 +130,78 @@ theorem Timers.receive {ex : Exchange} (h : Timers ex) (hh : ex.head.isSome = fa
   exact ⟨h.writeBy, h.inFlightPos, fun h' => (by simp only at h'; rw [hdb] at h'; cases h'),
     fun h' => (by cases h'), fun h' => (by cases h'), fun h' => (by cases h')⟩
 
-theorem handleH1Event_timers {s : S} (e : H1.Event .sending) (h : Timers s.1) :
-    Timers ((handleH1Event e).run s).2.1 := by
+theorem release_timers {s : S} (h : Timers s.1) : Timers (release.run s).2.1 := by
   obtain ⟨ex, acts⟩ := s
-  cases e with
-  | endHeaders head =>
-    simp only [handleH1Event, bind_run, getEx_run]
-    rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;> simp only [ht, ↓reduceIte]
-    · exact h
-    rcases Bool.eq_false_or_eq_true head.status.isInformational with hi | hi <;>
-      simp only [hi, ↓reduceIte, Bool.false_eq_true]
-    · rcases Bool.eq_false_or_eq_true (head.status.toCode == 101) with hc | hc <;>
-        simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-      · exact failNow_timers _ _ h
-      · have h' := h.agree (b := { ex with interim := ex.interim + 1 }) (by tagree_rfl)
-        by_cases hn : ex.interim + 1 > ex.config.maxInterim <;> simp only [hn, ↓reduceIte, bind_run]
-        · exact failNow_timers _ _ h'
-        · exact h'
-    · rcases Bool.eq_false_or_eq_true ex.head.isSome with hh | hh <;>
-        simp only [hh, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
-      · exact failNow_timers _ _ h
-      · have h' := h.receive hh head (Framing.ofResponse ex.method head)
-          (decide (ex.written < ex.request.size))
-        split
-        · simp only [bind_run]
-          exact failNow_timers _ _ h'
-        · exact h'
-  | closeBody =>
-    simp only [handleH1Event, bind_run, getEx_run]
-    rcases Bool.eq_false_or_eq_true ex.head.isSome with hh | hh <;>
-      simp only [hh, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-    · exact h.agree (by tagree_rfl)
-    · exact h
-  | failed err =>
-    simp only [handleH1Event, bind_run]
-    exact failOrDrop_timers _ _ h
-  | _ => exact h
-
-theorem handleH1Events_timers {s : S} (events : Array (H1.Event .sending)) (h : Timers s.1) :
-    Timers ((handleH1Events events).run s).2.1 := by
-  unfold handleH1Events
-  rw [← Array.foldlM_toList]
-  generalize events.toList = l
-  generalize false = b
-  induction l generalizing s b with
-  | nil => exact h
-  | cons e l ih =>
-    simp only [List.foldlM_cons, bind_run]
-    exact ih (handleH1Event_timers e h) _
-
-theorem pullOnce_timers {s : S} (h : Timers s.1) : Timers (pullOnce.run s).2.1 := by
-  obtain ⟨ex, acts⟩ := s
-  simp only [pullOnce, getEx_bind_run]
-  rcases Bool.eq_false_or_eq_true (ex.terminal || ex.bodyDone || !ex.machine.canPullBodyNow)
-    with hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
-  · exact h
+  rw [release_run]
   split
-  · rcases Bool.eq_false_or_eq_true (ex.credit == 0) with hc | hc <;>
-      simp only [hc, ↓reduceIte, Bool.false_eq_true]
-    · split
-      · rename_i pulled _
-        rcases Bool.eq_false_or_eq_true (!pulled.chunk.data.isEmpty) with he | he <;>
-          simp only [he, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-        · exact h
-        · exact h.agree (by tagree_rfl)
-      · simp only [bind_run, setEx_run]
-        exact h.agree (by tagree_rfl)
-    · rcases Bool.eq_false_or_eq_true (ex.announcedOver ex.bodyBytes ex.config.maxBody) with ho | ho <;>
-        simp only [ho, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-      · exact failNow_timers _ _ h
-      · have h1 := h.agree (b := { ex with machine := ex.machine.pullBody.1 }) (by tagree_rfl)
-        split
-        · rename_i pulled _
-          by_cases hn : ex.bodyBytes + pulled.chunk.data.size > ex.config.maxBody <;>
-            simp only [hn, ↓reduceIte, bind_run, setEx_run]
-          · exact failNow_timers _ _ h1
-          · have h2 := h1.agree (b := { ex with
-              machine := ex.machine.pullBody.1,
-              credit := ex.credit - min ex.credit pulled.chunk.data.size,
-              bodyBytes := ex.bodyBytes + pulled.chunk.data.size,
-              bodyDone := ex.bodyDone || pulled.final }) (by tagree_rfl)
-            rcases Bool.eq_false_or_eq_true pulled.chunk.data.isEmpty with he | he <;>
-              simp only [he, ↓reduceIte, Bool.false_eq_true, bind_run, emit_run]
-            · exact h2
-            · exact h2
-        · exact h1
-  · rcases Bool.eq_false_or_eq_true (ex.announcedOver ex.drained ex.config.drainBytes) with ho | ho <;>
-      simp only [ho, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-    · exact finishNow_timers false h
-    · have h1 := h.agree (b := { ex with machine := ex.machine.pullBody.1 }) (by tagree_rfl)
-      split
-      · rename_i pulled _
-        simp only [bind_run, setEx_run]
-        have h2 := h1.agree (b := { ex with
-          machine := ex.machine.pullBody.1,
-          drained := ex.drained + pulled.chunk.data.size,
-          bodyDone := ex.bodyDone || pulled.final }) (by tagree_rfl)
-        by_cases hn : ex.drained + pulled.chunk.data.size > ex.config.drainBytes <;>
-          simp only [hn, ↓reduceIte, bind_run]
-        · exact finishNow_timers false h2
-        · exact h2
-      · exact h1
+  · exact h.agree (by tagree_rfl)
   · exact h
 
-theorem pullAvailable_timers {s : S} (p : Bool) (h : Timers s.1) :
-    Timers ((pullAvailable p).run s).2.1 := by
-  show Timers (loopWhile pullRound (p, s)).1.2.1
-  apply loopWhile_inv pullRound (fun x => Timers x.2.1) _ (p, s) h
-  intro ⟨q, s'⟩ hs
-  simp only [pullRound]
-  have := pullOnce_timers (s := s') hs
-  split <;> simp_all
+theorem onHead_timers {s : S} (hd : Codec.Head) (h : Timers s.1) :
+    Timers ((onHead hd).run s).2.1 := by
+  obtain ⟨ex, acts⟩ := s
+  simp only [onHead, getEx_bind_run]
+  rcases Bool.eq_false_or_eq_true (ex.terminal || ex.head.isSome) with hc | hc <;>
+    simp only [hc, ↓reduceIte, Bool.false_eq_true]
+  · exact h
+  · simp only [Bool.or_eq_false_iff] at hc
+    simp only [bind_run, setEx_run, emit_run]
+    exact h.receive hc.2 hd.response (decide (ex.written < ex.request.size))
+
+theorem onHead?_timers {s : S} (hd : Option Codec.Head) (h : Timers s.1) :
+    Timers ((onHead? hd).run s).2.1 := by
+  cases hd with
+  | none => exact h
+  | some hd => exact onHead_timers hd h
+
+theorem onBodies_timers {s : S} (bodies : List ByteArray) (h : Timers s.1) :
+    Timers ((onBodies bodies).run s).2.1 := by
+  obtain ⟨ex, acts⟩ := s
+  simp only [onBodies, getEx_bind_run]
+  split
+  · simp only [bind_run, setEx_run]
+    have h' := h.agree (b := { ex with drained := bodies.foldl (· + ·.size) ex.drained }) (by tagree_rfl)
+    split
+    · exact finishNow_timers false h'
+    · exact h'
+  · simp only [bind_run, setEx_run]
+    exact release_timers (h.agree (by tagree_rfl))
+
+theorem onError?_timers {s : S} (e : Option Codec.Error) (h : Timers s.1) :
+    Timers ((onError? e).run s).2.1 := by
+  cases e with
+  | none => exact h
+  | some e => exact failOrDrop_timers _ _ h
+
+theorem onEvents_timers {s : S} (events : Array Codec.Event) (h : Timers s.1) :
+    Timers ((onEvents events).run s).2.1 := by
+  simp only [onEvents, bind_run]
+  exact onError?_timers _ (onBodies_timers _ (onHead?_timers _ h))
 
 theorem settle_timers {s : S} (h : Timers s.1) : Timers (settle.run s).2.1 := by
   obtain ⟨ex, acts⟩ := s
   simp only [settle, getEx_bind_run]
-  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;> simp only [ht, ↓reduceIte]
-  · exact h
-  cases hp : ex.phase <;>
-    simp only [Bool.false_eq_true, ↓reduceIte, Bool.true_and, Bool.false_and]
-  all_goals
-    first
-    | (rcases Bool.eq_false_or_eq_true ex.bodyDone with hb | hb <;>
-        simp only [hb, ↓reduceIte, Bool.false_eq_true]
-       · exact finishNow_timers true h)
-    | skip
-  all_goals
-    rcases Bool.eq_false_or_eq_true ex.inputEnded with hi | hi <;>
-      simp only [hi, ↓reduceIte, Bool.false_eq_true]
-  all_goals
-    first
-    | exact h
-    | (rcases Bool.eq_false_or_eq_true (ex.credit == 0 && ex.machine.canPullBodyNow) with hc | hc <;>
-        simp only [hc, ↓reduceIte, Bool.false_eq_true]
-       · exact h)
-    | skip
-  all_goals
-    rcases Bool.eq_false_or_eq_true ex.machine.failed with hf | hf <;>
-      simp only [hf, ↓reduceIte, Bool.false_eq_true] <;> exact failOrDrop_timers _ _ h
-
-theorem absorbOnce_timers {s : S} (h : Timers s.1) : Timers (absorbOnce.run s).2.1 := by
-  obtain ⟨ex, acts⟩ := s
-  simp only [absorbOnce, getEx_bind_run]
   rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
     simp only [ht, ↓reduceIte, Bool.false_eq_true]
   · exact h
-  simp only [bind_run, setEx_run]
-  have h1 := h.agree (b := { ex with machine := ex.machine.step.1 }) (by tagree_rfl)
-  have h2 := handleH1Events_timers ex.machine.step.2.events (s := ({ ex with machine := ex.machine.step.1 }, acts)) h1
-  generalize (handleH1Events ex.machine.step.2.events).run
-    ({ ex with machine := ex.machine.step.1 }, acts) = x at h2 ⊢
-  have h3 := pullAvailable_timers false h2
-  generalize (pullAvailable false).run x.2 = y at h3 ⊢
-  simp only [getEx_run]
-  have h4 := h3.agree (b := { y.2.1 with machine := y.2.1.machine.takeEvents.1 }) (by tagree_rfl)
-  have h5 := handleH1Events_timers y.2.1.machine.takeEvents.2
-    (s := ({ y.2.1 with machine := y.2.1.machine.takeEvents.1 }, y.2.2)) h4
-  generalize (handleH1Events y.2.1.machine.takeEvents.2).run
-    ({ y.2.1 with machine := y.2.1.machine.takeEvents.1 }, y.2.2) = z at h5 ⊢
-  exact h5
+  cases hp : ex.phase <;> simp only
+  case receiving =>
+    split
+    · exact finishNow_timers true h
+    · exact h
+  case draining =>
+    split
+    · exact finishNow_timers true h
+    · split
+      · exact finishNow_timers false h
+      · exact h
+  all_goals exact h
 
-theorem absorb_timers {s : S} (h : Timers s.1) : Timers (absorb.run s).2.1 := by
-  show Timers (settle.run (loopWhile absorbOnce.run s).1).2.1
-  apply settle_timers
-  exact loopWhile_inv _ (fun x => Timers x.1) (fun _ h => absorbOnce_timers h) s h
+theorem absorb_timers {s : S} (p : Codec.Parser × Array Codec.Event) (h : Timers s.1) :
+    Timers ((absorb p).run s).2.1 := by
+  obtain ⟨ex, acts⟩ := s
+  simp only [absorb, bind_run, modifyEx_run]
+  exact settle_timers (onEvents_timers _ (h.agree (by tagree_rfl)))
 
 theorem expireOne_timers {s : S} (h : Timers s.1) : Timers (expireOne.run s).2.1 := by
   obtain ⟨ex, acts⟩ := s
@@ -385,16 +293,18 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
     have h1 := h.agree (b := { ex with readInFlight := false, readBy := none }) (by tagree_rfl)
     split
     · exact failNow_timers _ _ h1
-    · simp only [bind_run, setEx_run]
-      exact absorb_timers (h1.agree (by tagree_rfl))
+    · split
+      · exact h1
+      · exact absorb_timers _ h1
   | endOfInput =>
     simp only [handle, bind_run, setEx_run]
     have h1 := h.agree (b := { ex with readInFlight := false, readBy := none, inputEnded := true })
       (by tagree_rfl)
     split
-    · exact failNow_timers _ _ h1
-    · simp only [bind_run, setEx_run]
-      exact absorb_timers (h1.agree (by tagree_rfl))
+    · exact h1
+    · split
+      · exact failNow_timers _ _ h1
+      · exact absorb_timers _ h1
   | written count =>
     simp only [handle, getEx_bind_run]
     cases hl : ex.writeInFlight with
@@ -445,23 +355,25 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
     simp only [handle, bind_run, setEx_run]
     have h1 := h.agree (b := { ex with credit := ex.credit + bytes }) (by tagree_rfl)
     split
-    · simp only [↓reduceIte]; exact absorb_timers h1
+    · simp only [↓reduceIte, bind_run]; exact settle_timers (release_timers h1)
     · simp only [Bool.false_eq_true, ↓reduceIte]; exact h1
   | tick =>
     simp only [handle]
     exact h
   | abandon =>
-    simp only [handle, getEx_bind_run]
+    simp only [handle, bind_run, setEx_run]
+    have h0 := h.agree (b := { ex with abandoned := true }) (by tagree_rfl)
     split
-    · exact failNow_timers _ _ h
-    · exact failNow_timers _ _ h
+    · exact failNow_timers _ _ h0
+    · exact failNow_timers _ _ h0
     · rename_i hp
+      have hp' : ex.phase = .receiving := hp
       split
       · rename_i hw
         simp only [bind_run, setEx_run]
         have hwr : ex.written = ex.request.size := by
           simp only [Bool.and_eq_true, beq_iff_eq] at hw
-          exact hw.1.1.2
+          exact hw.1.1.1.2
         have hidle : ex.writeInFlight = none := by
           cases hk : ex.writeInFlight with
           | none => rfl
@@ -469,11 +381,11 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
             have := hi.inFlightLe k hk
             have := h.inFlightPos k hk
             omega
-        have hhd := hi.hasHead (by simp [hp, Phase.isBody])
-        exact absorb_timers ⟨h.writeBy, h.inFlightPos, fun _ => rfl, fun _ => hwr, fun _ => hidle,
+        have hhd := hi.hasHead (by simp [hp', Phase.isBody])
+        exact settle_timers ⟨h.writeBy, h.inFlightPos, fun _ => rfl, fun _ => hwr, fun _ => hidle,
           fun _ => hhd⟩
-      · exact finishNow_timers false h
-    · exact h
+      · exact finishNow_timers false h0
+    · exact h0
 
 /-- Every step keeps `Timers`. -/
 theorem step_timers {ex : Exchange} (hi : Inv ex) (h : Timers ex) (now : Timestamp)

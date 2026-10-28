@@ -72,7 +72,7 @@ inductive LimitKind where
   | body
 
   /--
-  The head had too many fields or too many bytes (the `h1` parser limits).
+  The head had too many fields or too many bytes (the `limits` of the parser).
   -/
   | headers
 

@@ -68,8 +68,6 @@ def failedCause? (r : Run) : Option Cause :=
 
 end Run
 
-/-- Prepares a request, panicking if the machine refuses it (tests only use valid heads). -/
+/-- Prepares a request. -/
 def prepare! (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) : PreparedRequest :=
-  match Exchange.prepare config head body with
-  | .ok p => p
-  | .error cause => panic! s!"the request was refused: {repr cause}"
+  Exchange.prepare config head body

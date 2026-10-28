@@ -105,7 +105,8 @@ def Model.observe (m : Model) (event : ExchangeEvent) : Model :=
   | .writeFailed _ => { m with outstanding := none }
   | .received bytes =>
     -- An empty read completes nothing: the core counts it as a tick.
-    if bytes.isEmpty then m else
+    -- Bytes after the end of input are ignored by the core, and not counted as received.
+    if bytes.isEmpty then m else if m.eofSeen then { m with readOutstanding := false } else
     { m with readOutstanding := false, fed := m.fed ++ bytes,
              unsolicited := m.unsolicited || m.acked < m.headBytes }
   | .endOfInput => { m with readOutstanding := false, eofSeen := true }
@@ -115,13 +116,12 @@ def Model.observe (m : Model) (event : ExchangeEvent) : Model :=
 
 /-- A comparable summary of the core's state, for "a stale tick changes nothing". -/
 def fingerprint (ex : Exchange) : String :=
-  let r := ex.machine.reader
+  let p := ex.parser
   s!"{reprStr ex.phase}|now={ex.now}|w={ex.written}|wf={ex.writeInFlight}|wb={ex.writeBy}|" ++
   s!"us={ex.uploadStopped}|sa={ex.sentAny}|rf={ex.readInFlight}|rb={ex.readBy}|ie={ex.inputEnded}|" ++
-  s!"i={ex.interim}|h={ex.head.map (·.status.toCode)}|f={reprStr ex.framing}|e={ex.early}|" ++
-  s!"c={ex.credit}|bb={ex.bodyBytes}|bd={ex.bodyDone}|d={ex.drained}|db={ex.drainBy}|" ++
-  s!"rs={reprStr r.state}|pos={r.input.pos}|n={r.input.array.size}|nmi={r.noMoreInput}|" ++
-  s!"ka={ex.machine.keepAlive}|st={ex.machine.pullBodyStalled}"
+  s!"h={ex.head.map (·.status.toCode)}|e={ex.early}|c={ex.credit}|held={ex.held.map (·.size)}|" ++
+  s!"ab={ex.abandoned}|d={ex.drained}|db={ex.drainBy}|" ++
+  s!"pp={reprStr p.phase}|ph={p.head.map (·.code)}|pd={p.delivered}|px={p.extra}|pe={p.inputEnded}"
 
 /-- A short rendering of an action, for traces and reports. -/
 def renderAction : ExchangeAction → String

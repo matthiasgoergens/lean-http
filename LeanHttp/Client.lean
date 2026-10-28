@@ -148,7 +148,7 @@ def exchangeConfig (config : Config) : Except Cause ExchangeConfig :=
   if hg : 0 < config.readGapMs then
     if hr : 0 < config.readChunkBytes then
       .ok {
-        h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
+        limits := config.limits, keepAlive := false, maxInterim := config.maxInterimResponses,
         maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes, readChunk_pos := hr,
         writeChunk := config.writeChunkBytes, gapMs := config.readGapMs, gapMs_pos := hg }
     else
@@ -321,7 +321,7 @@ def request (client : Client) (req : Request ByteArray) :
   let target := s!"{plan.host}:{plan.port}"
   let checked := do
     checkConfig config
-    Exchange.prepare (← exchangeConfig config) plan.head req.body
+    return Exchange.prepare (← exchangeConfig config) plan.head req.body
   let prepared ← match checked with
     | .ok prepared => pure prepared
     | .error cause => return fail cause .notSent target

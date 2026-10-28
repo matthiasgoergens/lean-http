@@ -352,9 +352,7 @@ def traces : List Trace := [
 
 /-- Runs one trace; returns the lines describing its failures (empty when it passed). -/
 def runTrace (t : Trace) : List String := Id.run do
-  let prepared ← match Exchange.prepare t.config (traceHead t.method) t.body.toUTF8 with
-    | .ok p => pure p
-    | .error cause => return [s!"the request was refused: {repr cause}"]
+  let prepared := Exchange.prepare t.config (traceHead t.method) t.body.toUTF8
   let (ex, actions) := Exchange.begin prepared 0 t.deadline
   let mut ex := ex
   let mut problems := []

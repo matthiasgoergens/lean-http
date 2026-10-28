@@ -1,8 +1,9 @@
 import LeanHttp.Exchange
 import Tests.Support.Check
+import Tests.Support.MachineCore
 
 /-!
-# Fuzzing harness for the client direction of the HTTP/1.1 machine and the exchange core
+# Fuzzing harness for the exchange core, with the vendored HTTP/1.1 machine as its oracle
 
 `check` interprets fuzzer bytes as one exchange and checks invariants over it; `fuzzOne`, exported
 to C as `lean_http_fuzz_one`, panics when one fails, so that under `LEAN_ABORT_ON_PANIC=1` a broken
@@ -22,8 +23,8 @@ and `Fuzz/Replay.lean` runs the same check over files and prints what happened.
 
 ## The two drivers
 
-- **The exchange core** (`LeanHttp.Exchange`), driven through `Exchange.begin` and `Exchange.step`
-  as a shell would drive it: the request goes out in `writeChunk`-byte writes, each reported as
+- **The exchange core** (`LeanHttp.Exchange`, which parses responses with `LeanHttp.Codec`),
+  driven through `Exchange.begin` and `Exchange.step` as a shell would drive it: the request goes out in `writeChunk`-byte writes, each reported as
   completed in full; the caller asks for more body than any response has; each read the input
   dictates is reported as `received` while the core has a read in flight (an empty read is a tick),
   with one outstanding write completed after each; then end of input, if the input says so.  Time
@@ -31,20 +32,20 @@ and `Fuzz/Replay.lean` runs the same check over files and prints what happened.
   carries a request body, so that its response can arrive while the body is still going out.  The
   core runs with keep-alive on, the configuration a pooled client will use, and once more over the
   dictated reads with keep-alive off, the configuration the client uses now.
-- **A direct driver of the machine** with keep-alive on, started from the machine `Exchange.prepare`
-  encoded the request with.  It bounds every loop, records the events the machine emits, and ends
-  with the machine's reuse decision.
+- **A direct driver of the vendored machine** with keep-alive on, started from the machine the former
+  core's `prepare` encoded the request with (`Tests/Support/MachineCore.lean`).  It bounds every
+  loop, records the events the machine emits, and ends with the machine's reuse decision.  It is the
+  differential oracle for the core.
 
-Both use the parser limits in `limits`: the defaults, lowered so that fuzzer inputs reach them.
-Each driver runs over the response in one read and in the reads the input dictates; the direct
-driver runs a third time over the whole response with end of input flipped.  The direct driver runs
-first, so that an endless loop the two drivers share is reported by its step bound rather than as a
-hang in the exchange core.
+Both use the parser limits in `limits` (for the core, the same limits as a `Codec.Config`,
+`coreLimits`): the defaults, lowered so that fuzzer inputs reach them.  Each driver runs over the
+response in one read and in the reads the input dictates; the direct driver runs a third time over
+the whole response with end of input flipped.
 
 ## Invariants of the machine and of the response
 
-- The direct driver ends within a step bound linear in the input (the exchange core has no bound
-  of its own; an endless loop there shows up as an AFL++ hang).
+- The direct driver ends within a step bound linear in the input (the exchange core is made of
+  total functions, so it cannot loop; a hang there would be slowness, which AFL++ reports).
 - The events form a well-formed sequence: interim heads, one final head, body data, the end of the
   body, then possibly the machine's reset for the next message; a failure ends the sequence.
 - No body after HEAD, after a 1xx used as final, after 204 or after 304, and the end of the body
@@ -63,16 +64,19 @@ hang in the exchange core.
   reuses a connection only where the machine would, and over the whole response exactly where the
   machine would with no byte left over and the whole request written before the head arrived.
 - Split invariance: both drivers produce the same events, body and outcome whether the response
-  arrives whole or in pieces.  For a response that does not complete, only the body delivered so
-  far may differ, and then each body must be a prefix of the other; the exchange core may then also
-  hit its body limit in one run and not the other (see `exchangeSplitInvariant`).  Keep-alive
-  changes nothing in the core's outcome but the reuse verdict.
+  arrives whole or in pieces.  For a response that does not complete, the machine's body delivered
+  so far may differ, and then each body must be a prefix of the other; the exchange core's may not
+  (see `exchangeSplitInvariant`).  Keep-alive changes nothing in the core's outcome but the reuse
+  verdict.
 - For each way of feeding, the two drivers agree: the same completed response (status, body,
   interim count), a failure where the other failed or saw end of input too early, a pending
   response where the other is pending; except where the exchange core refuses by its own rules
   (interim count, body size, `101`, a transfer coding other than chunked), and then the refusal must
-  be justified by what the machine saw.  A body-limit failure always comes after the head, with
-  its status.
+  be justified by what the machine saw, and except for the codec's deliberate differences from the
+  machine (`NOTES.md`), each of which must be attributed: a chunk announced beyond the body limit,
+  refused at its size line; a chunk-size line over its limit, or one extension too many, refused
+  before the line is complete; and an HTTP/1.0 response saying both `keep-alive` and `close`, which
+  the codec does not reuse.  A body-limit failure always comes after the head, with its status.
 
 ## Invariants of the exchange core's theorems
 
@@ -105,7 +109,10 @@ and once per run:
   tick ends the exchange or moves its clock forward (`Reachable.due_advances`), and the exchange
   ends within `deadline - now` ticks (`Reachable.ends_of_allDue`).
 
-The theorems say these never fail; the fuzzer exercises them end to end, over the real machine.
+The theorems say these never fail; the fuzzer exercises them end to end.  The theorems that tie a
+finished exchange to the bytes received (`observed_finish_codec`, `observed_finish_complete`) are
+about the codec, so their properties are checked here against the machine instead, by the
+cross-check above.
 -/
 
 open Std.Http LeanHttp LeanHttpProto.Http.Protocol
@@ -124,6 +131,18 @@ def limits : H1.Config :=
     maxChunkLineLength := 128, maxChunkExtensions := 4, maxChunkExtNameLength := 32,
     maxChunkExtValueLength := 32, maxTrailerHeaders := 4 }
 
+/-- `limits` for the response codec, with the interim and body limits below. -/
+def coreLimits : Codec.Config :=
+  { maxHeaders := limits.maxHeaders, maxHeaderBytes := limits.maxHeaderBytes,
+    maxHeaderNameLength := limits.maxHeaderNameLength,
+    maxHeaderValueLength := limits.maxHeaderValueLength, maxSpaceSequence := limits.maxSpaceSequence,
+    maxReasonPhraseLength := limits.maxReasonPhraseLength,
+    maxChunkExtensions := limits.maxChunkExtensions,
+    maxChunkExtNameLength := limits.maxChunkExtNameLength,
+    maxChunkExtValueLength := limits.maxChunkExtValueLength,
+    maxChunkLineLength := limits.maxChunkLineLength, maxTrailerHeaders := limits.maxTrailerHeaders,
+    maxInterim := 10, maxBody := 1024 }
+
 /-- The exchange core's limit on interim responses, small enough for fuzzer inputs to reach. -/
 def maxInterim : Nat := 10
 
@@ -131,9 +150,9 @@ def maxInterim : Nat := 10
 def maxBody : Nat := 1024
 
 /--
-The longest response the harness feeds: the exchange core's input buffer limit (the body limit plus
-the header allowances).  A longer response would fail when fed whole but not in small reads, and
-that limit is about the reads, not the response.
+The longest response the harness feeds: the machine's input buffer limit (the body limit plus the
+header allowances).  A longer response would fail in the machine when fed whole but not in small
+reads, and that limit is about the reads, not the response.
 -/
 def maxResponse : Nat :=
   maxBody + limits.maxHeaderBytes + limits.maxStartLineLength + limits.maxChunkLineLength
@@ -146,6 +165,11 @@ The core's settings.  The request goes out in 16-byte writes, so in several; the
 longer than any run takes at 1 ms per event, and shorter than the deadline.
 -/
 def exchangeConfig (keepAlive : Bool) : ExchangeConfig :=
+  { limits := coreLimits, keepAlive, maxInterim, maxBody, writeChunk := 16, gapMs := 10000 }
+
+/-- The machine core's settings, as the core's, for encoding the request the direct driver starts
+from. -/
+def machineConfig (keepAlive : Bool) : MachineCore.ExchangeConfig :=
   { h1 := limits, keepAlive, maxInterim, maxBody, writeChunk := 16, gapMs := 10000 }
 
 /-- The body of a POST request: long enough to be still going out when the response arrives. -/
@@ -156,11 +180,19 @@ def requestHead (method : Method) : Request.Head :=
   { method, version := .v11, uri := .originForm { segments := #[], absolute := true } none,
     headers := Headers.empty.insert Header.Name.host (.mk "example.test") }
 
-/-- The request, prepared; `none` if `Exchange.prepare` refused it, which the harness reports. -/
-def prepared? (method : Method) (keepAlive : Bool) : Option PreparedRequest :=
+/-- The request, prepared by the core. -/
+def prepared (method : Method) (keepAlive : Bool) : PreparedRequest :=
   let body := if method == .post then postBody else .empty
-  match Exchange.prepare (exchangeConfig keepAlive) (requestHead method) body with
-  | .ok p => some p
+  Exchange.prepare (exchangeConfig keepAlive) (requestHead method) body
+
+/--
+The machine after encoding the same request (with keep-alive on), for the direct driver; `none` if
+the machine refused it, or encoded it differently from the core, which the harness reports.
+-/
+def machineFor? (method : Method) : Option (H1.Machine .sending) :=
+  let body := if method == .post then postBody else .empty
+  match MachineCore.Exchange.prepare (machineConfig true) (requestHead method) body with
+  | .ok p => if p.bytes.data == (prepared method true).bytes.data then some p.machine else none
   | .error _ => none
 
 /-! ## Decoding the input -/
@@ -606,11 +638,11 @@ def Run.drive (r : Run) : Nat → Run
     else r
 
 /--
-Runs the direct driver over `reads`, from the machine `prepared` encoded the request with, then
-reports end of input if `eof`.
+Runs the direct driver over `reads`, from `machine`, which encoded the request, then reports end of
+input if `eof`.
 -/
-def runMachine (prepared : PreparedRequest) (eof : Bool) (reads : List ByteArray) : Run :=
-  let r : Run := { machine := prepared.machine }
+def runMachine (machine : H1.Machine .sending) (eof : Bool) (reads : List ByteArray) : Run :=
+  let r : Run := { machine }
   let r := reads.foldl (init := r) fun r data =>
     if r.outOfFuel then r
     else
@@ -765,23 +797,54 @@ def machineSplitInvariant (whole split : Run) : Except String Unit := do
     ensure (prefixConsistent whole.body split.body) msg
 
 /--
-Split invariance of the exchange core, with the allowance of `machineSplitInvariant`; and since the
-body delivered so far may differ, one run may also hit the body limit while the other is pending or
-has failed otherwise (`crossCheck` checks each run's limit against its own machine run).  The reuse
-verdict is not compared: bytes after the response, in a later read, are not there when the core
-finishes, and a POST's upload may be at a different point when the head arrives.
+Split invariance of the exchange core: the same outcome, status, interim count and body, whether the
+response came whole or in reads, also for a response still pending (the codec delivers every body
+byte it is fed, so the body so far is the same).  The reuse verdict is not compared: bytes after the
+response, in a later read, are not there when the core finishes, and a POST's upload may be at a
+different point when the head arrives.
 -/
 def exchangeSplitInvariant (whole split : Core) : Except String Unit := do
   let (a, b) := (whole.render, split.render)
-  let msg := s!"exchange not split-invariant:\n  whole: {a}\n  split: {b}"
-  let bodyLimit (c : Core) := c.failure?.any fun f => f.cause matches .limit .body
-  if whole.reusable?.isSome || split.reusable?.isSome then
-    ensure (a == b) msg
-  else if bodyLimit whole || bodyLimit split then
-    pure ()
-  else
-    ensure (whole.render false == split.render false) msg
-    ensure (prefixConsistent whole.body split.body) msg
+  ensure (a == b && whole.body.data == split.body.data)
+    s!"exchange not split-invariant:\n  whole: {a}\n  split: {b}"
+
+/-- Runs the response codec alone over `reads`, with `config`. -/
+def codecOver (config : Codec.Config) (method : Method) (eof : Bool) (reads : List ByteArray) :
+    Codec.Parser :=
+  let p := reads.foldl (init := Codec.Parser.start config method) fun p piece => (p.feed piece).1
+  if eof then p.finish.1 else p
+
+/--
+Whether a body-limit failure of the core is explained by a chunk announced beyond the body limit:
+the codec without a body limit, over the same reads (without the end of input, which would end the
+chunk it is in), has delivered or been announced (the rest of that chunk) more than the limit.  The
+codec refuses such a chunk at its size line, before its data arrives; the machine only once the data
+does.
+-/
+def chunkOverLimit (method : Method) (reads : List ByteArray) : Bool :=
+  -- Above any chunk size a chunk-size line within its limit can announce.
+  let unlimited := 16 ^ coreLimits.maxChunkLineLength
+  let p := codecOver { coreLimits with maxBody := unlimited } method false reads
+  let rest := match p.phase with
+    | .body (.chunked (.data r)) => r
+    | _ => 0
+  p.delivered + rest > maxBody
+
+/--
+Whether a protocol failure of the core where the machine did not fail is explained by the codec
+measuring chunk-size lines more strictly: without the chunk-size line and chunk extension limits,
+the codec does not fail over the same reads.
+-/
+def chunkLineStricter (method : Method) (eof : Bool) (reads : List ByteArray) : Bool :=
+  let p := codecOver { coreLimits with maxChunkLineLength := 2 ^ 20, maxChunkExtensions := 2 ^ 20 }
+    method eof reads
+  !(p.phase matches .failed _)
+
+/-- Whether an HTTP/1.0 head says both `keep-alive` and `close`, which the codec does not reuse
+(RFC 9112 section 9.3) and the machine does. -/
+def http10KeepAliveAndClose (head : Response.Head) : Bool :=
+  let conn := tokens head Header.Name.connection
+  head.version == .v10 && conn.contains "close" && conn.contains "keep-alive"
 
 /--
 Keep-alive changes nothing in the exchange core's outcome over the same reads, and without it the
@@ -809,6 +872,7 @@ def checkCore (who : String) (method : Method) (c : Core) (eof : Bool) : Except 
     if reusable then
       ensure (!c.model.eofSeen) s!"{who}: reusable after end of input"
       checkReusable who method head
+      ensure (!http10KeepAliveAndClose head) s!"{who}: reusable despite Connection: close"
   | some (.finish _), none => throw s!"{who}: finished without a head"
   | some (.fail f), head =>
     match f.cause with
@@ -833,7 +897,8 @@ only where the machine would (`reusableBeforeEnd`); with `whole`, the response c
 exactly where the machine would with no byte left over, given keep-alive and the whole request
 written before the head arrived.
 -/
-def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) : Except String Unit := do
+def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) (method : Method) (eof : Bool)
+    (reads : List ByteArray) : Except String Unit := do
   let phase ← wellFormed r.trace
   let done := phase == .ended || phase == .reset
   let machineCode := r.finalHead.map (·.status.toCode.toNat)
@@ -848,7 +913,7 @@ def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) : Except Strin
       ensure (reusableBeforeEnd r) s!"{who}: the core reuses, the machine would not: {both}"
     if whole then
       let m := c.model
-      let expected := c.ex.config.keepAlive && reusableBeforeEnd r &&
+      let expected := c.ex.config.keepAlive && reusableBeforeEnd r && !http10KeepAliveAndClose head &&
         r.machine.reader.input.remainingBytes == 0 && m.ackedAtHead == m.request.size &&
         m.acked == m.request.size && !m.eofSeen
       ensure (reuse == expected)
@@ -863,7 +928,8 @@ def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) : Except Strin
       -- fails both the same way.
       let announced := (c.head.bind singleLength?).getD 0
       let machineRefused := r.trace.contains (.failed (toString H1.Error.entityTooLarge))
-      ensure (r.body.size > maxBody || announced > maxBody || machineRefused)
+      ensure (r.body.size > maxBody || announced > maxBody || machineRefused ||
+          chunkOverLimit method reads)
         s!"{who}: body limit hit with {r.body.size} bytes and Content-Length {announced}"
     | .protocol msg =>
       if msg.startsWith "101" then
@@ -872,7 +938,8 @@ def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) : Except Strin
         ensure (machineCode == c.head.map (·.status.toCode.toNat))
           s!"{who}: refused a transfer coding on a head the machine did not see: {both}"
       else
-        ensure (phase == .failed) s!"{who}: exchange failed ({msg}), machine did not: {both}"
+        ensure (phase == .failed || chunkLineStricter method eof reads)
+          s!"{who}: exchange failed ({msg}), machine did not: {both}"
     | _ =>
       -- With end of input before any byte, the machine only closes; the exchange reports that the
       -- peer closed.
@@ -907,11 +974,11 @@ def run (data : ByteArray) : Except String Report := do
   let reads := pieces input
   let whole := [input.response]
   let m := input.method
-  let some keep := prepared? m true | throw "Exchange.prepare refused the request"
-  let some close := prepared? m false | throw "Exchange.prepare refused the request"
-  let runWhole := runMachine keep input.eof whole
-  let runSplit := runMachine keep input.eof reads
-  let runFlipped := runMachine keep (!input.eof) whole
+  let (keep, close) := (prepared m true, prepared m false)
+  let some machine := machineFor? m | throw "the machine refused the request, or encoded it differently"
+  let runWhole := runMachine machine input.eof whole
+  let runSplit := runMachine machine input.eof reads
+  let runFlipped := runMachine machine (!input.eof) whole
   let exWhole := runCore keep input.eof whole
   let exSplit := runCore keep input.eof reads
   let exSplitClose := runCore close input.eof reads
@@ -923,16 +990,16 @@ def check (data : ByteArray) : Except String Report := do
   let reads := pieces input
   let whole := [input.response]
   let m := input.method
-  let some keep := prepared? m true | throw "Exchange.prepare refused the request"
-  let some close := prepared? m false | throw "Exchange.prepare refused the request"
-  -- The direct driver first: its step bound catches loops before the unbounded exchange core.
-  let runWhole := runMachine keep input.eof whole
+  let (keep, close) := (prepared m true, prepared m false)
+  let some machine := machineFor? m | throw "the machine refused the request, or encoded it differently"
+  -- The direct driver first: its step bound catches loops in the machine.
+  let runWhole := runMachine machine input.eof whole
   checkRun "machine/whole" m runWhole
-  let runSplit := runMachine keep input.eof reads
+  let runSplit := runMachine machine input.eof reads
   checkRun "machine/split" m runSplit
   machineSplitInvariant runWhole runSplit
   checkBodyBytes m input.response runWhole
-  let runFlipped := runMachine keep (!input.eof) whole
+  let runFlipped := runMachine machine (!input.eof) whole
   checkRun "machine/flipped" m runFlipped
   if input.eof then checkEofIndependent m runWhole runFlipped
   else checkEofIndependent m runFlipped runWhole
@@ -944,8 +1011,8 @@ def check (data : ByteArray) : Except String Report := do
   checkCore "exchange/split, keep-alive off" m exSplitClose input.eof
   exchangeSplitInvariant exWhole exSplit
   keepAliveInvariant exSplit exSplitClose
-  crossCheck "whole" exWhole runWhole true
-  crossCheck "split" exSplit runSplit false
+  crossCheck "whole" exWhole runWhole true m input.eof whole
+  crossCheck "split" exSplit runSplit false m input.eof reads
   for (who, c) in [("exchange/whole", exWhole), ("exchange/split", exSplit)] do
     if let some p := waitOut c then throw s!"{who}, waiting: {p}"
   if let some p := unsolicited keep ((reads.find? (!·.isEmpty)).getD .empty) then

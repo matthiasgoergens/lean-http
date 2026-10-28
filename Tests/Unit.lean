@@ -149,17 +149,20 @@ instance : BEq Cause where
   beq a b := reprStr a == reprStr b
 
 def errorChecks : Checks Unit := do
-  let cases : List (LeanHttpProto.Http.Protocol.H1.Error × Cause) := [
-    (.entityTooLarge, .limit .body),
+  let cases : List (Codec.Error × Cause) := [
+    (.bodyTooLarge, .limit .body),
     (.tooManyHeaders, .limit .headers),
     (.headersTooLarge, .limit .headers),
-    (.connectionClosed, .peerClosed),
+    (.tooManyInterim, .limit .interim),
+    (.closed, .peerClosed),
     (.badMessage, .protocol "Bad message"),
-    (.invalidChunk, .protocol "Invalid chunk"),
-    (.unsupportedVersion, .protocol "Unsupported version")
+    (.unsupportedVersion, .protocol "Unsupported version"),
+    (.switchingProtocols, .protocol "101 Switching Protocols, but no upgrade was requested"),
+    (.unsupportedCoding,
+      .protocol "a transfer coding other than chunked, which the client cannot decode")
   ]
   for (err, cause) in cases do
-    checkEq s!"machine error {err} is {reprStr cause}" (Exchange.causeOfH1Error err) cause
+    checkEq s!"parser error {reprStr err} is {reprStr cause}" (Exchange.causeOf err) cause
   -- Delivery after the request was written: received once the final head is parsed.
   let head : Request.Head := {
     method := .get, version := .v11, uri := rootTarget,

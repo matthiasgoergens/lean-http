@@ -173,7 +173,7 @@ def Case.head (c : Case) : Request.Head :=
 
 /-- The prepared request of a case. -/
 def Case.prepare (c : Case) : Except Cause PreparedRequest :=
-  Exchange.prepare c.config c.head (ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8))
+  .ok (Exchange.prepare c.config c.head (ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8)))
 
 /-- For drawing positive numbers with `pick`. -/
 instance : Inhabited { n : Nat // 0 < n } := ⟨⟨1, by decide⟩⟩

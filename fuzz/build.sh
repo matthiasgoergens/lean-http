@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compiles the fuzzing harness with AFL++ instrumentation: the C that `lake build Fuzz` generated
-# for the harness, the checker's step properties, the exchange core and the vendored protocol layer, plus fuzz/afl-main.c, linked
-# against the Lean toolchain's runtime and standard library (which stay uninstrumented).
+# for the harness, the checker's step properties, the exchange core and its codec, and the oracle
+# (the former core and the vendored protocol layer), plus fuzz/afl-main.c, linked against the Lean
+# toolchain's runtime and standard library (which stay uninstrumented).
 #
 # Runs inside the AFL++ image (fuzz/run.sh), in the tree, after `lake build Fuzz` ran in the Lean
 # image.  Writes .lake/fuzz/<variant>/lean-http-fuzz, where the variant is
@@ -12,6 +13,8 @@
 T=${LEAN_TOOLCHAIN:-/root/.elan/toolchains/leanprover--lean4---v4.34.1}
 ir=.lake/build/ir
 srcs=("$ir/Fuzz/Harness.c" "$ir/Tests/Support/Check.c" "$ir/LeanHttp/Exchange.c" "$ir/LeanHttp/Error.c"
+      "$ir"/LeanHttp/Codec/{Basic,Lines,Fields,Head,Chunked,Response,Request}.c
+      "$ir/Tests/Support/MachineCore.c"
       "$ir/LeanHttp/VendorCompat.c" "$ir/LeanHttpProto/Http/Protocol/H1.c"
       "$ir"/LeanHttpProto/Http/Protocol/H1/*.c)
 for s in "${srcs[@]}"; do

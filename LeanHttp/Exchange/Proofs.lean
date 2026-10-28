@@ -9,10 +9,8 @@ Theorems about `Exchange.begin` and `Exchange.step` for the properties that `Tes
 by random runs and bounded exploration (`Tests/Support/Check.lean`).  Each main theorem's docstring
 names the checker property it corresponds to.
 
-They hold whatever the HTTP/1.1 machine does: no proof looks inside the machine, so every value it
-returns is arbitrary.  The two loops of the core run through `loopWhile`, whose result is only known
-to be reached by rounds of its body; every property is proved for one round and carried through the
-loop by induction.
+They hold whatever the response parser returns: no proof here looks inside it, so every parser state
+and event it returns is arbitrary.
 
 Three kinds of statement:
 
@@ -26,13 +24,13 @@ Three kinds of statement:
 
 What they do not cover:
 
-- The request head is measured by `prepare` (`headBytes`, from what the machine encoded); the
+- The request head is measured by `prepare` (`headBytes`, from what the serialiser encoded); the
   checker measures it independently, as the first blank line.  That the two agree depends on the
-  machine's encoding and is not proved here.
+  encoding of `Std.Http`'s header fields and is not proved.
 - The checker's properties that compare the response with the bytes sent ("finish only after a
   complete response", "a finished response delivered its whole body", "the body is the response's",
   and the clause of "reusable only when safe" that the bytes read are exactly one reusable response)
-  depend on the machine parsing correctly, and are not proved.
+  are about the parser, and are not proved here.
 - "A live exchange has a deadline ahead", and liveness under the deadline, are proved in
   `LeanHttp.Exchange.Liveness`, which builds on this module.
 
@@ -47,7 +45,7 @@ body bytes come after a head.
 
 namespace LeanHttp.Exchange
 
-open Std.Http LeanHttpProto.Http.Protocol
+open Std.Http
 
 /-- The state of a step. -/
 abbrev S := Exchange × Array ExchangeAction
@@ -123,14 +121,15 @@ def Phase.isBody : Phase → Bool
 structure Reusable (ex : Exchange) : Prop where
   /-- Keep-alive was asked for. -/
   keepAlive : ex.config.keepAlive = true
-  /-- The response kept the connection alive. -/
-  peerKeepAlive : ex.machine.keepAlive = true
-  /-- The framing was certain. -/
-  certain : ex.framing.certain = true
-  /-- The body was read to its end. -/
-  bodyDone : ex.bodyDone = true
-  /-- Nothing was left over. -/
-  noLeftover : ex.machine.hasBufferedInput = false
+  /--
+  The parser says the connection could carry another exchange: the response ended, framed with
+  certainty, with nothing after it and before the end of input, and its keep-alive verdict (of the
+  final head's version and `Connection` fields, and in the codec's code of every interim head's too)
+  allowed it.
+  -/
+  codec : ex.parser.reusable = true
+  /-- The caller received the whole body: nothing is held back. -/
+  delivered : ex.held = []
   /-- The whole request was written. -/
   writtenAll : ex.written = ex.request.size
   /-- The final head did not arrive before the request was written in full. -/
@@ -430,9 +429,10 @@ theorem finishNow_run (ex : Exchange) (acts : Array ExchangeAction) (r : Bool) :
 
 theorem reusable_of {ex : Exchange} (h : ex.reusableNow = true) (hh : ex.head.isSome = true) :
     Reusable ex := by
-  simp only [reusableNow, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h
-  exact ⟨h1, h2, h3, h4, h8, h5, h6, h7, hh⟩
+  simp only [reusableNow, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true',
+    List.isEmpty_iff] at h
+  obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, h6, hh⟩
 
 theorem failNow_good {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (c : Cause) (d : String)
     (hg : Good ex₀ w r s) : Good ex₀ w r ((failNow c d).run s).2 := by
@@ -457,8 +457,7 @@ theorem finishNow_good {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (r
     · refine ⟨rfl, fun h => ?_⟩
       simp only [Bool.and_eq_true] at h
       have hr := reusable_of (ex := ex) h.2 (hh h.1)
-      exact ⟨hr.keepAlive, hr.peerKeepAlive, hr.certain, hr.bodyDone, hr.noLeftover, hr.writtenAll,
-        hr.notEarly, hr.noEnd, hr.head⟩
+      exact ⟨hr.keepAlive, hr.codec, hr.delivered, hr.writtenAll, hr.notEarly, hr.noEnd, hr.head⟩
   · simpa using hg
 
 /-- `Good`, inside `absorb`: no `finish true` yet, and past the sending phase. -/
@@ -529,9 +528,9 @@ theorem GoodA.emit {ex₀ : Exchange} {w : Option Nat} {r : Bool} {ex : Exchange
 /-- Delivering the final head. -/
 theorem deliverHead_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {ex : Exchange}
     {acts : Array ExchangeAction} (hg : GoodA ex₀ w r (ex, acts)) (ht : ex.terminal = false)
-    (hh : ex.head.isSome = false) (h : Response.Head) (fr : Framing) :
+    (hh : ex.head.isSome = false) (h : Response.Head) :
     GoodA ex₀ w r
-      ({ ex with head := some h, framing := fr, phase := .receiving,
+      ({ ex with head := some h, phase := .receiving,
                  early := decide (ex.written < ex.request.size) },
         acts.push (.deliverHead h)) := by
   have hw := hg.good.inv.headWritten (isActive_of_terminal hg.notSending ht)
@@ -576,132 +575,91 @@ macro "fixed_rfl" : tactic => `(tactic| exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, r
 macro "agree_rfl" : tactic =>
   `(tactic| exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩)
 
-theorem handleH1Event_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
-    (e : H1.Event .sending) (hg : GoodA ex₀ w r s) : GoodA ex₀ w r ((handleH1Event e).run s).2 := by
+/-- Pushing body bytes, in order, onto the actions of a state with a head keeps `GoodA`. -/
+theorem GoodA.emitBodies {ex₀ : Exchange} {w : Option Nat} {r : Bool} {ex : Exchange}
+    (ht : ex.terminal = false) (hh : ex.head.isSome = true) :
+    ∀ (bs : List ByteArray) {acts : Array ExchangeAction}, GoodA ex₀ w r (ex, acts) →
+      GoodA ex₀ w r (ex, bs.foldl (fun a b => a.push (.deliverBody b)) acts)
+  | [], _, hg => hg
+  | _ :: bs, _, hg => GoodA.emitBodies ht hh bs (hg.emit ht rfl rfl rfl rfl hh)
+
+/--
+What `releaseList` does: it delivers a prefix `pre` of the held pieces (all of them, or none), in
+order, keeps the rest, and keeps any only when the credit is used up.
+-/
+theorem releaseList_spec : ∀ (c : Nat) (l : List ByteArray) (acts : Array ExchangeAction),
+    ∃ pre, l = pre ++ (releaseList c l acts).2.1 ∧
+      (releaseList c l acts).2.2 = pre.foldl (fun a b => a.push (.deliverBody b)) acts ∧
+      ((releaseList c l acts).1 = 0 ∨ (releaseList c l acts).2.1 = [])
+  | 0, _, _ => ⟨[], rfl, rfl, Or.inl rfl⟩
+  | _ + 1, l, _ => ⟨l, by simp [releaseList], rfl, Or.inr rfl⟩
+
+theorem release_run (s : S) :
+    release.run s =
+      match s.1.phase with
+      | .receiving =>
+        ((), ({ s.1 with credit := (releaseList s.1.credit s.1.held s.2).1,
+                         held := (releaseList s.1.credit s.1.held s.2).2.1 },
+              (releaseList s.1.credit s.1.held s.2).2.2))
+      | _ => ((), s) := rfl
+
+theorem release_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
+    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r (release.run s).2 := by
   obtain ⟨ex, acts⟩ := s
-  cases e with
-  | endHeaders head =>
-    simp only [handleH1Event, bind_run, getEx_run]
-    rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;> simp only [ht, ↓reduceIte]
-    · exact hg
-    rcases Bool.eq_false_or_eq_true head.status.isInformational with hi | hi <;>
-      simp only [hi, ↓reduceIte, Bool.false_eq_true]
-    · rcases Bool.eq_false_or_eq_true (head.status.toCode == 101) with hc | hc <;>
-        simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-      · exact failNow_goodA _ _ hg
-      · have hg' := hg.agree (ex' := { ex with interim := ex.interim + 1 }) (by agree_rfl) rfl
-        by_cases hn : ex.interim + 1 > ex.config.maxInterim <;> simp only [hn, ↓reduceIte, bind_run]
-        · exact failNow_goodA _ _ hg'
-        · exact hg'
-    · rcases Bool.eq_false_or_eq_true ex.head.isSome with hh | hh <;>
-        simp only [hh, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
-      · exact failNow_goodA _ _ hg
-      · have hg' := deliverHead_goodA hg ht hh head (Framing.ofResponse ex.method head)
-        split
-        · simp only [bind_run]
-          exact failNow_goodA _ _ hg'
-        · exact hg'
-  | closeBody =>
-    simp only [handleH1Event, bind_run, getEx_run]
-    rcases Bool.eq_false_or_eq_true ex.head.isSome with hh | hh <;>
-      simp only [hh, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-    · exact hg.agree (by agree_rfl) rfl
-    · exact hg
-  | failed err =>
-    simp only [handleH1Event, bind_run]
-    exact failOrDrop_goodA _ _ hg
-  | _ => exact hg
-
-theorem handleH1Events_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
-    (events : Array (H1.Event .sending)) (hg : GoodA ex₀ w r s) :
-    GoodA ex₀ w r ((handleH1Events events).run s).2 := by
-  unfold handleH1Events
-  rw [← Array.foldlM_toList]
-  generalize events.toList = l
-  generalize false = b
-  induction l generalizing s b with
-  | nil => exact hg
-  | cons e l ih =>
-    simp only [List.foldlM_cons, bind_run]
-    exact ih (handleH1Event_goodA e hg) _
-
-theorem loopWhile_inv {σ : Type} (body : σ → Bool × σ) (P : σ → Prop)
-    (hb : ∀ s, P s → P (body s).2) (s : σ) (hs : P s) : P (loopWhile body s).1 := by
-  generalize loopWhile body s = x
-  obtain ⟨t, h⟩ := x
-  induction h with
-  | refl => exact hs
-  | tail _ ih => exact hb _ ih
-
-theorem pullOnce_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
-    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r (pullOnce.run s).2 := by
-  obtain ⟨ex, acts⟩ := s
-  simp only [pullOnce, getEx_bind_run]
-  rcases Bool.eq_false_or_eq_true (ex.terminal || ex.bodyDone || !ex.machine.canPullBodyNow)
-    with hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
-  · exact hg
-  simp only [Bool.or_eq_false_iff, Bool.not_eq_false'] at hc
-  obtain ⟨⟨ht, _⟩, _⟩ := hc
-  have hterm : ∀ ex' : Exchange, ex'.phase = ex.phase → ex'.terminal = false := fun ex' hp => by
-    rw [terminal_of_phase hp]; exact ht
+  rw [release_run]
   split
   · rename_i hp
-    have hh := hg.good.inv.hasHead (by simp [hp, Phase.isBody])
-    rcases Bool.eq_false_or_eq_true (ex.credit == 0) with hc | hc <;>
-      simp only [hc, ↓reduceIte, Bool.false_eq_true]
-    · split
-      · rename_i pulled _
-        rcases Bool.eq_false_or_eq_true (!pulled.chunk.data.isEmpty) with he | he <;>
-          simp only [he, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-        · exact hg
-        · exact hg.agree (by agree_rfl) rfl
-      · simp only [bind_run, setEx_run]
-        exact hg.agree (by agree_rfl) rfl
-    · rcases Bool.eq_false_or_eq_true (ex.announcedOver ex.bodyBytes ex.config.maxBody) with ho | ho <;>
-        simp only [ho, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-      · exact failNow_goodA _ _ hg
-      · have hg1 := hg.agree (ex' := { ex with machine := ex.machine.pullBody.1 }) (by agree_rfl) rfl
-        split
-        · rename_i pulled _
-          by_cases hn : ex.bodyBytes + pulled.chunk.data.size > ex.config.maxBody <;>
-            simp only [hn, ↓reduceIte, bind_run, setEx_run]
-          · exact failNow_goodA _ _ hg1
-          · have hg2 := hg1.agree (ex' := { ex with
-              machine := ex.machine.pullBody.1,
-              credit := ex.credit - min ex.credit pulled.chunk.data.size,
-              bodyBytes := ex.bodyBytes + pulled.chunk.data.size,
-              bodyDone := ex.bodyDone || pulled.final }) (by agree_rfl) rfl
-            rcases Bool.eq_false_or_eq_true pulled.chunk.data.isEmpty with he | he <;>
-              simp only [he, ↓reduceIte, Bool.false_eq_true, bind_run, emit_run]
-            · exact hg2
-            · exact hg2.emit (hterm _ rfl) rfl rfl rfl rfl hh
-        · exact hg1
-  · rcases Bool.eq_false_or_eq_true (ex.announcedOver ex.drained ex.config.drainBytes) with ho | ho <;>
-      simp only [ho, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-    · exact finishNow_false_goodA hg
-    · have hg1 := hg.agree (ex' := { ex with machine := ex.machine.pullBody.1 }) (by agree_rfl) rfl
-      split
-      · rename_i pulled _
-        simp only [bind_run, setEx_run]
-        have hg2 := hg1.agree (ex' := { ex with
-          machine := ex.machine.pullBody.1,
-          drained := ex.drained + pulled.chunk.data.size,
-          bodyDone := ex.bodyDone || pulled.final }) (by agree_rfl) rfl
-        by_cases hn : ex.drained + pulled.chunk.data.size > ex.config.drainBytes <;>
-          simp only [hn, ↓reduceIte, bind_run]
-        · exact finishNow_false_goodA hg2
-        · exact hg2
-      · exact hg1
+    have hp' : ex.phase = .receiving := hp
+    have ht : ex.terminal = false := by simp [terminal, hp']
+    have hh := hg.good.inv.hasHead (by simp [hp', Phase.isBody])
+    obtain ⟨pre, _, h2, _⟩ := releaseList_spec ex.credit ex.held acts
+    have := GoodA.emitBodies ht hh pre hg
+    rw [← h2] at this
+    exact this.agree (by agree_rfl) rfl
   · exact hg
 
-theorem pullAvailable_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (p : Bool)
-    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r ((pullAvailable p).run s).2 := by
-  show GoodA ex₀ w r (loopWhile pullRound (p, s)).1.2
-  apply loopWhile_inv pullRound (fun x => GoodA ex₀ w r x.2) _ (p, s) hg
-  intro ⟨q, s'⟩ hs
-  simp only [pullRound]
-  have := pullOnce_goodA hs
-  split <;> simp_all
+theorem onHead_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (h : Codec.Head)
+    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r ((onHead h).run s).2 := by
+  obtain ⟨ex, acts⟩ := s
+  simp only [onHead, getEx_bind_run]
+  rcases Bool.eq_false_or_eq_true (ex.terminal || ex.head.isSome) with hc | hc <;>
+    simp only [hc, ↓reduceIte, Bool.false_eq_true]
+  · exact hg
+  · simp only [Bool.or_eq_false_iff] at hc
+    simp only [bind_run, setEx_run, emit_run]
+    exact deliverHead_goodA hg hc.1 hc.2 h.response
+
+theorem onHead?_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (h : Option Codec.Head)
+    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r ((onHead? h).run s).2 := by
+  cases h with
+  | none => exact hg
+  | some h => exact onHead_goodA h hg
+
+theorem onBodies_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
+    (bodies : List ByteArray) (hg : GoodA ex₀ w r s) : GoodA ex₀ w r ((onBodies bodies).run s).2 := by
+  obtain ⟨ex, acts⟩ := s
+  simp only [onBodies, getEx_bind_run]
+  split
+  · simp only [bind_run, setEx_run]
+    have hg' := hg.agree (ex' := { ex with drained := bodies.foldl (· + ·.size) ex.drained })
+      (by agree_rfl) rfl
+    split
+    · exact finishNow_false_goodA hg'
+    · exact hg'
+  · simp only [bind_run, setEx_run]
+    exact release_goodA (hg.agree (by agree_rfl) rfl)
+
+theorem onError?_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (e : Option Codec.Error)
+    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r ((onError? e).run s).2 := by
+  cases e with
+  | none => exact hg
+  | some e => exact failOrDrop_goodA _ _ hg
+
+theorem onEvents_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
+    (events : Array Codec.Event) (hg : GoodA ex₀ w r s) :
+    GoodA ex₀ w r ((onEvents events).run s).2 := by
+  simp only [onEvents, bind_run]
+  exact onError?_goodA _ (onBodies_goodA _ (onHead?_goodA _ hg))
 
 theorem failOrDrop_good {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S} (c : Cause)
     (d : String) (hg : GoodA ex₀ w r s) : Good ex₀ w r ((failOrDrop c d).run s).2 :=
@@ -711,62 +669,29 @@ theorem settle_good {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
     (hg : GoodA ex₀ w r s) : Good ex₀ w r (settle.run s).2 := by
   obtain ⟨ex, acts⟩ := s
   simp only [settle, getEx_bind_run]
-  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;> simp only [ht, ↓reduceIte]
-  · exact hg.good
-  have hns := hg.notSending
-  have hh : ex.phase.isBody = true → ex.head.isSome = true := hg.good.inv.hasHead
-  cases hp : ex.phase <;> simp only [hp] at hns ht hh ⊢ <;>
-    simp only [Bool.false_eq_true, ↓reduceIte, Bool.true_and, Bool.false_and]
-  case sending => simp [Phase.isSending] at hns
-  case finished => simp [terminal, hp] at ht
-  case failed => simp [terminal, hp] at ht
-  all_goals
-    first
-    | (rcases Bool.eq_false_or_eq_true ex.bodyDone with hb | hb <;>
-        simp only [hb, ↓reduceIte, Bool.false_eq_true]
-       · exact finishNow_good true hg.good (fun _ => hh (by simp [Phase.isBody])))
-    | skip
-  all_goals
-    rcases Bool.eq_false_or_eq_true ex.inputEnded with hi | hi <;>
-      simp only [hi, ↓reduceIte, Bool.false_eq_true]
-  all_goals
-    first
-    | exact hg.good
-    | (rcases Bool.eq_false_or_eq_true (ex.credit == 0 && ex.machine.canPullBodyNow) with hc | hc <;>
-        simp only [hc, ↓reduceIte, Bool.false_eq_true]
-       · exact hg.good)
-    | skip
-  all_goals
-    rcases Bool.eq_false_or_eq_true ex.machine.failed with hf | hf <;>
-      simp only [hf, ↓reduceIte, Bool.false_eq_true] <;> exact failOrDrop_good _ _ hg
-
-theorem absorbOnce_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
-    (hg : GoodA ex₀ w r s) : GoodA ex₀ w r (absorbOnce.run s).2 := by
-  obtain ⟨ex, acts⟩ := s
-  simp only [absorbOnce, getEx_bind_run]
   rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
     simp only [ht, ↓reduceIte, Bool.false_eq_true]
-  · exact hg
-  simp only [bind_run, setEx_run]
-  have h1 := hg.agree (ex' := { ex with machine := ex.machine.step.1 }) (by agree_rfl) rfl
-  have h2 := handleH1Events_goodA ex.machine.step.2.events h1
-  generalize (handleH1Events ex.machine.step.2.events).run
-    ({ ex with machine := ex.machine.step.1 }, acts) = x at h2 ⊢
-  have h3 := pullAvailable_goodA false h2
-  generalize (pullAvailable false).run x.2 = y at h3 ⊢
-  simp only [getEx_run]
-  have h4 := h3.agree (ex := y.2.1) (ex' := { y.2.1 with machine := y.2.1.machine.takeEvents.1 })
-    (by agree_rfl) rfl
-  have h5 := handleH1Events_goodA y.2.1.machine.takeEvents.2 h4
-  generalize (handleH1Events y.2.1.machine.takeEvents.2).run
-    ({ y.2.1 with machine := y.2.1.machine.takeEvents.1 }, y.2.2) = z at h5 ⊢
-  exact h5
+  · exact hg.good
+  have hh : ex.phase.isBody = true → ex.head.isSome = true := hg.good.inv.hasHead
+  cases hp : ex.phase <;> simp only [hp] at hh ⊢
+  case receiving =>
+    split
+    · exact finishNow_good true hg.good (fun _ => hh rfl)
+    · exact hg.good
+  case draining =>
+    split
+    · exact finishNow_good true hg.good (fun _ => hh rfl)
+    · split
+      · exact finishNow_good false hg.good (by simp)
+      · exact hg.good
+  all_goals exact hg.good
 
 theorem absorb_good {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : S}
-    (hg : GoodA ex₀ w r s) : Good ex₀ w r (absorb.run s).2 := by
-  show Good ex₀ w r (settle.run (loopWhile absorbOnce.run s).1).2
-  apply settle_good
-  exact loopWhile_inv _ (GoodA ex₀ w r) (fun _ h => absorbOnce_goodA h) s hg
+    (p : Codec.Parser × Array Codec.Event) (hg : GoodA ex₀ w r s) :
+    Good ex₀ w r ((absorb p).run s).2 := by
+  obtain ⟨ex, acts⟩ := s
+  simp only [absorb, bind_run, modifyEx_run]
+  exact settle_good (onEvents_goodA _ (hg.agree (by agree_rfl) rfl))
 
 /-! ## The parts of a step -/
 
@@ -1047,9 +972,9 @@ theorem handle_good (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (ht : ex.t
     split
     · exact failNow_good _ _ hg
     · rename_i hp
-      simp only [bind_run, setEx_run]
-      exact absorb_good (GoodA.empty (hg.agree (by agree_rfl) rfl (by simp))
-        (isSending_false_of hp))
+      split
+      · exact hg
+      · exact absorb_good _ (GoodA.empty hg (isSending_false_of hp))
   | endOfInput =>
     simp only [handle, wAfter, rAfter, startOf]
     simp only [getEx_bind_run]
@@ -1058,11 +983,11 @@ theorem handle_good (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (ht : ex.t
       (ex' := { ex with readInFlight := false, readBy := none, inputEnded := true })
       (w := ex.writeInFlight) (r := false) (by fixed_rfl) ⟨hi.headWritten, hi.hasHead, hi.writtenLe, hi.inFlightLe⟩ ht rfl rfl rfl rfl rfl
     split
-    · exact failNow_good _ _ hg
-    · rename_i hp
-      simp only [bind_run, setEx_run]
-      exact absorb_good (GoodA.empty (hg.agree (by agree_rfl) rfl (by simp))
-          (isSending_false_of hp))
+    · exact hg
+    · split
+      · exact failNow_good _ _ hg
+      · rename_i hp
+        exact absorb_good _ (GoodA.empty hg (isSending_false_of hp))
   | written count =>
     simp only [handle, wAfter, rAfter, startOf]
     simp only [getEx_bind_run]
@@ -1118,26 +1043,31 @@ theorem handle_good (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (ht : ex.t
       rfl rfl rfl rfl rfl
     split
     · rename_i hp
-      simp only [↓reduceIte]
-      exact absorb_good (GoodA.empty hg (by simp [hp, Phase.isSending]))
+      simp only [↓reduceIte, bind_run]
+      exact settle_good (release_goodA (GoodA.empty hg (by simp [hp, Phase.isSending])))
     · simp only [Bool.false_eq_true, ↓reduceIte]; exact hg
   | tick =>
     simp only [handle, wAfter, rAfter, startOf]
     exact Good.start (ex₀ := ex) (ex' := ex) hf hi ht rfl rfl rfl rfl rfl
   | abandon =>
     simp only [handle, wAfter, rAfter, startOf]
-    simp only [getEx_bind_run]
-    have hg := Good.start (ex₀ := ex) (ex' := ex) hf hi ht rfl rfl rfl rfl rfl
+    simp only [bind_run, setEx_run]
+    have hg := Good.start (ex₀ := ex) (ex' := { ex with abandoned := true })
+      (w := ex.writeInFlight) (r := ex.readInFlight) (by fixed_rfl)
+      ⟨hi.headWritten, hi.hasHead, hi.writtenLe, hi.inFlightLe⟩ ht rfl rfl rfl rfl rfl
     split
     · exact failNow_good _ _ hg
     · exact failNow_good _ _ hg
     · rename_i hp
+      have hp' : ex.phase = .receiving := hp
       split
       · simp only [bind_run, setEx_run]
-        have hact := hi.headWritten (by simp [hp, Phase.isActive])
-        have hhd := hi.hasHead (by simp [hp, Phase.isBody])
-        exact absorb_good (GoodA.empty (Good.start (ex₀ := ex)
-          (ex' := { ex with phase := .draining, drainBy := some (ex.now + ex.config.drainMs) })
+        have hact := hi.headWritten (by simp [hp', Phase.isActive])
+        have hhd := hi.hasHead (by simp [hp', Phase.isBody])
+        exact settle_good (GoodA.empty (Good.start (ex₀ := ex)
+          (ex' := { ex with abandoned := true, phase := .draining, held := [],
+                            drained := ex.held.foldl (· + ·.size) 0,
+                            drainBy := some (ex.now + ex.config.drainMs) })
           (w := ex.writeInFlight) (r := ex.readInFlight)
           (by fixed_rfl) ⟨fun _ => hact, fun _ => hhd, hi.writtenLe, hi.inFlightLe⟩ (by simp [terminal])
           rfl rfl rfl rfl rfl)
@@ -1203,7 +1133,8 @@ theorem step_good {ex : Exchange} (hi : Inv ex) {now : Timestamp} {e : ExchangeE
 
 /-- The exchange `begin` starts from. -/
 def initial (req : PreparedRequest) (now deadline : Timestamp) : Exchange :=
-  { config := req.config, machine := req.machine, method := req.method, request := req.bytes,
+  { config := req.config, parser := Codec.Parser.start req.config.codec req.method,
+    method := req.method, request := req.bytes,
     headBytes := req.headBytes, deadline, now }
 
 theorem begin_def (req : PreparedRequest) (now deadline : Timestamp) :
@@ -1323,9 +1254,10 @@ theorem step_deliverHead {ex : Exchange} (hi : Inv ex) {now : Timestamp} {e : Ex
 
 /--
 **Reusable only when safe** (checker: "reusable only when safe"), on the core's side.  A step
-reports the connection reusable only when keep-alive was asked for; the machine reported that the
-response kept the connection alive, that its framing was certain, that its body was read to its end
-and that nothing was left over; the whole request was written, and not after the final head arrived
+reports the connection reusable only when keep-alive was asked for; the parser says the connection
+could carry another exchange (`Codec.Parser.reusable`: the response ended, framed with certainty,
+with nothing after it and before the end of input, and its keep-alive verdict allowed it); the caller
+received the whole body; the whole request was written, and not after the final head arrived
 (`early` is false; `observed_finish_reusable` ties this to the bytes written when the head was
 delivered); the peer did not close; and a final head was delivered.
 -/
@@ -1460,7 +1392,7 @@ theorem step_chunk_after_head {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e
 **Bytes before the request head fail the exchange** (checker: "unsolicited bytes fail the exchange",
 and with `step_of_terminal`, "unsolicited bytes never make a response").  Bytes (at least one)
 reported while fewer than `headBytes` request bytes have been written end the exchange with that
-failure and nothing else; they are not handed to the machine, and the exchange emits nothing more.
+failure and nothing else; they are not handed to the parser, and the exchange emits nothing more.
 -/
 theorem step_unsolicited {ex : Exchange} (hi : Inv ex) (ht : ex.terminal = false)
     (hw : ex.written < ex.headBytes) (now : Timestamp) (bytes : ByteArray)
@@ -2246,9 +2178,8 @@ theorem step_fixed {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : Exchange
 model: a step reports the connection reusable only when keep-alive was asked for, the whole request
 was written, all of it before the final head was delivered, the peer did not close, and a final head
 was delivered.  The checker's remaining reason, that the bytes read are exactly one response whose
-framing permits reuse, is about the response bytes and so about the HTTP/1.1 machine; on the core's
-side, `step_finish_reusable` shows that it trusted the machine's report of certain framing, a body
-read to its end, nothing left over and the response's keep-alive.
+framing permits reuse, is about the response bytes and so about the parser, whose verdict
+`step_finish_reusable` shows the core requires.
 -/
 theorem observed_finish_reusable {ex : Exchange} {m : Obs} (h : Observed ex m) {now : Timestamp}
     {e : ExchangeEvent} (hm : .finish true ∈ (ex.step now e).2) :
