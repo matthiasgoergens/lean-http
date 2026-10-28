@@ -10,7 +10,8 @@ by random runs and bounded exploration (`Tests/Support/Check.lean`).  Each main 
 names the checker property it corresponds to.
 
 They hold whatever the response parser returns: no proof here looks inside it, so every parser state
-and event it returns is arbitrary.
+and event it returns is arbitrary.  `LeanHttp.Exchange.Response` then brings in the codec's own
+theorems, to say what a finished exchange received and delivered.
 
 Three kinds of statement:
 
@@ -30,7 +31,8 @@ What they do not cover:
 - The checker's properties that compare the response with the bytes sent ("finish only after a
   complete response", "a finished response delivered its whole body", "the body is the response's",
   and the clause of "reusable only when safe" that the bytes read are exactly one reusable response)
-  are about the parser, and are not proved here.
+  are about the parser, and are proved in `LeanHttp.Exchange.Response` (`observed_finish_codec`,
+  `observed_finish_complete`, `observed_body_prefix`), relative to the codec's reading of the bytes.
 - "A live exchange has a deadline ahead", and liveness under the deadline, are proved in
   `LeanHttp.Exchange.Liveness`, which builds on this module.
 
@@ -1259,7 +1261,8 @@ could carry another exchange (`Codec.Parser.reusable`: the response ended, frame
 with nothing after it and before the end of input, and its keep-alive verdict allowed it); the caller
 received the whole body; the whole request was written, and not after the final head arrived
 (`early` is false; `observed_finish_reusable` ties this to the bytes written when the head was
-delivered); the peer did not close; and a final head was delivered.
+delivered); the peer did not close; and a final head was delivered.  `observed_finish_codec` says
+what the parser's verdict means for the bytes received.
 -/
 theorem step_finish_reusable {ex : Exchange} (hi : Inv ex) {now : Timestamp} {e : ExchangeEvent}
     (hm : .finish true ∈ (ex.step now e).2) :
@@ -1788,6 +1791,12 @@ structure Obs where
   eofSeen : Bool := false
   /-- The time of the latest step. -/
   now : Nat := 0
+  /-- Every byte received, in order, before the end of input and before the run ended. -/
+  fed : ByteArray := .empty
+  /-- The body delivered, in order. -/
+  body : List UInt8 := []
+  /-- Whether the caller abandoned the exchange. -/
+  abandoned : Bool := false
 
 /-- The model's update for an event, as `Model.observe`. -/
 def Obs.observe (m : Obs) (e : ExchangeEvent) : Obs :=
@@ -1799,12 +1808,15 @@ def Obs.observe (m : Obs) (e : ExchangeEvent) : Obs :=
     | none => m
   | .writeFailed _ => { m with outstanding := none }
   | .endOfInput => { m with eofSeen := true }
+  | .received b => { m with fed := if b.isEmpty || m.eofSeen then m.fed else m.fed ++ b }
+  | .abandon => { m with abandoned := true }
   | _ => m
 
 /-- The model's update for an action, as in `checkStep`. -/
 def Obs.see (m : Obs) : ExchangeAction → Obs
   | .write b => { m with outstanding := some b.size, everWrote := true }
   | .deliverHead _ => { m with headDelivered := true, ackedAtHead := m.acked }
+  | .deliverBody b => { m with body := m.body ++ b.data.toList }
   | .finish _ | .fail _ => { m with ended := true }
   | _ => m
 
@@ -1999,7 +2011,15 @@ theorem Observed.agrees {ex : Exchange} {m : Obs} (h : Observed ex m) : Agrees e
       have hobs : m.observe e = m := by
         cases ht : ex.terminal
         · simp only [ht, Bool.false_or, stale] at hc
-          cases e <;> first
+          cases e
+          case received b =>
+            cases hnd : ex.nextDeadline <;> simp only [hnd, Bool.and_eq_true, decide_eq_true_eq] at hc
+            · cases hc
+            · have hb := hc.1
+              rw [ht] at ie
+              cases m
+              simp_all [Obs.observe]
+          all_goals first
             | (simp only [Obs.observe, ie, ht]; done)
             | (simp only [Obs.observe, ie, ht]; rfl)
             | (exfalso; revert hc; simp)
@@ -2178,8 +2198,8 @@ theorem step_fixed {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : Exchange
 model: a step reports the connection reusable only when keep-alive was asked for, the whole request
 was written, all of it before the final head was delivered, the peer did not close, and a final head
 was delivered.  The checker's remaining reason, that the bytes read are exactly one response whose
-framing permits reuse, is about the response bytes and so about the parser, whose verdict
-`step_finish_reusable` shows the core requires.
+framing permits reuse, is about the response bytes: `observed_finish_codec` proves it from the
+parser's verdict, which `step_finish_reusable` shows the core requires.
 -/
 theorem observed_finish_reusable {ex : Exchange} {m : Obs} (h : Observed ex m) {now : Timestamp}
     {e : ExchangeEvent} (hm : .finish true ∈ (ex.step now e).2) :

@@ -53,7 +53,7 @@ structure Model where
   ackedAtHead : Nat := 0
   /-- The status code of the final head, once delivered. -/
   headStatus : Option Nat := none
-  /-- Every byte received, in order. -/
+  /-- Every byte received, in order, before the end of input (and before the run ended). -/
   fed : ByteArray := .empty
   /-- Whether bytes arrived before the request head was written. -/
   unsolicited : Bool := false

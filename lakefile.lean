@@ -17,7 +17,7 @@ lean_lib LeanHttp where
   -- The proofs about the exchange core and the codec are checked by every build, but no other module
   -- imports them.
   roots := #[`LeanHttp, `LeanHttp.Codec, `LeanHttp.Codec.Proofs, `LeanHttp.Exchange.Proofs,
-    `LeanHttp.Exchange.Liveness]
+    `LeanHttp.Exchange.Liveness, `LeanHttp.Exchange.Response]
 
 /-- Helpers shared by the test executables. -/
 lean_lib TestSupport where

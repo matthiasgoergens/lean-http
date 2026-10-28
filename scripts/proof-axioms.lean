@@ -2,6 +2,7 @@ module
 
 import all LeanHttp.Exchange.Proofs
 import all LeanHttp.Exchange.Liveness
+import all LeanHttp.Exchange.Response
 
 /-!
 Prints the axioms of the main theorems about the exchange core.  Each must depend on no more than
@@ -49,3 +50,7 @@ open LeanHttp.Exchange
 #print axioms Reachable.ends_of_fair
 #print axioms Reachable.ends_of_allDue
 #print axioms step_empty_received
+#print axioms Observed.cinv
+#print axioms observed_finish_codec
+#print axioms observed_finish_complete
+#print axioms observed_body_prefix
