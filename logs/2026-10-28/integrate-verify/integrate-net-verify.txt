@@ -1,0 +1,80 @@
+### 2026-10-28T15:34:12Z 7.0.0-38-generic; syn_retries=2
+PASS get: process exited 7 ms after main returned
+PASS get: GET returns the body
+PASS post: process exited 9 ms after main returned
+PASS post: POST is answered
+PASS post: the server read Host, Content-Length: 11, Connection: close and an 11-byte body
+PASS head: process exited 8 ms after main returned
+PASS head: HEAD with Content-Length: 12345 has an empty body
+PASS chunked: process exited 7 ms after main returned
+PASS chunked: chunked body with extensions and trailers
+PASS interim: process exited 11 ms after main returned
+PASS interim: two 103 responses, then 200
+PASS ipv6-literal: process exited 11 ms after main returned
+PASS ipv6-literal: an IPv6 literal URL connects
+PASS dns-dup: process exited 10 ms after main returned
+PASS dns-dup: a name with one address (returned three times) gets one attempt
+PASS dns-dual: process exited 10 ms after main returned
+PASS dns-dual: a name with two addresses (each returned three times) gets two attempts, ::1 first
+PASS blackhole-first: process exited 12 ms after main returned
+PASS blackhole-first: connects to 127.0.0.1 when ::1 drops SYNs
+PASS blackhole-first: ten calls out of ten
+PASS blackhole-first: the ::1 attempt was abandoned
+PASS blackhole-first: each call's connection closed before the next call connected
+PASS blackhole-first: median call within about the 250 ms stagger: 253 ms
+PASS blackhole-stagger50: process exited 8 ms after main returned
+PASS blackhole-stagger50: with a 50 ms stagger, the median call is about 50 ms: 52 ms
+PASS blackhole-timeout: process exited 11 ms after main returned
+PASS blackhole-timeout: two connect attempts time out; nothing sent
+PASS blackhole-timeout: two 1 s attempts and one backoff: 2032 ms
+PASS blackhole-timeout: the abandoned attempts' sockets are released later (13, then 11 descriptors)
+PASS refused-backoff: process exited 24 ms after main returned
+PASS refused-backoff: refused three times (two retries); nothing sent
+PASS refused-backoff: one attempt per round
+PASS refused-backoff: at least the 23 + 49 ms of backoff for seed 42: 75 ms
+PASS deadline-trickle: process exited 19 ms after main returned
+PASS deadline-trickle: a body trickling one byte per 100 ms ends at the deadline
+PASS deadline-trickle: at the 2 s deadline: 2002 ms
+PASS deadline-interim: process exited 16 ms after main returned
+PASS deadline-interim: interim responses every 300 ms, never a final one, end at the deadline
+PASS deadline-interim: at the 2 s deadline: 2002 ms
+PASS interim-limit: process exited 11 ms after main returned
+PASS interim-limit: the eleventh interim response fails the call
+PASS read-gap: process exited 13 ms after main returned
+PASS read-gap: a silent server hits the read gap
+PASS read-gap: after the 1 s gap: 1007 ms
+PASS body-limit: process exited 16 ms after main returned
+PASS body-limit: a 10 MB body against a 1 MB limit
+PASS malformed: process exited 17 ms after main returned
+PASS malformed: a malformed status line
+PASS cut-body: process exited 13 ms after main returned
+PASS cut-body: the server closes 95 bytes short of its Content-Length
+PASS reset: process exited 16 ms after main returned
+PASS reset: the server resets the connection instead of answering
+PASS resolve: process exited 19 ms after main returned
+PASS resolve: a name that does not resolve; not retried
+PASS nodelay: process exited 11 ms after main returned
+PASS nodelay-off: process exited 13 ms after main returned
+PASS nodelay-raw-split-keepalive: process exited 10 ms after main returned
+PASS nodelay-raw-split-keepalive-nodelay: process exited 10 ms after main returned
+PASS nodelay-raw-split-fresh: process exited 10 ms after main returned
+PASS nodelay: median call 0 ms, no 40 ms stall
+PASS nodelay-off: median call 0 ms, no 40 ms stall
+PASS nodelay-raw-split-fresh: median call 0 ms, no 40 ms stall
+PASS nodelay-raw-split-keepalive-nodelay: median call 0 ms, no 40 ms stall
+PASS nodelay-raw-split-keepalive: control: split writes with Nagle on a kept-alive connection stall (median 41 ms)
+PASS post-large: process exited 12 ms after main returned
+PASS post-large: a 3 MB body goes out in slices and is answered
+PASS connect-deadline: process exited 9 ms after main returned
+PASS connect-deadline: the deadline passes while connecting; nothing sent
+PASS connect-deadline: at the 1.5 s deadline: 1507 ms
+PASS write-timeout: process exited 10 ms after main returned
+PASS write-timeout: a peer that stops reading stalls the upload; the write gap ends it
+PASS early-response: process exited 9 ms after main returned
+PASS early-response: a server that answers 413 after the head and stops reading: the response is delivered
+PASS early-response: before the 1 s write gap: 4 ms
+tests/net/run.sh: line 59:  1839 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1
+KNOWN dns-timeout: exit status 139, 8187 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+PASS dns-timeout: a name server that never answers: the call ends at the deadline; nothing sent
+PASS dns-timeout: at the 2 s deadline: 2011 ms
+### 76 passed, 0 failed, 1 known limitations
