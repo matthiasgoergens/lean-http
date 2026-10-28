@@ -20,6 +20,10 @@ The rules match `Message.Head.getSize`, `checkSendingMessageHead` and
 - a response with neither is delimited by the end of the input;
 - a response to HEAD, and a 1xx, 204 or 304 response, has no body whatever its framing fields say,
   but malformed or contradictory framing fields are rejected all the same.
+
+On top of these, a chunked body whose `Transfer-Encoding` names another coding before `chunked` is
+rejected once its head is reported (`onlyChunked`), as the exchange core does, until the client can
+decode transfer codings.
 -/
 
 namespace LeanHttp.Codec
@@ -86,6 +90,15 @@ def endsChunked (v : List UInt8) : Bool :=
   match tokenList v with
   | some codings => codings.getLast? == some chunkedName && codings.count chunkedName == 1
   | none => false
+
+/--
+Whether the head's one `Transfer-Encoding` field is exactly `chunked`.  A chunked body with any other
+coding before it would reach the caller still coded, so the parser refuses it (`startBody`).
+-/
+def onlyChunked (fields : List Field) : Bool :=
+  match fields.filter (·.isNamed transferEncodingName) with
+  | [te] => tokenList te.value == some [chunkedName]
+  | _ => false
 
 /--
 What the framing fields of a head declare, before the method and status are considered.

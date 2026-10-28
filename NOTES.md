@@ -23,7 +23,7 @@ The three informational cases record behaviour without asserting it: a status li
 
 Built on 2026-10-28; the client does not use it yet.  `LeanHttp/Codec/` parses an HTTP/1.1 response in the client direction, given the request method, and every function in it is total.  `Parser.stepByte` reads one byte with no loop and is the meaning of the parser; `Parser.feed` reads body bytes in bulk, slicing them out of its input, and is proved to compute the same (`feed_eq_run`).  `LeanHttp/Codec/Proofs.lean` lists what is proved, and `scripts/codec-axioms.lean` prints the axioms of the main theorems, which use `propext`, `Classical.choice` and `Quot.sound` at most.
 
-Its rules and limits are those of the vendored machine, with the exchange core's interim limit, `101` refusal and body limit built in, except in these deliberate differences, each of which the differential test below finds and attributes:
+Its rules and limits are those of the vendored machine, with the exchange core's interim limit, `101` refusal, body limit and refusal of a transfer coding other than chunked built in, except in these deliberate differences, each of which the differential test below finds and attributes:
 
 - A chunk whose size line announces more than the body limit leaves is rejected at its size line.  The core rejects it only once the data arrives, so its outcome then depends on what the data holds and on how the bytes are cut: a bad message, still pending, a premature close, or the body limit.
 - A chunk-size line longer than its limit is rejected at the byte that exceeds it.  The vendored machine measures an incomplete line only up to its last complete extension, and keeps waiting.

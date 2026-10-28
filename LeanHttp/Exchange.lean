@@ -39,8 +39,9 @@ What the core guarantees, by construction:
 - **Errors say how far the request got** (`Failure.delivery`, `Failure.written`).
 
 On top of the machine the core counts interim (1xx) responses against a limit, refuses
-`101 Switching Protocols` (the client never asks for an upgrade), enforces the body limit, and turns
-the machine's errors into a `Cause`.
+`101 Switching Protocols` (the client never asks for an upgrade), refuses a body with a transfer
+coding other than chunked (which it cannot decode), enforces the body limit, and turns the machine's
+errors into a `Cause`.
 -/
 
 namespace LeanHttp
@@ -169,6 +170,29 @@ def ofResponse (method : Method) (head : Response.Head) : Framing :=
     | Option.none => .untilClose
 
 end Framing
+
+/--
+`true` when the head's `Transfer-Encoding` is exactly `chunked`.  The machine removes the chunked
+coding and no other, and the client decodes no other, so a body with any further coding
+(`Transfer-Encoding: gzip, chunked`, say) would reach the caller still coded.
+-/
+def onlyChunked (head : Response.Head) : Bool :=
+  match head.headers.getAll? Header.Name.transferEncoding with
+  | some #[value] => (Header.TransferEncoding.parse value).map (·.codings) == some #["chunked"]
+  | _ => false
+
+/--
+Why the core refuses a final response head whose framing is `framing` as soon as it arrives, if it
+does: a `Content-Length` over the body limit, or a body with a transfer coding other than chunked,
+until the client can decode transfer codings.  A response that has no body is not refused for the
+transfer codings its head names: there is nothing they could apply to.
+-/
+def refusal (config : ExchangeConfig) (head : Response.Head) : Framing → Option Cause
+  | .length n => if n > config.maxBody then some (.limit .body) else none
+  | .chunked =>
+    if onlyChunked head then none
+    else some (.protocol "a transfer coding other than chunked, which the client cannot decode")
+  | _ => none
 
 /--
 Why an exchange failed, and how far its request got.
@@ -721,8 +745,7 @@ private def handleH1Event : H1.Event .sending → StepM Bool
       setEx { ex with
         head := some head, framing, phase := .receiving, early := ex.written < ex.request.size }
       emit (.deliverHead head)
-      if let .length n := framing then
-        if n > ex.config.maxBody then failNow (.limit .body)
+      if let some cause := refusal ex.config head framing then failNow cause
       return true
   | .closeBody => do
     -- The machine also closes the (empty) body of each interim response; only the final

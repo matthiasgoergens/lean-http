@@ -598,10 +598,8 @@ theorem handleH1Event_goodA {ex₀ : Exchange} {w : Option Nat} {r : Bool} {s : 
       · exact failNow_goodA _ _ hg
       · have hg' := deliverHead_goodA hg ht hh head (Framing.ofResponse ex.method head)
         split
-        · rename_i n _
-          by_cases hn : n > ex.config.maxBody <;> simp only [hn, ↓reduceIte, bind_run]
-          · exact failNow_goodA _ _ hg'
-          · exact hg'
+        · simp only [bind_run]
+          exact failNow_goodA _ _ hg'
         · exact hg'
   | closeBody =>
     simp only [handleH1Event, bind_run, getEx_run]

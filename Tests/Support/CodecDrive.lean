@@ -31,6 +31,7 @@ def codecCause : Codec.Error → Cause
   | .bodyTooLarge => .limit .body
   | .tooManyInterim => .limit .interim
   | .switchingProtocols => .protocol "101 Switching Protocols, but no upgrade was requested"
+  | .unsupportedCoding => .protocol "a transfer coding other than chunked, which the client cannot decode"
   | .closed => .peerClosed
 
 /-- A codec run: the parser and every event so far. -/

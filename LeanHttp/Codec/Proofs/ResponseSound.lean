@@ -482,7 +482,9 @@ theorem startBody_respSound {p : Parser} {h : Head} {zs pre hb : List UInt8} (hz
       · trivial
       · simp [BodyProgress, hfr]
     · rename_i hfr
-      exact ⟨hfr, by simpa using chunkRel_start⟩
+      split
+      · exact ⟨hfr, by simpa using chunkRel_start⟩
+      · trivial
     · rename_i hfr
       simp [BodyProgress, hfr]
 

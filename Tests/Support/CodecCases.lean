@@ -62,6 +62,22 @@ def cases : List Shape := [
     response := "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Checksum: abc\r\nX-Other: d\r\n\r\n"
     eof := false
     expect := some "done 200 interim=0 body=\"hello\"" },
+  { name := "chunked, coding named in capitals"
+    response := "HTTP/1.1 200 OK\r\nTransfer-Encoding: Chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+    eof := false
+    expect := some "done 200 interim=0 body=\"hello\"" },
+  { name := "chunked after another transfer coding"
+    response := "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"
+    eof := false
+    expect := some "failed LeanHttp.Cause.protocol \"a transfer coding other than chunked, which the client cannot decode\"" },
+  { name := "a transfer coding without chunked"
+    response := "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\nhello"
+    expect := some "failed LeanHttp.Cause.protocol \"Bad message\"" },
+  { name := "HEAD with another transfer coding"
+    method := .head
+    response := "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n"
+    eof := false
+    expect := some "done 200 interim=0 body=\"\"" },
   { name := "close-delimited"
     response := "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nabc"
     expect := some "done 200 interim=0 body=\"abc\"" },

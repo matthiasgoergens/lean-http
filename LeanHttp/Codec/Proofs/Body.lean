@@ -286,7 +286,9 @@ theorem startBody_good {p : Parser} {obs : List Obs} {h : Head} (hg : Good p obs
     split
     · refine ⟨⟨by simp [hh], ?_⟩, ?_, ?_, ?_, ?_⟩ <;> simp_all [PhaseOK, Ended] <;> grind
     · refine ⟨⟨by simp [hh], ?_⟩, ?_, ?_, ?_, ?_⟩ <;> simp_all [PhaseOK] <;> grind
-  · refine ⟨⟨by simp [hh], ?_⟩, ?_, ?_, ?_, ?_⟩ <;> simp_all [PhaseOK] <;> grind
+  · split
+    · refine ⟨⟨by simp [hh], ?_⟩, ?_, ?_, ?_, ?_⟩ <;> simp_all [PhaseOK] <;> grind
+    · refine ⟨⟨by simp [hh], ?_⟩, ?_, ?_, ?_, ?_⟩ <;> simp_all [PhaseOK, Ended] <;> grind
   · refine ⟨⟨by simp [hh], ?_⟩, ?_, ?_, ?_, ?_⟩ <;> simp_all [PhaseOK] <;> grind
 
 /--

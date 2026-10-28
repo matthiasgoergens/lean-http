@@ -153,10 +153,8 @@ theorem handleH1Event_timers {s : S} (e : H1.Event .sending) (h : Timers s.1) :
       · have h' := h.receive hh head (Framing.ofResponse ex.method head)
           (decide (ex.written < ex.request.size))
         split
-        · rename_i n _
-          by_cases hn : n > ex.config.maxBody <;> simp only [hn, ↓reduceIte, bind_run]
-          · exact failNow_timers _ _ h'
-          · exact h'
+        · simp only [bind_run]
+          exact failNow_timers _ _ h'
         · exact h'
   | closeBody =>
     simp only [handleH1Event, bind_run, getEx_run]

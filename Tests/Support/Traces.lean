@@ -219,6 +219,14 @@ def traces : List Trace := [
     steps := fun p => writtenSteps p ++ [
       (2, recv "HTTP/1.1 200 OK\r\nContent-Length: 99999999999999999999999999\r\n\r\n",
         ["head 200", s!"fail body size limit exceeded [response received, written={p.bytes.size}, status=200]"])] },
+  { name := "a body with a transfer coding before chunked is refused when the head arrives, with the response received"
+    steps := fun p => writtenSteps p ++ [
+      (2, recv "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n",
+        ["head 200", s!"fail invalid response: a transfer coding other than chunked, which the client cannot decode [response received, written={p.bytes.size}, status=200]"])] },
+  { name := "a HEAD response naming another transfer coding has no body to decode, and completes"
+    method := .head
+    steps := fun p => writtenSteps p ++ [
+      (2, recv "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n", ["head 200", "finish reusable=true"])] },
   { name := "end of input before any response byte fails, maybe delivered"
     steps := fun p => writtenSteps p ++ [
       (2, .endOfInput,

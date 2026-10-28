@@ -132,6 +132,12 @@ inductive Error where
   | switchingProtocols
 
   /--
+  The body has a transfer coding other than chunked (`Transfer-Encoding: gzip, chunked`, say), which
+  the client cannot decode; reported after the head, as the exchange core does.
+  -/
+  | unsupportedCoding
+
+  /--
   The input ended before the response did.
   -/
   | closed

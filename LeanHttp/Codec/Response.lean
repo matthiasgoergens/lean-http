@@ -111,7 +111,8 @@ def fail (p : Parser) (e : Error) : Parser × Array Event :=
   ({ p with phase := .failed e }, #[.error e])
 
 /--
-Begins the body of the final head `h`, after reporting it.
+Begins the body of the final head `h`, after reporting it; or rejects it after reporting it, for a
+`Content-Length` over the body limit or a chunked body with another transfer coding.
 -/
 def startBody (p : Parser) (h : Head) : Parser × Array Event :=
   let p := { p with head := some h }
@@ -121,7 +122,9 @@ def startBody (p : Parser) (h : Head) : Parser × Array Event :=
     if p.config.maxBody < n + 1 then
       ({ p with phase := .failed .bodyTooLarge }, #[.head h, .error .bodyTooLarge])
     else ({ p with phase := .body (.fixed (n + 1)) }, #[.head h])
-  | .chunked => ({ p with phase := .body (.chunked (.line {})) }, #[.head h])
+  | .chunked =>
+    if onlyChunked h.fields then ({ p with phase := .body (.chunked (.line {})) }, #[.head h])
+    else ({ p with phase := .failed .unsupportedCoding }, #[.head h, .error .unsupportedCoding])
   | .untilClose => ({ p with phase := .body (.untilClose p.config.maxBody) }, #[.head h])
 
 /--
