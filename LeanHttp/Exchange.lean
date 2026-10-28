@@ -826,16 +826,18 @@ private def handle : ExchangeEvent → StepM Unit
     | _ => pure ()
 
 /--
-Acts on every deadline that has passed.  The earliest one decides; the deadline of the whole
-exchange wins a tie.
+Acts on the earliest deadline that has passed, if any; the deadline of the whole exchange wins a
+tie.  Returns whether it acted without ending the exchange, in which case a later deadline may have
+passed as well.
 -/
-private def expire : StepM Unit := do
+private def expireOne : StepM Bool := do
   let ex ← getEx
-  if ex.terminal then return
+  if ex.terminal then return false
   let now := ex.now
   match ex.phase with
   | .draining =>
     if now ≥ ex.deadline || ex.drainBy.any (now ≥ ·) then finishNow false
+    return false
   | _ =>
     -- Candidates as (when, rank, what); the smallest (when, rank) that has passed wins.
     let candidates : List (Timestamp × Nat × TimeoutKind) :=
@@ -848,13 +850,25 @@ private def expire : StepM Unit := do
       | none => some c
       | some b => if c.1 < b.1 || (c.1 == b.1 && c.2.1 < b.2.1) then some c else some b
     match first with
-    | none => pure ()
+    | none => return false
     | some (_, _, TimeoutKind.write) =>
       if ex.head.isSome then
         stopUpload
+        return true
       else
         failNow (.timeout .write) s!"{ex.written} of {ex.request.size} request bytes accepted"
-    | some (_, _, which) => failNow (.timeout which)
+        return false
+    | some (_, _, which) =>
+      failNow (.timeout which)
+      return false
+
+/--
+Acts on every deadline that has passed, earliest first.  Only a stalled upload after the response
+head lets the exchange go on (it clears the write deadline), so two rounds suffice.
+-/
+private def expire : StepM Unit := do
+  if ← expireOne then
+    discard expireOne
 
 /--
 Issues the next write and read, if they are due and none is in flight.
