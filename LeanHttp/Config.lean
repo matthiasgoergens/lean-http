@@ -41,7 +41,7 @@ structure Config where
   /--
   Longest time without progress on the connection (default: 30 s): between two reads of the
   response, where every byte resets it, or for one slice of the request (`writeChunkBytes`) to be
-  accepted by the kernel.
+  accepted by the kernel.  Must be positive: `Client.request` refuses zero as an invalid request.
   -/
   readGapMs : Nat := 30 * 1000
 

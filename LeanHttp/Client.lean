@@ -140,12 +140,18 @@ private def cancelReceive (socket : TCP.Socket.Client) : Async Unit :=
   (socket.recvSelector 0).unregisterFn
 
 /--
-The exchange core's settings for one call of `config`: no reuse in this version.
+The exchange core's settings for one call of `config`: no reuse in this version.  Fails with
+`invalidRequest` if `readGapMs` is zero, which would make every write and read due the moment it is
+issued.
 -/
-def exchangeConfig (config : Config) : ExchangeConfig :=
-  { h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
-    maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes,
-    writeChunk := config.writeChunkBytes, gapMs := config.readGapMs }
+def exchangeConfig (config : Config) : Except Cause ExchangeConfig :=
+  if h : 0 < config.readGapMs then
+    .ok {
+      h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
+      maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes,
+      writeChunk := config.writeChunkBytes, gapMs := config.readGapMs, gapMs_pos := h }
+  else
+    .error (.invalidRequest "readGapMs must be positive")
 
 /--
 A socket operation the shell started for the exchange core, once it has completed.
@@ -295,7 +301,7 @@ def request (client : Client) (req : Request ByteArray) :
     | .ok plan => pure plan
     | .error msg => return fail (.invalidRequest msg) .notSent
   let target := s!"{plan.host}:{plan.port}"
-  let prepared ← match Exchange.prepare (exchangeConfig config) plan.head req.body with
+  let prepared ← match exchangeConfig config >>= (Exchange.prepare · plan.head req.body) with
     | .ok prepared => pure prepared
     | .error cause => return fail cause .notSent target
   let connected ← match ← Connect.run config (.ofHost plan.host) plan.port seed deadline with

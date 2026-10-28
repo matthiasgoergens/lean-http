@@ -175,16 +175,23 @@ def Case.head (c : Case) : Request.Head :=
 def Case.prepare (c : Case) : Except Cause PreparedRequest :=
   Exchange.prepare c.config c.head (ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8))
 
+/-- For drawing positive numbers with `pick`. -/
+instance : Inhabited { n : Nat // 0 < n } := ⟨⟨1, by decide⟩⟩
+
 /-- A random case. -/
 def genCase : Gen Case := do
   let script ← below scripts.size
   let s := scripts[script]!
   let method ← if s.forHead then pure .head else pick [Method.get, .post]
   let bodySize ← if method == .post then pick [0, 10, 100, 300] else pure 0
+  -- Drawn in the order of the fields, as before the gap carried a proof of positivity.
+  let keepAlive := (← below 3) < 2
+  let writeChunk ← pick [16, 64, 65536]
+  let gap ← pick ([⟨50, by decide⟩, ⟨200, by decide⟩, ⟨1000, by decide⟩] : List { n : Nat // 0 < n })
   let config : ExchangeConfig := {
-    keepAlive := (← below 3) < 2
-    writeChunk := ← pick [16, 64, 65536]
-    gapMs := ← pick [50, 200, 1000]
+    keepAlive, writeChunk
+    gapMs := gap.1
+    gapMs_pos := gap.2
     drainBytes := ← pick [0, 4, 64]
     drainMs := ← pick [10, 50]
     maxBody := ← pick [3, 100, 1024]

@@ -97,6 +97,12 @@ structure ExchangeConfig where
   gapMs : Nat := 30 * 1000
 
   /--
+  The gap is positive.  A write or read issued with no time to complete would be due the moment it
+  was issued, and the exchange would have no deadline ahead for the shell to wait for.
+  -/
+  gapMs_pos : 0 < gapMs := by omega
+
+  /--
   When the caller abandons a body, how many more decoded body bytes may be read and discarded to
   keep the connection reusable.
   -/
@@ -104,7 +110,8 @@ structure ExchangeConfig where
 
   /--
   When the caller abandons a body, how long the rest may take to arrive and keep the connection
-  reusable.
+  reusable.  Zero keeps the connection only if the rest has already arrived: the drain's deadline
+  passes in the step that starts it.
   -/
   drainMs : Nat := 100
 

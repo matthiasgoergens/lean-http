@@ -123,6 +123,11 @@ def planChecks : Checks Unit := do
   check "plan refuses https" (planText "https://example.com/" |>.startsWith "error: unsupported scheme")
   let origin := Client.plan { method := .get, version := .v11, uri := rootTarget }
   check "plan refuses an origin-form target" (origin matches .error _)
+  -- A zero read gap would make every write and read due the moment it is issued.
+  check "a zero read gap is an invalid request"
+    (Client.exchangeConfig { readGapMs := 0 } matches .error (.invalidRequest _))
+  check "a read gap of 1 ms is accepted"
+    (match Client.exchangeConfig { readGapMs := 1 } with | .ok c => c.gapMs == 1 | .error _ => false)
 
 /-! ## Error classification -/
 
