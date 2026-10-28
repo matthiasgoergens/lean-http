@@ -4,10 +4,12 @@ An HTTP/1.1 client for Lean 4 (v4.34.1), built so that its decisions can be test
 
 ## Position
 
-The client proposed for `Std.Http` (leanprover/lean4 #14546-#14548) held up well where its tests were thorough (parsing, framing, limits, redirect rewriting) and failed in its connection loop and pool (`~/prog/lean-speed/notes/http-client-review.md`).  Small fixes for most of those defects are offered upstream on `matthiasgoergens/lean4` (branches `matthias/http-client-*`), and that is the first route.  This library is not a replacement for the FRO's stack.  It is two things:
+lean-http is a library of its own, a Lake package that depends only on what ships in the toolchain.  An HTTP client does not belong in the standard library: it needs to release on its own schedule, carry its own codec, TLS and policy, and change faster than `Std` can (Matthias, 2026-10-28).
 
-1. **A client we can use now** from code pinned to v4.34.1, in place of running `curl` as a subprocess.
-2. **A research vehicle** for a connection layer whose decisions live in pure functions, so that the properties the review showed matter ("no response without a request in flight", "close never causes a resend", "retiring never aborts the exchange in flight") can be checked on every interleaving and proved.  If it works, the natural outcome is an RFC to restructure the upstream connection loop the same way, over the upstream machine.
+It started from a review of the client proposed for `Std.Http` (leanprover/lean4 #14546-#14548), which held up well where its tests were thorough (parsing, framing, limits, redirect rewriting) and failed in its connection loop and pool (`~/prog/lean-speed/notes/http-client-review.md`).  The review and fixes for most of those defects were offered upstream (leanprover/lean4#14548, review 5665985837), independently of this library.  Two aims shape the design:
+
+1. **A client to use now**, from code pinned to v4.34.1, in place of running `curl` as a subprocess.
+2. **A connection layer whose decisions live in pure functions**, so that the properties the review showed matter ("no response without a request in flight", "close never causes a resend", "retiring never aborts the exchange in flight") can be checked on every interleaving and proved.
 
 ## Milestone 1: the smallest useful client
 
