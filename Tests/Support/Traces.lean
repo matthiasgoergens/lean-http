@@ -131,14 +131,37 @@ def traces : List Trace := [
       (3, recv early413, ["head 413", "read"]),
       (4, .writeFailed "broken pipe", []),
       (5, recv "big", ["body \"big\"", "finish reusable=false"])] },
-  { name := "a failed write before any response fails the exchange, maybe delivered"
+  { name := "a failed write before the request head is out fails the exchange, maybe delivered"
+    config := { keepAlive := true, writeChunk := 16 }
+    begins := fun _ => ["write 16"]
+    steps := fun _ => [
+      (1, .written 16, ["write 16"]),
+      (2, .writeFailed "connection reset",
+        ["fail the connection closed before a complete response (connection reset) [maybe delivered, written=16]"])] },
+  { name := "a failed write after the request head stops the upload; the end of input then fails the exchange"
     method := .post
     body := upload
     config := { keepAlive := true, writeChunk := 64 }
     begins := fun _ => ["write 64"]
     steps := fun _ => uploadSteps ++ [
-      (3, .writeFailed "connection reset",
-        ["fail the connection closed before a complete response (connection reset) [maybe delivered, written=64]"])] },
+      (3, .writeFailed "connection reset", []),
+      (4, .endOfInput,
+        ["fail the connection closed before a complete response (a write failed earlier: connection reset) [maybe delivered, written=64]"])] },
+  { name := "a failed write after the request head: an early response waiting to be read is still delivered"
+    method := .post
+    body := upload
+    config := { keepAlive := true, writeChunk := 64 }
+    begins := fun _ => ["write 64"]
+    steps := fun _ => uploadSteps ++ [
+      (3, .writeFailed "connection reset", []),
+      (4, recv (early413 ++ "big"), ["head 413", "body \"big\"", "finish reusable=false"])] },
+  { name := "abandoning mid-body: the read gap ends the drain, not reusable"
+    config := { keepAlive := true, gapMs := 50 }
+    steps := fun p => writtenSteps p 0 ++ [
+      (0, recv "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhe", ["head 200", "body \"he\"", "read"]),
+      (10, .abandon, []),
+      (49, .tick, []),
+      (50, .tick, ["finish reusable=false"])] },
   { name := "write slices: one write in flight, a partial write is resumed where it stopped"
     method := .post
     body := upload

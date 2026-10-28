@@ -288,8 +288,9 @@ def request (client : Client) (req : Request ByteArray) :
     | some seed => pure seed
     | none => osSeed
   let fail (cause : Cause) (delivery : Delivery) (target : String := "") (rounds : Nat := 0)
-      (status : Option Status := none) (detail : String := "") : Except Error (Response ByteArray) :=
-    .error { cause, delivery, target, seed, connectRounds := rounds, status, detail }
+      (status : Option Status := none) (detail : String := "") (written : Nat := 0) :
+      Except Error (Response ByteArray) :=
+    .error { cause, delivery, written, target, seed, connectRounds := rounds, status, detail }
   let plan ← match plan req.line with
     | .ok plan => pure plan
     | .error msg => return fail (.invalidRequest msg) .notSent
@@ -315,7 +316,7 @@ def request (client : Client) (req : Request ByteArray) :
       seed, connectRounds := rounds, address := connected.address,
       failedAttempts := connected.attempts, elapsedMs := finished - started }
     return .ok { line := head, body, extensions := Extensions.empty.insert info }
-  | .failure f => return fail f.cause f.delivery target rounds f.status f.detail
+  | .failure f => return fail f.cause f.delivery target rounds f.status f.detail f.written
 
 /--
 Like `request`, but throws the error as an `IO.Error` (its message says how far the request got).

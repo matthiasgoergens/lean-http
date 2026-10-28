@@ -22,8 +22,10 @@ events can be replayed and checked.
 What the core guarantees, by construction:
 
 - **No response without a request.**  Bytes are handed to the machine only once the whole request
-  head has been written (the core asks for no read before that).  Bytes that arrive earlier are
-  never parsed: the exchange fails, and its connection is not reused.
+  head has been written: the core asks for no read before that, and bytes reported earlier anyway
+  fail the exchange unparsed.  Bytes a server sent before it saw the request (on a reused
+  connection, a 408 before closing) wait in the socket and are read as the response; catching
+  those is the job of the idle check before a pooled connection is reused.
 - **One write in flight.**  The request goes out in slices of `ExchangeConfig.writeChunk` bytes, the
   next one only after the previous one completed.
 - **Reuse only when it is safe.**  The verdict of `finish` is `true` only when the response's
@@ -31,8 +33,9 @@ What the core guarantees, by construction:
   byte left over, the request was written in full before the response head arrived, the peer did
   not close, and both sides agreed to keep the connection alive.
 - **Early responses are delivered.**  The response is read while the request body is still being
-  written, so a server that answers early (a 413, say) and stops reading is heard; the connection is
-  not reused afterwards.
+  written, so a server that answers early (a 413, say) and stops reading is heard, and a write that
+  fails once the request head is out only stops the upload; the connection is not reused
+  afterwards.
 - **Errors say how far the request got** (`Failure.delivery`, `Failure.written`).
 
 On top of the machine the core counts interim (1xx) responses against a limit, refuses
@@ -408,6 +411,11 @@ structure Exchange where
   sentAny : Bool := false
 
   /--
+  Why the upload stopped, if a write failed after the request head was out.
+  -/
+  writeError : Option String := none
+
+  /--
   Whether a read is in flight.
   -/
   readInFlight : Bool := false
@@ -588,6 +596,9 @@ Fails the exchange, unless it already ended.
 private def failNow (cause : Cause) (detail : String := "") : StepM Unit := do
   let ex ← getEx
   unless ex.terminal do
+    -- A failed write that only stopped the upload explains a failure that has no detail of its own.
+    let detail :=
+      if detail.isEmpty then (ex.writeError.map (s!"a write failed earlier: {·}")).getD "" else detail
     let failure : Failure := {
       cause, delivery := ex.delivery, written := ex.written, status := ex.head.map (·.status),
       detail }
@@ -638,6 +649,8 @@ private def handleH1Event : H1.Event .sending → StepM Bool
   | .endHeaders head => do
     let head : Response.Head := head
     let ex ← getEx
+    if ex.terminal then
+      return false
     if head.status.isInformational then
       if head.status.toCode == 101 then
         failNow (.protocol "101 Switching Protocols, but no upgrade was requested")
@@ -800,7 +813,13 @@ private def handle : ExchangeEvent → StepM Unit
     let ex ← getEx
     if ex.writeInFlight.isNone then return
     setEx { ex with writeInFlight := none, writeBy := none }
-    if ex.head.isSome then stopUpload else failNow .peerClosed detail
+    match ex.phase with
+    | .sending => failNow .peerClosed detail
+    | _ =>
+      -- Once the request head is out a response may be due, perhaps already waiting to be read (a
+      -- server that answers early and then closes): stop the upload and keep reading.
+      setEx { (← getEx) with writeError := some detail }
+      stopUpload
   | .readFailed detail => do
     modifyEx ({ · with readInFlight := false, readBy := none })
     failOrDrop .peerClosed detail
@@ -836,7 +855,9 @@ private def expireOne : StepM Bool := do
   let now := ex.now
   match ex.phase with
   | .draining =>
-    if now ≥ ex.deadline || ex.drainBy.any (now ≥ ·) then finishNow false
+    -- The read gap still counts while draining; any deadline ends the drain without reuse.
+    if now ≥ ex.deadline || ex.drainBy.any (now ≥ ·) || ex.readBy.any (now ≥ ·) then
+      finishNow false
     return false
   | _ =>
     -- Candidates as (when, rank, what); the smallest (when, rank) that has passed wins.

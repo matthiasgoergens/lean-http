@@ -187,6 +187,11 @@ structure Error where
   delivery : Delivery
 
   /--
+  Request bytes the connection accepted before the call failed.
+  -/
+  written : Nat := 0
+
+  /--
   The origin the call was for, as `host:port`.
   -/
   target : String := ""
