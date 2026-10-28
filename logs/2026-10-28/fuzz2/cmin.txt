@@ -1,0 +1,7 @@
+inputs: 16759
+[1;92m[+] [0mFound 59830 unique tuples across 16706 files. Candidates: 1840[0m
+[1;92m[+] [0mPerforming Rarest First Set Cover...[0m
+[1;90m    Written 795 files, covered 59830/59830 tuples (12619.05/sec) [elapsed 0s]
+[0m[1;92m[+] [0mWrote 795 files.[0m
+[1;92m[+] [0mExecution results: 16706 ok, 0 crashed, 0 timed out, 0 failed to run; 16706 inputs matched the requested policy[0m
+kept: 795

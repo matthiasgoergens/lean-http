@@ -1,0 +1,11 @@
+$ scripts/remote.sh bash -c "rm -rf out/seeds && /py/bin/python3 -I fuzz/seeds.py out/seeds > /dev/null && lake build Fuzz fuzz-replay 2>&1 | tail -n 1 && { ls out/seeds/* ; ls out/old-inputs | sed 's|^|out/old-inputs/|'; } | xargs -n 500 .lake/build/bin/fuzz-replay --class | sort | uniq -c | sort -rn"
+Build completed successfully (33 jobs).
+   8456 ok
+   3091 exchange/whole: a failure carries the status of the delivered head: none, model (some NNN) (after received "HTTP/N.N NNN
+   2628 exchange/whole: a failure carries the status of the delivered head: none, model (some NNN) (after received "<NNN bytes>"
+   2120 exchange/whole, waiting: a failure carries the status of the delivered head: none, model (some NNN) (after tick at NNNNN
+    254 exchange/whole: a failure carries the status of the delivered head: none, model (some NNN) (after endOfInput at N)
+    150 exchange/whole: a failure carries the status of the delivered head: none, model (some NNN) (after received "<NN bytes>" 
+     59 exchange/whole: a failure carries the status of the delivered head: none, model (some NNN) (after received "<NNNN bytes>
+      1 exchange/split: a failure carries the status of the delivered head: none, model (some NNN) (after received "\t" at NNNN)
+exit status 0

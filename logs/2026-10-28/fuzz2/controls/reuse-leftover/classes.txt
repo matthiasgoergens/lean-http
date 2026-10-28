@@ -1,0 +1,14 @@
+$ scripts/remote.sh bash -c "rm -rf out/seeds && /py/bin/python3 -I fuzz/seeds.py out/seeds > /dev/null && lake build Fuzz fuzz-replay 2>&1 | tail -n 1 && { ls out/seeds/* ; ls out/old-inputs | sed 's|^|out/old-inputs/|'; } | xargs -n 500 .lake/build/bin/fuzz-replay --class | sort | uniq -c | sort -rn"
+Build completed successfully (33 jobs).
+  16249 ok
+    296 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NB#N vs #[LeanHttpFuzz.Ev.
+     92 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NNB#NNNNNNNNNNNNNNNNNNNN v
+     35 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NNB#NNNNNNNNNNNNNNNNNNN vs
+     22 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NNNB#NNNNNNNNNNNNNNNNNNN v
+     22 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NB#NNNNNNNNNNNNNNNNNNN vs 
+     16 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NB#NNNNNNNNNNNNNNNNNNNN vs
+     14 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NNB#NNNNNNNNNNNNNNNNNN vs 
+     11 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NNNB#NNNNNNNNNNNNNNNNNNNN 
+      1 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=NN body=NB#N vs #[LeanHttpFuzz.Ev
+      1 whole: reuse true, expected false (written NN of NN, NN at the head): done NNN interim=N body=NB#NNNNNNNNNNNNNNNNNN vs #
+exit status 0

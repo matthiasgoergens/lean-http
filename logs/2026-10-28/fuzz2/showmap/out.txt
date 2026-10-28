@@ -1,0 +1,9 @@
+# fuzz2 harness at 8061fbc (fuzz/run.sh fuzz/build.sh): SKIP_LEAN_BUILD=1 LEAN_HTTP_REMOTE_DIR=lean-http-fuzz2 fuzz/run.sh bash out/showmap.sh
+hand-content-length: 8069 edges
+hand-chunked-ext-trailers: 8928 edges
+hand-empty-eof: 5243 edges
+hand-gzip-chunked: 7898 edges
+edges in chunked but not content-length: 1193
+edges in content-length but not chunked: 334
+edges in gzip-chunked but not chunked: 289
+DEBUG: after guard init: __afl_map_size 94947, __afl_cov_map_size 94947, __afl_set_map_size 94947

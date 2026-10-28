@@ -1,0 +1,14 @@
+# a deadline is acted on only after it, not at it
+diff --git a/LeanHttp/Exchange.lean b/LeanHttp/Exchange.lean
+index 65a9c4b..b611659 100644
+--- a/LeanHttp/Exchange.lean
++++ b/LeanHttp/Exchange.lean
+@@ -983,7 +983,7 @@ private def expireOne : StepM Bool := do
+       [(ex.deadline, 0, .deadline)] ++
+         (ex.writeBy.map fun t => (t, 1, .write)).toList ++
+         (ex.readBy.map fun t => (t, 2, .read)).toList
+-    let passed := candidates.filter fun (t, _, _) => t ≤ now
++    let passed := candidates.filter fun (t, _, _) => t < now
+     let first := passed.foldl (init := none) fun best c =>
+       match best with
+       | none => some c
