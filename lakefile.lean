@@ -14,6 +14,8 @@ lean_lib LeanHttpProto where
 @[default_target]
 lean_lib LeanHttp where
   leanOptions := #[⟨`autoImplicit, false⟩]
+  -- The proofs about the exchange core are checked by every build, but no other module imports them.
+  roots := #[`LeanHttp, `LeanHttp.Exchange.Proofs]
 
 /-- Helpers shared by the test executables. -/
 lean_lib TestSupport where
