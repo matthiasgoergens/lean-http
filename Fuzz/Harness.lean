@@ -1,7 +1,8 @@
 import LeanHttp.Exchange
+import Tests.Support.Check
 
 /-!
-# Fuzzing harness for the client direction of the HTTP/1.1 machine
+# Fuzzing harness for the client direction of the HTTP/1.1 machine and the exchange core
 
 `check` interprets fuzzer bytes as one exchange and checks invariants over it; `fuzzOne`, exported
 to C as `lean_http_fuzz_one`, panics when one fails, so that under `LEAN_ABORT_ON_PANIC=1` a broken
@@ -21,18 +22,26 @@ and `Fuzz/Replay.lean` runs the same check over files and prints what happened.
 
 ## The two drivers
 
-- **The exchange core** (`LeanHttp.Exchange`), the client the library ships, with keep-alive off.
-- **A direct driver of the machine** with keep-alive on, the configuration a pooled client will
-  use.  It mirrors `Exchange.drive` but bounds every loop, records the events the machine emits,
-  and ends with the machine's reuse decision.
+- **The exchange core** (`LeanHttp.Exchange`), driven through `Exchange.begin` and `Exchange.step`
+  as a shell would drive it: the request goes out in `writeChunk`-byte writes, each reported as
+  completed in full; the caller asks for more body than any response has; each read the input
+  dictates is reported as `received` while the core has a read in flight (an empty read is a tick),
+  with one outstanding write completed after each; then end of input, if the input says so.  Time
+  moves by 1 ms per event, far from every timer, so the outcome depends on the bytes alone.  A POST
+  carries a request body, so that its response can arrive while the body is still going out.  The
+  core runs with keep-alive on, the configuration a pooled client will use, and once more over the
+  dictated reads with keep-alive off, the configuration the client uses now.
+- **A direct driver of the machine** with keep-alive on, started from the machine `Exchange.prepare`
+  encoded the request with.  It bounds every loop, records the events the machine emits, and ends
+  with the machine's reuse decision.
 
 Both use the parser limits in `limits`: the defaults, lowered so that fuzzer inputs reach them.
-Each driver runs twice, with the response in one read and in the reads the input dictates; the
-direct driver runs a third time over the whole response with end of input flipped.  The direct
-driver runs first, so that an endless loop the two drivers share is reported by its step bound
-rather than as a hang in the exchange core.
+Each driver runs over the response in one read and in the reads the input dictates; the direct
+driver runs a third time over the whole response with end of input flipped.  The direct driver runs
+first, so that an endless loop the two drivers share is reported by its step bound rather than as a
+hang in the exchange core.
 
-## Invariants
+## Invariants of the machine and of the response
 
 - The direct driver ends within a step bound linear in the input (the exchange core has no bound
   of its own; an endless loop there shows up as an AFL++ hang).
@@ -42,29 +51,68 @@ rather than as a hang in the exchange core.
   follows such a head (and one with `Content-Length: 0`) at once.
 - Body bytes never exceed a single valid `Content-Length`; a completed body with
   `Content-Length` matches it exactly, and a completed response never carries an invalid or
-  conflicting `Content-Length`, or both `Content-Length` and `Transfer-Encoding`.
+  conflicting `Content-Length`, or both `Content-Length` and `Transfer-Encoding`.  The exchange core
+  completes a response with a body and a `Transfer-Encoding` only when that is exactly `chunked`
+  (the machine also completes one with other codings before `chunked`, which the core refuses).
 - Over the whole response, a completed `Content-Length` body is exactly the bytes before the ones
   left unread, and a completed close-delimited body is exactly the bytes after the head.
 - A close-delimited body completes only after end of input, and is never reusable; a framed
   response completes, with the same body, whether or not end of input follows it.
-- A connection the machine would reuse ended a framed HTTP/1.1 response without `close` (or an
-  HTTP/1.0 one with `keep-alive`), was not a `101`, and its peer has not closed.  Bytes may be left
-  over: a pool must not reuse such a connection, and the harness only reports them.
+- A connection the machine or the core would reuse ended a framed HTTP/1.1 response without `close`
+  (or an HTTP/1.0 one with `keep-alive`), was not a `101`, and its peer has not closed.  The core
+  reuses a connection only where the machine would, and over the whole response exactly where the
+  machine would with no byte left over and the whole request written before the head arrived.
 - Split invariance: both drivers produce the same events, body and outcome whether the response
   arrives whole or in pieces.  For a response that does not complete, only the body delivered so
   far may differ, and then each body must be a prefix of the other; the exchange core may then also
-  hit its body limit in one run and not the other (see `exchangeSplitInvariant`).
+  hit its body limit in one run and not the other (see `exchangeSplitInvariant`).  Keep-alive
+  changes nothing in the core's outcome but the reuse verdict.
 - For each way of feeding, the two drivers agree: the same completed response (status, body,
   interim count), a failure where the other failed or saw end of input too early, a pending
-  response where the other is pending; except where the exchange core refuses by its own limits
-  (interim count, body size, `101`), and then the refusal must be justified by what the machine saw.
+  response where the other is pending; except where the exchange core refuses by its own rules
+  (interim count, body size, `101`, a transfer coding other than chunked), and then the refusal must
+  be justified by what the machine saw.  A body-limit failure always comes after the head, with
+  its status.
+
+## Invariants of the exchange core's theorems
+
+Every step of every run of the core is checked by `checkStep` of `Tests/Support/Check.lean`, the
+executable checker's properties, each of which a theorem in `LeanHttp/Exchange/Proofs.lean` or
+`Liveness.lean` states: nothing after the end (`step_of_terminal`), one end, last, and only with an
+action (`step_ends`), one write in flight and writes that follow the request (`step_writes`,
+`Run.inFlight`), one read in flight and none before the request head is written (`step_reads`), no
+head before the request head is written and only one (`step_deliverHead`), no body before the head
+(`step_chunk_after_head`), unsolicited bytes fail the exchange (`step_unsolicited`), delivery,
+written count and status of a failure (`step_fail`, `observed_fail`), the core's side of reuse
+(`step_finish_reusable`, `observed_finish_reusable`), after the deadline the exchange has ended
+(`step_deadline`, `observed_deadline`), a stale tick and an empty read change nothing beyond a tick
+(`step_stale_tick`, `step_empty_received`), and a live exchange has a deadline ahead
+(`Reachable.deadlineAhead`, `ObservedMono.deadlineAhead`).  The two properties about the response
+bytes, which need the checker's hand-written knowledge of a response, are left to the invariants
+above.  Besides, after every step:
+
+- the checker's model agrees with the core (`Observed.agrees`);
+- the timers' invariant holds (`Reachable.timers`), and a live exchange is before its deadline with
+  every timer ahead (`Reachable.ahead`, `Reachable.beforeDeadline`);
+
+and once per run:
+
+- `begin` emits one write, a non-empty prefix of the request (`begin_write`, `begin_ends`);
+- bytes reported before any write completed fail the exchange at once (`step_unsolicited`, on a
+  separate run with the input's first non-empty read);
+- an event at the deadline ends a live exchange (`Reachable.ended_at_deadline`);
+- a shell that then only ticks at the next deadline can always do so (`Reachable.tick_due`), each
+  tick ends the exchange or moves its clock forward (`Reachable.due_advances`), and the exchange
+  ends within `deadline - now` ticks (`Reachable.ends_of_allDue`).
+
+The theorems say these never fail; the fuzzer exercises them end to end, over the real machine.
 -/
 
 open Std.Http LeanHttp LeanHttpProto.Http.Protocol
 
 namespace LeanHttpFuzz
 
-/-! ## Limits -/
+/-! ## Limits and settings -/
 
 /--
 The parser limits both drivers use: the defaults, lowered so that inputs of a few kilobytes reach
@@ -89,6 +137,31 @@ that limit is about the reads, not the response.
 -/
 def maxResponse : Nat :=
   maxBody + limits.maxHeaderBytes + limits.maxStartLineLength + limits.maxChunkLineLength
+
+/-- The deadline of every exchange, which begins at time 0. -/
+def deadline : Nat := 20000
+
+/--
+The core's settings.  The request goes out in 16-byte writes, so in several; the read gap (10 s) is
+longer than any run takes at 1 ms per event, and shorter than the deadline.
+-/
+def exchangeConfig (keepAlive : Bool) : ExchangeConfig :=
+  { h1 := limits, keepAlive, maxInterim, maxBody, writeChunk := 16, gapMs := 10000 }
+
+/-- The body of a POST request: long enough to be still going out when the response arrives. -/
+def postBody : ByteArray := "a request body still being written".toUTF8
+
+/-- The request every input answers. -/
+def requestHead (method : Method) : Request.Head :=
+  { method, version := .v11, uri := .originForm { segments := #[], absolute := true } none,
+    headers := Headers.empty.insert Header.Name.host (.mk "example.test") }
+
+/-- The request, prepared; `none` if `Exchange.prepare` refused it, which the harness reports. -/
+def prepared? (method : Method) (keepAlive : Bool) : Option PreparedRequest :=
+  let body := if method == .post then postBody else .empty
+  match Exchange.prepare (exchangeConfig keepAlive) (requestHead method) body with
+  | .ok p => some p
+  | .error _ => none
 
 /-! ## Decoding the input -/
 
@@ -162,6 +235,10 @@ def contentLengths (head : Response.Head) : Array String :=
 def hasTransferEncoding (head : Response.Head) : Bool :=
   head.headers.contains Header.Name.transferEncoding
 
+/-- Whether the head's transfer codings are exactly `chunked`. -/
+def onlyChunked (head : Response.Head) : Bool :=
+  tokens head Header.Name.transferEncoding == ["chunked"]
+
 /-- Whether the response to `method` with this head carries no body, whatever its framing fields. -/
 def noBody (method : Method) (head : Response.Head) : Bool :=
   let code := head.status.toCode.toNat
@@ -193,10 +270,12 @@ def ensure (cond : Bool) (msg : String) : Except String Unit :=
 
 /--
 The body invariants for one final head and the body delivered for it.  `done` says whether the
-driver considered the response complete, `eof` whether end of input was reported.
+driver considered the response complete, `eof` whether end of input was reported before.  With
+`strict`, a completed body with a `Transfer-Encoding` must have exactly `chunked` (the exchange
+core's rule); otherwise its last coding must be `chunked` (the machine's).
 -/
 def checkBody (who : String) (method : Method) (head : Response.Head) (body : ByteArray)
-    (done eof : Bool) : Except String Unit := do
+    (done eof : Bool) (strict : Bool := false) : Except String Unit := do
   let code := head.status.toCode.toNat
   if noBody method head then
     ensure (body.size == 0) s!"{who}: {body.size} body bytes for a bodyless response ({code}, {repr method})"
@@ -210,6 +289,9 @@ def checkBody (who : String) (method : Method) (head : Response.Head) (body : By
         ensure (head.version == .v11) s!"{who}: completed a Transfer-Encoding response to HTTP/1.0"
         ensure ((tokens head Header.Name.transferEncoding).getLast? == some "chunked")
           s!"{who}: completed with Transfer-Encoding whose last coding is not chunked"
+        if strict then
+          ensure (onlyChunked head)
+            s!"{who}: completed with transfer codings {tokens head Header.Name.transferEncoding}, not just chunked"
       else if lengths.isEmpty then
         ensure eof s!"{who}: completed a close-delimited body without end of input"
       else
@@ -217,28 +299,220 @@ def checkBody (who : String) (method : Method) (head : Response.Head) (body : By
         | some n => ensure (body.size == n) s!"{who}: completed with {body.size} body bytes, Content-Length {n}"
         | none => throw s!"{who}: completed despite Content-Length {repr lengths}"
 
+/--
+The reuse invariants for a response that a driver would reuse the connection after: a framed
+response that allows it, not a `101`.
+-/
+def checkReusable (who : String) (method : Method) (head : Response.Head) : Except String Unit := do
+  ensure (head.status.toCode != 101) s!"{who}: reusable after 101"
+  ensure (!closeDelimited method head) s!"{who}: reusable after a close-delimited body"
+  let conn := tokens head Header.Name.connection
+  if head.version == .v11 then
+    ensure (!conn.contains "close") s!"{who}: reusable despite Connection: close"
+  else
+    ensure (conn.contains "keep-alive") s!"{who}: reusable HTTP/1.0 response without keep-alive"
+
 /-! ## Driver 1: the exchange core -/
 
-/-- The request every input answers. -/
-def requestHead (method : Method) : Request.Head :=
-  { method, version := .v11, uri := .originForm { segments := #[], absolute := true } none,
-    headers := Headers.empty.insert Header.Name.host (.mk "example.test") }
-
-/-- Runs the exchange core over `reads`. -/
-def runExchange (inp : Input) (reads : List ByteArray) : Exchange :=
-  let (ex, _) := Exchange.start limits maxInterim maxBody (requestHead inp.method) .empty
-  let ex := reads.foldl Exchange.feed ex
-  if inp.eof then ex.endOfInput else ex
+/-- What the checker knows of the response: nothing (the response invariants are the harness's). -/
+def oracle : Oracle := { exactReusable := fun _ => true }
 
 /--
-A comparable rendering of the exchange core's outcome.  With `withBody` false, leaves out the size of
-a body still pending.
+The checker's properties that compare the outcome with the checker's own knowledge of the response,
+which a fuzzed response does not come with; the harness's invariants about the response cover them.
 -/
-def renderExchange (ex : Exchange) (withBody : Bool := true) : String :=
-  match ex.outcome with
-  | .pending => s!"pending interim={ex.interim}" ++ (if withBody then s!" body={ex.body.size}" else "")
-  | .done head body => s!"done {head.status.toCode} interim={ex.interim} body={showBody body}"
-  | .failed cause => s!"failed {repr cause} interim={ex.interim} head={ex.head.isSome}"
+def unchecked : List String :=
+  ["finish only after a complete response", "a finished response delivered its whole body"]
+
+/-- A run of the exchange core, with everything its actions delivered. -/
+structure Core where
+  /-- The request. -/
+  prepared : PreparedRequest
+  /-- The exchange. -/
+  ex : Exchange
+  /-- The checker's model of the run. -/
+  model : Model
+  /-- The time of the latest event. -/
+  time : Nat := 0
+  /-- The final head, once delivered. -/
+  head : Option Response.Head := none
+  /-- The body delivered. -/
+  body : ByteArray := .empty
+  /-- The `finish` or `fail` action, once emitted. -/
+  ended : Option ExchangeAction := none
+  /-- The first broken invariant. -/
+  problem : Option String := none
+
+instance : Inhabited Core :=
+  ⟨{ prepared := default, ex := default, model := Model.init default 0 0 }⟩
+
+/-- Records a broken invariant, unless one was recorded already. -/
+def Core.flag (c : Core) (problem : Option String) : Core :=
+  if c.problem.isSome then c else { c with problem }
+
+/-- Records what one action delivered. -/
+def Core.record (c : Core) : ExchangeAction → Core
+  | .deliverHead head => { c with head := some head }
+  | .deliverBody bytes => { c with body := c.body ++ bytes }
+  | a@(.finish _) | a@(.fail _) => { c with ended := some a }
+  | _ => c
+
+/--
+The invariants of the core's state after every step, against the checker's model: the model agrees
+with the core (`Observed.agrees`), the timers' invariant (`Reachable.timers`), and for a live
+exchange, its clock before the deadline and every timer ahead (`Reachable.ahead`).
+-/
+def stateProblem (ex : Exchange) (m : Model) : Option String :=
+  let draining := match ex.phase with | .draining => true | _ => false
+  let checks : List (Bool × (Unit → String)) := [
+    (m.acked == ex.written, fun _ => s!"model and core disagree: written {m.acked} vs {ex.written}"),
+    (m.outstanding == ex.writeInFlight,
+      fun _ => s!"model and core disagree: write in flight {m.outstanding} vs {ex.writeInFlight}"),
+    (m.everWrote == ex.sentAny, fun _ => s!"model and core disagree: wrote {m.everWrote} vs {ex.sentAny}"),
+    (m.headDelivered == ex.head.isSome,
+      fun _ => s!"model and core disagree: head {m.headDelivered} vs {ex.head.isSome}"),
+    (m.ended == ex.terminal, fun _ => s!"model and core disagree: ended {m.ended} vs {ex.terminal}"),
+    (!m.headDelivered ||
+        (ex.early == decide (m.ackedAtHead < ex.request.size) && m.ackedAtHead ≤ ex.request.size),
+      fun _ => s!"model and core disagree: early {ex.early}, head after {m.ackedAtHead} of {ex.request.size}"),
+    (m.eofSeen == ex.inputEnded,
+      fun _ => s!"model and core disagree: end of input {m.eofSeen} vs {ex.inputEnded}"),
+    (ex.writeBy.isNone || ex.writeInFlight.isSome, fun _ => "timers: a write deadline, no write in flight"),
+    (ex.writeInFlight.all (· > 0), fun _ => "timers: an empty write in flight"),
+    (ex.drainBy.isNone || draining, fun _ => "timers: a drain deadline while not draining"),
+    (!draining || (ex.written == ex.request.size && ex.writeInFlight.isNone && ex.head.isSome),
+      fun _ => "timers: draining before the request was written or the head delivered"),
+    (ex.terminal ||
+        (ex.now < ex.deadline && [ex.writeBy, ex.readBy, ex.drainBy].all (·.all (· > ex.now))),
+      fun _ => s!"a live exchange with a deadline behind it: now {ex.now}, deadline {ex.deadline}, " ++
+        s!"write {ex.writeBy}, read {ex.readBy}, drain {ex.drainBy}")]
+  (checks.find? (!·.1)).map (·.2 ())
+
+/-- Applies one event at time `now`, and checks the step. -/
+def Core.stepAt (c : Core) (now : Nat) (event : ExchangeEvent) : Core :=
+  let pre := c.ex
+  let (post, actions) := pre.step now event
+  let (model, v) := checkStep oracle c.model pre now event post actions unchecked
+  let c := { c with ex := post, model, time := max c.time now }
+  let c := actions.foldl Core.record c
+  let c := c.flag (v.map fun v => s!"{v.property}: {v.detail} (after {renderEvent event} at {now})")
+  c.flag (stateProblem post model)
+
+/-- Applies one event 1 ms after the latest. -/
+def Core.next (c : Core) (event : ExchangeEvent) : Core :=
+  c.stepAt (c.time + 1) event
+
+/--
+Begins `prepared`, and checks that `begin` emits one write, a non-empty prefix of the request, and
+does not end the exchange (`begin_write`, `begin_ends`).
+-/
+def Core.begin (prepared : PreparedRequest) : Core :=
+  let (ex, actions) := Exchange.begin prepared 0 deadline
+  let model := Model.init prepared deadline 0
+  let c : Core := actions.foldl Core.record { prepared, ex, model }
+  match actions.toList with
+  | [.write bytes] =>
+    let ok := bytes.size > 0 && bytes == model.request.extract 0 bytes.size && !ex.terminal
+    let model := { model with outstanding := some bytes.size, everWrote := true }
+    let c := { c with model }
+    let c := c.flag (if ok then none else some s!"begin: write {bytes.size} is not a prefix of the request")
+    c.flag (stateProblem ex model)
+  | other => c.flag (some s!"begin: expected one write, got {other.map renderAction}")
+
+/-- Completes the write in flight, if there is one. -/
+def Core.completeWrite (c : Core) : Core :=
+  match c.model.outstanding with
+  | some len => if c.ex.terminal then c else c.next (.written len)
+  | none => c
+
+/-- Completes writes until a read is in flight or no write is (at most `fuel` of them). -/
+def Core.writeUntilRead (c : Core) : Nat → Core
+  | 0 => c
+  | fuel + 1 =>
+    if c.model.readOutstanding || c.model.outstanding.isNone || c.ex.terminal then c
+    else c.completeWrite.writeUntilRead fuel
+
+/--
+Runs the exchange core over `reads`, as a shell would: see the module comment.  Stops at end of
+input; `waitOut` checks what a shell that only waits sees afterwards.
+-/
+def runCore (prepared : PreparedRequest) (eof : Bool) (reads : List ByteArray) : Core := Id.run do
+  let fuel := prepared.bytes.size + 1
+  let mut c := (Core.begin prepared).writeUntilRead fuel
+  c := c.next (.wantBody (maxBody + maxResponse))
+  -- A stale tick, which must change nothing.
+  c := c.stepAt c.time .tick
+  for piece in reads do
+    if !c.ex.terminal && !c.model.readOutstanding then
+      c := c.flag (some "no read in flight while the response is awaited")
+    c := c.next (.received piece)
+    c := c.completeWrite
+  c := c.writeUntilRead fuel
+  -- Writes that remain once the reads are over (at most the request's slices).
+  for _ in [0:fuel] do
+    c := c.completeWrite
+  if eof then c := c.next .endOfInput
+  return c
+
+/--
+What a shell that only waits sees after the reads: an event at the deadline ends a live exchange
+(`Reachable.ended_at_deadline`); ticking at each next deadline, the shell can always tick
+(`Reachable.tick_due`), each tick ends the exchange or moves its clock forward
+(`Reachable.due_advances`), and the exchange ends within `deadline - now` ticks
+(`Reachable.ends_of_allDue`).  Returns the first broken invariant.
+-/
+def waitOut (c : Core) : Option String := Id.run do
+  if c.ex.terminal then return none
+  if !(c.ex.step deadline .tick).1.terminal then
+    return some "a tick at the deadline left the exchange live"
+  let mut c := c
+  for _ in [0:deadline - c.ex.now] do
+    if c.ex.terminal then return c.problem
+    match c.ex.nextDeadline with
+    | none => return some "a live exchange has no next deadline"
+    | some due =>
+      if !(c.ex.now < due && due ≤ deadline) then
+        return some s!"cannot wait: next deadline {due}, clock {c.ex.now}, deadline {deadline}"
+      let before := c.ex.now
+      c := c.stepAt due .tick
+      if c.problem.isSome then return c.problem
+      if !c.ex.terminal && c.ex.now ≤ before then
+        return some s!"a due tick at {due} did not move the clock from {before}"
+  if c.ex.terminal then c.problem else some "still live after deadline - now due ticks"
+
+/--
+Bytes reported before any write completed fail the exchange at once (`step_unsolicited`): begins
+`prepared` and reports `bytes`, if there are any.
+-/
+def unsolicited (prepared : PreparedRequest) (bytes : ByteArray) : Option String :=
+  if bytes.isEmpty then none
+  else
+    let c := (Core.begin prepared).next (.received bytes)
+    match c.problem, c.ended with
+    | some p, _ => some p
+    | none, some (.fail _) => none
+    | none, _ => some "bytes before the request head was written did not fail the exchange"
+
+/-- How a run of the core ended, without the reuse verdict. -/
+def Core.render (c : Core) (withBody : Bool := true) : String :=
+  match c.ended, c.head with
+  | some (.finish _), some head =>
+    s!"done {head.status.toCode} interim={c.ex.interim} body={showBody c.body}"
+  | some (.finish _), none => "finished without a head"
+  | some (.fail f), _ => s!"failed {repr f.cause} interim={c.ex.interim} head={c.head.isSome}"
+  | _, _ => s!"pending interim={c.ex.interim}" ++ (if withBody then s!" body={c.body.size}" else "")
+
+/-- The reuse verdict, once the core finished. -/
+def Core.reusable? (c : Core) : Option Bool :=
+  match c.ended with
+  | some (.finish r) => some r
+  | _ => none
+
+/-- The failure, once the core failed. -/
+def Core.failure? (c : Core) : Option Failure :=
+  match c.ended with
+  | some (.fail f) => some f
+  | _ => none
 
 /-! ## Driver 2: the machine, directly, with keep-alive on -/
 
@@ -274,6 +548,8 @@ structure Run where
   outOfFuel : Bool := false
   /-- Whether end of input was reported. -/
   eof : Bool := false
+
+instance : Inhabited Run := ⟨{ machine := { config := {} } }⟩
 
 /-- Handles one event; returns whether it is progress the loop must act on. -/
 def Run.handle (r : Run) : H1.Event .sending → Run × Bool
@@ -330,24 +606,11 @@ def Run.drive (r : Run) : Nat → Run
     else r
 
 /--
-Starts the machine on a request, as `Exchange.start` does but with keep-alive on: the same parser
-limits, and the same lifted body and chunk limits.
+Runs the direct driver over `reads`, from the machine `prepared` encoded the request with, then
+reports end of input if `eof`.
 -/
-def startMachine (method : Method) : Run :=
-  let unlimited := 2 ^ 62
-  let config : H1.Config := { limits with maxBodySize := unlimited, maxChunkSize := unlimited }
-  let machine : H1.Machine .sending := { config }
-  let machine := machine.setKnownSize (.fixed 0)
-  let machine := machine.send (requestHead method)
-  let machine := machine.userClosedBody
-  let (machine, result) := machine.step
-  let r : Run := { machine }
-  let (r, _) := r.handleAll result.events
-  r
-
-/-- Runs the direct driver over `reads`, then reports end of input if `eof`. -/
-def runMachine (method : Method) (eof : Bool) (reads : List ByteArray) : Run :=
-  let r := startMachine method
+def runMachine (prepared : PreparedRequest) (eof : Bool) (reads : List ByteArray) : Run :=
+  let r : Run := { machine := prepared.machine }
   let r := reads.foldl (init := r) fun r data =>
     if r.outOfFuel then r
     else
@@ -406,6 +669,15 @@ def reusable (r : Run) : Bool :=
   r.machine.keepAlive && r.machine.needsInput && !r.machine.failed && r.finalHead.isSome &&
     r.completed && !r.failedRun
 
+/--
+Whether the machine would reuse the connection had the peer not closed: `reusable`, but end of input
+reported after the response is allowed for (the machine then needs no more input).  The exchange core
+finishes before it hears of end of input after a framed response, and is compared with this.
+-/
+def reusableBeforeEnd (r : Run) : Bool :=
+  r.machine.keepAlive && (r.machine.needsInput || r.eof) && !r.machine.failed &&
+    r.finalHead.isSome && r.completed && !r.failedRun
+
 /-- A comparable rendering of the direct driver's result. -/
 def renderRun (r : Run) : String :=
   let reuse := reusable r
@@ -428,13 +700,7 @@ def checkRun (who : String) (method : Method) (r : Run) : Except String Unit := 
         s!"{who}: no end of body straight after a head that announces none: {repr r.trace}"
     if reusable r then
       ensure (phase == .reset) s!"{who}: reusable, but the machine did not reset"
-      ensure (head.status.toCode != 101) s!"{who}: reusable after 101"
-      ensure (!closeDelimited method head) s!"{who}: reusable after a close-delimited body"
-      let conn := tokens head Header.Name.connection
-      if head.version == .v11 then
-        ensure (!conn.contains "close") s!"{who}: reusable despite Connection: close"
-      else
-        ensure (conn.contains "keep-alive") s!"{who}: reusable HTTP/1.0 response without keep-alive"
+      checkReusable who method head
   else
     ensure (r.body.size == 0) s!"{who}: body bytes without a final head"
 
@@ -501,54 +767,117 @@ def machineSplitInvariant (whole split : Run) : Except String Unit := do
 /--
 Split invariance of the exchange core, with the allowance of `machineSplitInvariant`; and since the
 body delivered so far may differ, one run may also hit the body limit while the other is pending or
-has failed otherwise (`crossCheck` checks each run's limit against its own machine run).
+has failed otherwise (`crossCheck` checks each run's limit against its own machine run).  The reuse
+verdict is not compared: bytes after the response, in a later read, are not there when the core
+finishes, and a POST's upload may be at a different point when the head arrives.
 -/
-def exchangeSplitInvariant (whole split : Exchange) : Except String Unit := do
-  let (a, b) := (renderExchange whole, renderExchange split)
+def exchangeSplitInvariant (whole split : Core) : Except String Unit := do
+  let (a, b) := (whole.render, split.render)
   let msg := s!"exchange not split-invariant:\n  whole: {a}\n  split: {b}"
-  match whole.outcome, split.outcome with
-  | .done .., _ | _, .done .. => ensure (a == b) msg
-  | .failed (.limit .body), _ | _, .failed (.limit .body) => pure ()
-  | _, _ =>
-    ensure (renderExchange whole false == renderExchange split false) msg
+  let bodyLimit (c : Core) := c.failure?.any fun f => f.cause matches .limit .body
+  if whole.reusable?.isSome || split.reusable?.isSome then
+    ensure (a == b) msg
+  else if bodyLimit whole || bodyLimit split then
+    pure ()
+  else
+    ensure (whole.render false == split.render false) msg
     ensure (prefixConsistent whole.body split.body) msg
 
 /--
-Checks that the exchange core and the direct driver agree, given the same reads.  `r` ran with
-keep-alive on; nothing in the response's framing depends on that.
+Keep-alive changes nothing in the exchange core's outcome over the same reads, and without it the
+connection is never reusable.
 -/
-def crossCheck (who : String) (ex : Exchange) (r : Run) : Except String Unit := do
+def keepAliveInvariant (on off : Core) : Except String Unit := do
+  ensure (on.render == off.render)
+    s!"keep-alive changes the outcome:\n  on:  {on.render}\n  off: {off.render}"
+  ensure (off.reusable? != some true) "reusable without keep-alive"
+
+/--
+The exchange core's own invariants over one run: a completed response obeys the body invariants,
+with the core's rule on transfer codings, and its reuse verdict those of `checkReusable`; a pending
+response's body so far obeys them too, and nothing is pending after end of input; a body-limit
+failure comes after the head, with its status (the machine's own body limit, which would refuse a
+`Content-Length` before the head, is out of reach); a refusal of a transfer coding names a final
+head with a body and codings other than just `chunked`.
+-/
+def checkCore (who : String) (method : Method) (c : Core) (eof : Bool) : Except String Unit := do
+  if let some p := c.problem then throw s!"{who}: {p}"
+  match c.ended, c.head with
+  | some (.finish reusable), some head =>
+    ensure (!head.status.isInformational) s!"{who}: done with an informational status"
+    checkBody who method head c.body true c.model.eofSeen (strict := true)
+    if reusable then
+      ensure (!c.model.eofSeen) s!"{who}: reusable after end of input"
+      checkReusable who method head
+  | some (.finish _), none => throw s!"{who}: finished without a head"
+  | some (.fail f), head =>
+    match f.cause with
+    | .limit .body =>
+      let some head := head | throw s!"{who}: a body-limit failure before the head"
+      ensure (f.status.map (·.toCode) == some head.status.toCode && f.delivery == .responseReceived)
+        s!"{who}: a body-limit failure without the response's status: {f.status.map (·.toCode)}, {f.delivery.name}"
+    | .protocol msg =>
+      if msg.startsWith "a transfer coding" then
+        let some head := head | throw s!"{who}: a transfer coding refused before the head"
+        ensure (!noBody method head && hasTransferEncoding head && !onlyChunked head)
+          s!"{who}: refused for its transfer codings {tokens head Header.Name.transferEncoding}"
+    | _ => pure ()
+  | _, head =>
+    if let some head := head then checkBody who method head c.body false eof (strict := true)
+    if eof then throw s!"{who}: still pending after end of input"
+
+/--
+Checks that the exchange core and the direct driver agree, given the same reads.  `r` ran with
+keep-alive on; nothing in the response's framing depends on that.  The core reuses the connection
+only where the machine would (`reusableBeforeEnd`); with `whole`, the response came in one read, and the core reuses it
+exactly where the machine would with no byte left over, given keep-alive and the whole request
+written before the head arrived.
+-/
+def crossCheck (who : String) (c : Core) (r : Run) (whole : Bool) : Except String Unit := do
   let phase ← wellFormed r.trace
   let done := phase == .ended || phase == .reset
   let machineCode := r.finalHead.map (·.status.toCode.toNat)
-  let both := s!"{renderExchange ex} vs {renderRun r}"
-  match ex.outcome with
-  | .done head body =>
+  let both := s!"{c.render} vs {renderRun r}"
+  match c.ended, c.head with
+  | some (.finish reuse), some head =>
     ensure done s!"{who}: exchange done, machine not: {both}"
     ensure (machineCode == some head.status.toCode.toNat) s!"{who}: final status differs: {both}"
-    ensure (body.data == r.body.data) s!"{who}: body differs: {both}"
-    ensure (ex.interim == r.interim) s!"{who}: interim count differs: {both}"
-  | .failed (.limit .interim) =>
-    ensure (r.interim > maxInterim) s!"{who}: interim limit hit with {r.interim} interim responses"
-  | .failed (.limit .body) =>
-    -- The machine refuses a `Content-Length` above its own limit before reporting the head, so
-    -- read the length from the head it was parsing.  Both drivers lift the machine's body and
-    -- chunk limits to the same bound, so a chunk size above it fails both the same way.
-    let head : Response.Head := r.finalHead.getD r.machine.reader.messageHead
-    let announced := (singleLength? head).getD 0
-    let machineRefused := r.trace.contains (.failed (toString H1.Error.entityTooLarge))
-    ensure (r.body.size > maxBody || announced > maxBody || machineRefused)
-      s!"{who}: body limit hit with {r.body.size} bytes and Content-Length {announced}"
-  | .failed (.protocol msg) =>
-    if msg.startsWith "101" then
-      ensure (machineCode == some 101) s!"{who}: 101 refused, but the machine saw {repr machineCode}"
-    else
-      ensure (phase == .failed) s!"{who}: exchange failed ({msg}), machine did not: {both}"
-  | .failed _ =>
-    -- With end of input before any byte, the machine only closes; the exchange reports that the
-    -- peer closed.
-    ensure (phase == .failed || (r.eof && !done)) s!"{who}: exchange failed, machine did not: {both}"
-  | .pending =>
+    ensure (c.body.data == r.body.data) s!"{who}: body differs: {both}"
+    ensure (c.ex.interim == r.interim) s!"{who}: interim count differs: {both}"
+    if reuse then
+      ensure (reusableBeforeEnd r) s!"{who}: the core reuses, the machine would not: {both}"
+    if whole then
+      let m := c.model
+      let expected := c.ex.config.keepAlive && reusableBeforeEnd r &&
+        r.machine.reader.input.remainingBytes == 0 && m.ackedAtHead == m.request.size &&
+        m.acked == m.request.size && !m.eofSeen
+      ensure (reuse == expected)
+        s!"{who}: reuse {reuse}, expected {expected} (written {m.acked} of {m.request.size}, {m.ackedAtHead} at the head): {both}"
+  | some (.finish _), none => throw s!"{who}: finished without a head"
+  | some (.fail f), _ =>
+    match f.cause with
+    | .limit .interim =>
+      ensure (r.interim > maxInterim) s!"{who}: interim limit hit with {r.interim} interim responses"
+    | .limit .body =>
+      -- Both drivers lift the machine's chunk limit to the same bound, so a chunk size above it
+      -- fails both the same way.
+      let announced := (c.head.bind singleLength?).getD 0
+      let machineRefused := r.trace.contains (.failed (toString H1.Error.entityTooLarge))
+      ensure (r.body.size > maxBody || announced > maxBody || machineRefused)
+        s!"{who}: body limit hit with {r.body.size} bytes and Content-Length {announced}"
+    | .protocol msg =>
+      if msg.startsWith "101" then
+        ensure (machineCode == some 101) s!"{who}: 101 refused, but the machine saw {repr machineCode}"
+      else if msg.startsWith "a transfer coding" then
+        ensure (machineCode == c.head.map (·.status.toCode.toNat))
+          s!"{who}: refused a transfer coding on a head the machine did not see: {both}"
+      else
+        ensure (phase == .failed) s!"{who}: exchange failed ({msg}), machine did not: {both}"
+    | _ =>
+      -- With end of input before any byte, the machine only closes; the exchange reports that the
+      -- peer closed.
+      ensure (phase == .failed || (r.eof && !done)) s!"{who}: exchange failed, machine did not: {both}"
+  | _, _ =>
     ensure (phase == .awaitHead || phase == .inBody) s!"{who}: exchange pending, machine not: {both}"
 
 /-! ## The whole check -/
@@ -565,10 +894,28 @@ structure Report where
   runSplit : Run
   /-- The direct driver, response whole, end of input flipped. -/
   runFlipped : Run
-  /-- The exchange core, response whole. -/
-  exWhole : Exchange
-  /-- The exchange core, response in reads. -/
-  exSplit : Exchange
+  /-- The exchange core with keep-alive, response whole. -/
+  exWhole : Core
+  /-- The exchange core with keep-alive, response in reads. -/
+  exSplit : Core
+  /-- The exchange core without keep-alive, response in reads. -/
+  exSplitClose : Core
+
+/-- Runs both drivers every way without checking anything. -/
+def run (data : ByteArray) : Except String Report := do
+  let input := decode data
+  let reads := pieces input
+  let whole := [input.response]
+  let m := input.method
+  let some keep := prepared? m true | throw "Exchange.prepare refused the request"
+  let some close := prepared? m false | throw "Exchange.prepare refused the request"
+  let runWhole := runMachine keep input.eof whole
+  let runSplit := runMachine keep input.eof reads
+  let runFlipped := runMachine keep (!input.eof) whole
+  let exWhole := runCore keep input.eof whole
+  let exSplit := runCore keep input.eof reads
+  let exSplitClose := runCore close input.eof reads
+  return { input, reads, runWhole, runSplit, runFlipped, exWhole, exSplit, exSplitClose }
 
 /-- Checks every invariant over one input; returns what both drivers did. -/
 def check (data : ByteArray) : Except String Report := do
@@ -576,48 +923,34 @@ def check (data : ByteArray) : Except String Report := do
   let reads := pieces input
   let whole := [input.response]
   let m := input.method
+  let some keep := prepared? m true | throw "Exchange.prepare refused the request"
+  let some close := prepared? m false | throw "Exchange.prepare refused the request"
   -- The direct driver first: its step bound catches loops before the unbounded exchange core.
-  let runWhole := runMachine m input.eof whole
+  let runWhole := runMachine keep input.eof whole
   checkRun "machine/whole" m runWhole
-  let runSplit := runMachine m input.eof reads
+  let runSplit := runMachine keep input.eof reads
   checkRun "machine/split" m runSplit
   machineSplitInvariant runWhole runSplit
   checkBodyBytes m input.response runWhole
-  let runFlipped := runMachine m (!input.eof) whole
+  let runFlipped := runMachine keep (!input.eof) whole
   checkRun "machine/flipped" m runFlipped
   if input.eof then checkEofIndependent m runWhole runFlipped
   else checkEofIndependent m runFlipped runWhole
-  let exWhole := runExchange input whole
-  checkExchange "exchange/whole" m exWhole input.eof
-  let exSplit := runExchange input reads
-  checkExchange "exchange/split" m exSplit input.eof
+  let exWhole := runCore keep input.eof whole
+  checkCore "exchange/whole" m exWhole input.eof
+  let exSplit := runCore keep input.eof reads
+  checkCore "exchange/split" m exSplit input.eof
+  let exSplitClose := runCore close input.eof reads
+  checkCore "exchange/split, keep-alive off" m exSplitClose input.eof
   exchangeSplitInvariant exWhole exSplit
-  crossCheck "whole" exWhole runWhole
-  crossCheck "split" exSplit runSplit
-  return { input, reads, runWhole, runSplit, runFlipped, exWhole, exSplit }
-where
-  /-- The invariants of one run of the exchange core. -/
-  checkExchange (who : String) (method : Method) (ex : Exchange) (eof : Bool) :
-      Except String Unit := do
-    match ex.outcome with
-    | .done head body =>
-      ensure (!head.status.isInformational) s!"{who}: done with an informational status"
-      checkBody who method head body true eof
-    | .pending =>
-      if let some head := ex.head then checkBody who method head ex.body false eof
-      if eof then throw s!"{who}: still pending after end of input"
-    | .failed _ => pure ()
-
-/-- Runs both drivers every way without checking anything, for the replay tool. -/
-def run (data : ByteArray) : Report :=
-  let input := decode data
-  let reads := pieces input
-  let whole := [input.response]
-  let m := input.method
-  { input, reads,
-    runWhole := runMachine m input.eof whole, runSplit := runMachine m input.eof reads,
-    runFlipped := runMachine m (!input.eof) whole,
-    exWhole := runExchange input whole, exSplit := runExchange input reads }
+  keepAliveInvariant exSplit exSplitClose
+  crossCheck "whole" exWhole runWhole true
+  crossCheck "split" exSplit runSplit false
+  for (who, c) in [("exchange/whole", exWhole), ("exchange/split", exSplit)] do
+    if let some p := waitOut c then throw s!"{who}, waiting: {p}"
+  if let some p := unsolicited keep ((reads.find? (!·.isEmpty)).getD .empty) then
+    throw s!"exchange, unsolicited bytes: {p}"
+  return { input, reads, runWhole, runSplit, runFlipped, exWhole, exSplit, exSplitClose }
 
 /--
 The AFL++ entry point: checks one input and panics if an invariant fails.  Returns 0, or 1 after a

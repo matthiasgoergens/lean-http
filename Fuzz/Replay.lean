@@ -21,13 +21,22 @@ def showBytes (b : ByteArray) : String :=
   | some s => repr s |>.pretty
   | none => s!"<{b.size} bytes, not UTF-8> {repr b.data}"
 
+/-- How a run of the exchange core ended, with its reuse verdict or failure. -/
+def renderCore (c : Core) : String :=
+  let ending := match c.ended with
+    | some (.finish r) => s!" reusable={r}"
+    | some (.fail f) => s!" [{f.cause.describe}, {f.delivery.name}, status={f.status.map (·.toCode)}]"
+    | _ => ""
+  c.render ++ ending
+
 /-- Prints what one input did. -/
 def describe (rep : Report) : IO Unit := do
   let i := rep.input
   IO.println s!"  method={repr i.method} eof={i.eof} bytewise={i.bytewise} reads={rep.reads.map (·.size)}"
   IO.println s!"  response={showBytes i.response}"
-  IO.println s!"  exchange/whole: {renderExchange rep.exWhole}"
-  IO.println s!"  exchange/split: {renderExchange rep.exSplit}"
+  IO.println s!"  exchange/whole: {renderCore rep.exWhole}"
+  IO.println s!"  exchange/split: {renderCore rep.exSplit}"
+  IO.println s!"  exchange/split, keep-alive off: {renderCore rep.exSplitClose}"
   IO.println s!"  machine/whole:  {renderRun rep.runWhole}"
   IO.println s!"  machine/split:  {renderRun rep.runSplit}"
   IO.println s!"  machine/flipped end of input: {renderRun rep.runFlipped}"
@@ -88,7 +97,10 @@ def main (args : List String) : IO UInt32 := do
     match mode, result with
     | .classOnly, .ok _ => IO.println "ok"
     | .classOnly, .error msg => IO.println (failureClass msg)
-    | .framing, _ => IO.println (framingJson f (run data))
+    | .framing, _ =>
+      match run data with
+      | .ok rep => IO.println (framingJson f rep)
+      | .error msg => IO.println s!"{repr f}: {msg}"
     | .brief, .ok rep => IO.println s!"OK   {f}: {renderRun rep.runWhole}"
     | .full, .ok rep =>
       IO.println s!"OK   {f}"
@@ -96,6 +108,6 @@ def main (args : List String) : IO UInt32 := do
     | .brief, .error msg => IO.println s!"FAIL {f}: {msg}"
     | .full, .error msg =>
       IO.println s!"FAIL {f}: {msg}"
-      describe (run data)
+      if let .ok rep := run data then describe rep
   if mode matches .full | .brief then IO.println s!"{files.length} inputs, {bad} failing"
   return if bad == 0 then 0 else 1
