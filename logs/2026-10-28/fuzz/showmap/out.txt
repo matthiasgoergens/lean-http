@@ -1,0 +1,11 @@
+# fuzz/run.sh (SKIP_LEAN_BUILD=1) bash -c: seeds.py into .lake/fuzz/seeds, then for three seeds afl-showmap -q -o <map> -- .lake/fuzz/plain/lean-http-fuzz < seed, and comm over the edge ids; tree at commit 3e3cf99
+hand-content-length: 4756 edges
+hand-chunked-ext-trailers: 5616 edges
+hand-empty-eof: 2666 edges
+edges in chunked but not content-length: 1097
+edges in content-length but not chunked: 237
+DEBUG: (1) id_str 6, __afl_area_ptr 0x55753c85f240, __afl_area_initial 0x55753c85f240, __afl_area_ptr_dummy 0x55753c85f240, __afl_map_addr 0x0, MAP_SIZE 65536, __afl_final_loc 0, __afl_map_size 65536
+DEBUG: (2) id_str 6, __afl_area_ptr 0x772d9d92b000, __afl_area_initial 0x55753c85f240, __afl_area_ptr_dummy 0x55753c85f240, __afl_map_addr 0x0, MAP_SIZE 65536, __afl_final_loc 0, __afl_map_size 65536
+DEBUG: (1) id_str 6, __afl_area_ptr 0x55753c85f240, __afl_area_initial 0x55753c85f240, __afl_area_ptr_dummy 0x55753c85f240, __afl_map_addr 0x0, MAP_SIZE 65536, __afl_final_loc 75510, __afl_map_size 75511
+DEBUG: (2) id_str 6, __afl_area_ptr 0x772d9d92b000, __afl_area_initial 0x55753c85f240, __afl_area_ptr_dummy 0x55753c85f240, __afl_map_addr 0x0, MAP_SIZE 65536, __afl_final_loc 75510, __afl_map_size 75511
+DEBUG: after guard init: __afl_map_size 75511, __afl_cov_map_size 75511, __afl_set_map_size 75511

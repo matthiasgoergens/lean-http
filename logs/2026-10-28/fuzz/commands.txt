@@ -1,0 +1,59 @@
+Fuzzing runs of 2026-10-28 (times UTC+8), all on the build host in the AFL++ 5.04a image
+(docker.io/aflplusplus/aflplusplus@sha256:cb8e839b4b4ec0447aa4ae5c6b1d70811d7704cd32f732695908f84301bbf8ac),
+Lean v4.34.1, through fuzz/run.sh from the worktree (LEAN_HTTP_REMOTE_DIR as given).  Each
+directory holds AFL++'s fuzzer_stats and plot_data per instance, build-info.txt (binary hashes)
+and, where there was one, the crash and its replay.  Commit hashes are of the branch as it was
+during the run (before the history was tidied); each run's harness is described in words too.
+
+showmap/out.txt, showmap/out-final.txt
+  afl-showmap over three seeds, first build and final build: the edge maps differ, so the
+  instrumentation covers the Lean code (map size 75511 and 77427 edges).
+
+smoke1-harness-3e3cf99/   15:3x, CPU 44, 1 instance, 600 s, -t 200
+  LEAN_HTTP_REMOTE_DIR=lean-http-fuzz PIN_CPUS=44 fuzz/run.sh fuzz/fuzz.sh .lake/fuzz/campaigns/smoke1 600 1 200
+  First harness.  55 crashes, all from gaps in the harness's own specification (split invariance
+  demanded identical streaming on responses that do not complete; the body-limit cross-check did
+  not see lengths the machine refused before the head).  Not defects in the machine.
+
+planted-a-10min/          CPU 45, 600 s: plant A (below) on the second harness, not found.
+
+smoke2/                   16:0x, CPU 22, 1 instance, 600 s: second harness, no crashes.
+
+plant-b/                  16:04, CPU 57: plant B on the third harness, found after 20 s.
+
+main0-stopped/            16:04-16:17, CPUs 36,51,54,55, 4 instances: third harness, stopped
+                          after 12 minutes when a review found a false positive in it; no crashes.
+
+plant-b-final-harness/    16:22, CPU 70: plant B on the final harness, found after 99 s.
+  PIN_CPUS=70 fuzz/run.sh env AFL_BENCH_UNTIL_CRASH=1 fuzz/fuzz.sh .lake/fuzz/campaigns/plant-b2 600 1 200
+
+Plants (scratch copies of the tree, never committed), both in parseFixedBody's .incomplete branch
+of vendor/LeanHttpProto/Http/Protocol/H1.lean, which the vendoring script generates:
+  A: .fixed (if remaining == 3 && body.size ≥ 7 then remaining - 1 else remaining)
+  B: .fixed (if remaining == 1 then 0 else remaining)
+Each makes a Content-Length body end one byte early when it arrives split at a given point.
+
+plant-a-third-harness/    16:04-16:36, CPU 47: plant A on the third harness; stopped at its first
+                          crash, which was that harness's false positive (exchange split invariance,
+                          fixed in the final harness), not the plant.  Its one hang ran in ms.
+
+main1/                    16:22-19:22, CPUs 36,37,63,122, 4 instances, 10800 s, final harness (c82622e)
+  PIN_CPUS=36,37,63,122 CTR_EXTRA="-d --name lean-http-fuzz-main" fuzz/run.sh fuzz/fuzz.sh .lake/fuzz/campaigns/main1 10800 4 200
+  145 million executions, 8898 of 77427 edges, no crashes, one hang.  The host's load average
+  rose from about 70 to over 200 during the run, so the instances got very unequal shares.
+
+main1-triage/             fuzz/triage.sh over main1, and the hang's timing (a few ms per run).
+
+plant-a-final-harness/    16:40-19:10, CPU 62, 9000 s: plant A on the final harness, not found
+                          (20.3 million executions).
+
+plant-a3-seed26/          19:2x, CPU 90, 600 s: plant A with fuzz/seeds.py's content-length-26 seed
+                          added, not found (2.1 million executions).
+plant-a4-seed26-deterministic/
+                          19:38, CPU 90, 600 s: the same with -D on the main instance, not found
+                          (2.1 million executions); the deterministic stage finished 2 of 1290 queue
+                          entries.  trigger-split-45-17 is the seed with one split entry changed
+                          (9 to 17), which the planted build reports as a crash.
+
+h11-diff-main1/           fuzz/h11-diff.py over main1's 6161 distinct inputs (command.txt, summary.txt,
+                          and every input that did not agree, as JSON lines).

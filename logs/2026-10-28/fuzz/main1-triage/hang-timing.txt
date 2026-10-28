@@ -1,0 +1,5 @@
+# s2/hangs/id:000000 (1406 bytes, bytewise, close-delimited body): wall time per process, Lean start-up included, at 17:4x; last line is /proc/loadavg
+bytewise: 34 21 22 25 22 ms
+whole: 14 14 15 16 17 ms
+cd-bytewise-2000: 25 25 26 26 30 ms
+215.00 190.35 196.91 182/14815 61
