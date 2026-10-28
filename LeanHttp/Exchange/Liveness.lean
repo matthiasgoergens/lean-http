@@ -4,16 +4,36 @@ import all LeanHttp.Exchange
 import all LeanHttp.Exchange.Proofs
 
 /-!
-# Deadlines ahead
+# Deadlines ahead, and liveness
 
-A property of the exchange core beyond those of `LeanHttp.Exchange.Proofs`, which this module
-builds on.  Like those, it holds whatever the HTTP/1.1 machine does.
+Two properties of the exchange core beyond those of `LeanHttp.Exchange.Proofs`, which this module
+builds on.  Like those, they hold whatever the HTTP/1.1 machine does.
 
-**A live exchange has a deadline ahead** (`Reachable.deadlineAhead`).  Every reachable exchange that
-has not ended has a next deadline strictly after its clock and no later than the deadline of the
-whole exchange.  It rests on the gap being positive (`ExchangeConfig.gapMs_pos`) and on a companion
-invariant of the timers (`Timers`): a write's deadline is set only while a write is in flight, and
-the drain's only while draining, when the whole request has been written.
+- **A live exchange has a deadline ahead** (`Reachable.deadlineAhead`).  Every reachable exchange
+  that has not ended has a next deadline strictly after its clock and no later than the deadline of
+  the whole exchange.  It rests on the gap being positive (`ExchangeConfig.gapMs_pos`) and on a
+  companion invariant of the timers (`Timers`): a write's deadline is set only while a write is in
+  flight, and the drain's only while draining, when the whole request has been written.  The
+  checker states the property against its model's clock rather than the exchange's;
+  `ObservedMono.deadlineAhead` proves that form for runs in which no event but a tick is earlier
+  than the latest event before it, and it is false without that condition.
+- **Liveness.**  An event the shell reports at or after the next deadline (a *due* event) either
+  ends the exchange or moves its clock strictly forward (`Reachable.due_advances`), and the clock of
+  a live exchange stays before its deadline.  So `deadline - now` ranks every run: the due events
+  counted so far plus the time left never exceed the time left at the start
+  (`Reachable.dueCount_le`), whatever else the shell reported in between, so a live exchange has
+  had fewer than `deadline - now` due events (`Reachable.ended_after_waits`; a worst-case bound,
+  since a due event usually moves the clock by far more than 1 ms).  If, whenever the exchange is
+  live, the shell eventually delivers a due event or the exchange ends, it ends
+  (`Reachable.ends_of_fair`); if every event is due, within `deadline - now` events
+  (`Reachable.ends_of_allDue`); and the first event at or after the deadline ends it in any case
+  (`Reachable.ended_at_deadline`).
+
+What is assumed about the shell is the hypothesis of each theorem and nothing more.  A run is any
+sequence of events at any times (the shell's clock may even go backwards); termination needs the
+shell to deliver due events, which it always can, since the next deadline is ahead and no later than
+the deadline (`Reachable.tick_due`).  That a real shell does (that its sleep returns, and its clock
+reaches the next deadline) is not proved.
 -/
 
 namespace LeanHttp.Exchange
@@ -709,5 +729,315 @@ never sleeps past the exchange's deadline.
 theorem Reachable.deadlineAhead {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = false) :
     ∃ t, ex.nextDeadline = some t ∧ ex.now < t ∧ t ≤ ex.deadline :=
   (h.ahead ht).nextDeadline ht
+
+/-! ## Liveness -/
+
+/-- The exchange after `ex` has taken the first `n` events of `ev`, each at its time. -/
+def stateAt (ex : Exchange) (ev : Nat → Timestamp × ExchangeEvent) : Nat → Exchange
+  | 0 => ex
+  | n + 1 => ((stateAt ex ev n).step (ev n).1 (ev n).2).1
+
+/--
+`true` when an event at `t` comes at or after the exchange's next deadline, i.e. the shell waited
+as long as the core let it; `false` once the exchange has ended.
+-/
+def dueAt (ex : Exchange) (t : Timestamp) : Bool :=
+  match ex.nextDeadline with
+  | some d => decide (d ≤ t)
+  | none => false
+
+/-- How many of the first `n` events of a run were due when they came. -/
+def dueCount (ex : Exchange) (ev : Nat → Timestamp × ExchangeEvent) : Nat → Nat
+  | 0 => 0
+  | n + 1 => dueCount ex ev n + if dueAt (stateAt ex ev n) (ev n).1 then 1 else 0
+
+theorem Reachable.stateAt_reachable {ex : Exchange} (h : Reachable ex) (ev : Nat → Timestamp × ExchangeEvent) :
+    ∀ n, Reachable (stateAt ex ev n)
+  | 0 => h
+  | n + 1 => .step _ _ (h.stateAt_reachable ev n)
+
+theorem Reachable.stateAt_deadline {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent) : ∀ n, (stateAt ex ev n).deadline = ex.deadline
+  | 0 => rfl
+  | n + 1 => by
+    simp only [Exchange.stateAt]
+    rw [(step_fixed (h.stateAt_reachable ev n).inv _ _).2.2]
+    exact h.stateAt_deadline ev n
+
+theorem stateAt_terminal {ex : Exchange} {ev : Nat → Timestamp × ExchangeEvent} {n : Nat}
+    (h : (stateAt ex ev n).terminal = true) : ∀ k, (stateAt ex ev (n + k)).terminal = true
+  | 0 => h
+  | k + 1 => by
+    show ((stateAt ex ev (n + k)).step _ _).1.terminal = true
+    rw [step_of_terminal (stateAt_terminal h k)]
+    exact stateAt_terminal h k
+
+/-- A step never moves the clock back, and moves it to the event's time unless it ignores it. -/
+theorem step_now {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : ExchangeEvent) :
+    ((ex.terminal || stale ex now e) = true ∧ (ex.step now e).1.now = ex.now) ∨
+      ((ex.terminal || stale ex now e) = false ∧ (ex.step now e).1.now = max ex.now now) := by
+  rcases step_cases ex now e with ⟨hc, hs⟩ | ⟨hc, hg⟩
+  · left; rw [hs]; exact ⟨hc, rfl⟩
+  · right
+    refine ⟨hc, ?_⟩
+    rw [(hg hi).fixed.now]
+    cases e <;> simp only [startOf] <;> (try split) <;> rfl
+
+theorem step_now_le {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : ExchangeEvent) :
+    ex.now ≤ (ex.step now e).1.now := by
+  rcases step_now hi now e with ⟨_, h⟩ | ⟨_, h⟩ <;> rw [h]
+  · exact Nat.le_refl _
+  · exact Nat.le_max_left _ _
+
+theorem terminal_of_nextDeadline {ex : Exchange} {d : Timestamp} (h : ex.nextDeadline = some d) :
+    ex.terminal = false := by
+  unfold Exchange.nextDeadline at h
+  split at h
+  · cases h
+  · rename_i ht; simpa using ht
+
+/--
+**A due event moves the clock forward.**  An event at or after the next deadline of a reachable
+exchange is not ignored, and leaves the exchange's clock strictly later than it was.
+-/
+theorem Reachable.due_advances {ex : Exchange} (h : Reachable ex) {t : Timestamp}
+    (hd : dueAt ex t = true) (e : ExchangeEvent) : ex.now < (ex.step t e).1.now := by
+  unfold dueAt at hd
+  split at hd
+  · rename_i d hn
+    simp only [decide_eq_true_eq] at hd
+    have ht := terminal_of_nextDeadline hn
+    obtain ⟨d', hn', hlt, _⟩ := h.deadlineAhead ht
+    rw [hn] at hn'
+    cases hn'
+    rcases step_now h.inv t e with ⟨hc, _⟩ | ⟨_, hs⟩
+    · exfalso
+      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true] at hc
+      exact Nat.lt_irrefl t (Nat.lt_of_lt_of_le hc hd)
+    · rw [hs]
+      exact Nat.lt_of_lt_of_le hlt (Nat.le_trans hd (Nat.le_max_right _ _))
+  · cases hd
+
+/--
+The ranking of a run: due events, counted, plus the time left before the deadline, never exceed the
+time left at the start.
+-/
+theorem Reachable.dueCount_le {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent) (n : Nat) :
+    dueCount ex ev n + (ex.deadline - (stateAt ex ev n).now) ≤ ex.deadline - ex.now := by
+  induction n with
+  | zero => simp [dueCount, Exchange.stateAt]
+  | succ n ih =>
+    have hr := h.stateAt_reachable ev n
+    have hdl := h.stateAt_deadline ev n
+    simp only [dueCount, Exchange.stateAt]
+    rcases Bool.eq_false_or_eq_true (dueAt (stateAt ex ev n) (ev n).1) with hd | hd <;>
+      simp only [hd, ↓reduceIte, Bool.false_eq_true]
+    · have h1 := hr.due_advances hd (ev n).2
+      have h2 : (stateAt ex ev n).now < (stateAt ex ev n).deadline := by
+        unfold dueAt at hd
+        split at hd
+        · rename_i d hn
+          exact hr.beforeDeadline (terminal_of_nextDeadline hn)
+        · cases hd
+      rw [hdl] at h2
+      dsimp only [Timestamp] at *
+      omega
+    · have h1 := step_now_le hr.inv (ev n).1 (ev n).2
+      dsimp only [Timestamp] at *
+      omega
+
+/--
+**Finitely many waits.**  In every run from a reachable exchange, whatever events the shell reports
+and at whatever times, at most `deadline - now` of them come when due (at or after the next
+deadline of a live exchange).
+-/
+theorem Reachable.dueCount_bound {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent) (n : Nat) : dueCount ex ev n ≤ ex.deadline - ex.now := by
+  have := h.dueCount_le ev n
+  dsimp only [Timestamp] at *
+  omega
+
+/--
+**Ended after `deadline - now` waits.**  In every run from a reachable exchange, once `deadline - now`
+of the events have come when due, whatever else the shell reported in between, the exchange has
+ended; that is, a live exchange has had fewer than `deadline - now` due events.  The bound is the
+worst case, in which every due event moves the clock by 1 ms and no other event moves it; with a
+gap of 2 ms or more no run reaches it, and `Reachable.dueCount_le` gives the exact accounting.
+-/
+theorem Reachable.ended_after_waits {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent) (n : Nat) (hn : ex.deadline - ex.now ≤ dueCount ex ev n) :
+    (stateAt ex ev n).terminal = true := by
+  cases ht : (stateAt ex ev n).terminal
+  · have h1 := h.dueCount_le ev n
+    have h2 := (h.stateAt_reachable ev n).beforeDeadline ht
+    rw [h.stateAt_deadline ev n] at h2
+    dsimp only [Timestamp] at *
+    omega
+  · rfl
+
+/--
+**The deadline ends the exchange.**  In every run from a reachable exchange, the first event at or
+after the exchange's deadline ends it, and it stays ended (and, by `step_of_terminal`, unchanged and
+silent).
+-/
+theorem Reachable.ended_at_deadline {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent) {n : Nat} (hd : ex.deadline ≤ (ev n).1) :
+    ∀ m, n < m → (stateAt ex ev m).terminal = true := by
+  intro m hm
+  have h1 : (stateAt ex ev (n + 1)).terminal = true := by
+    show ((stateAt ex ev n).step (ev n).1 (ev n).2).1.terminal = true
+    apply step_deadline (h.stateAt_reachable ev n)
+    rw [h.stateAt_deadline ev n]
+    exact Nat.le_trans hd (Nat.le_max_right _ _)
+  have := stateAt_terminal h1 (m - (n + 1))
+  rwa [show n + 1 + (m - (n + 1)) = m by omega] at this
+
+theorem dueCount_mono {ex : Exchange} {ev : Nat → Timestamp × ExchangeEvent} {n m : Nat}
+    (h : n ≤ m) : dueCount ex ev n ≤ dueCount ex ev m := by
+  induction m with
+  | zero => rw [Nat.le_zero.mp h]; exact Nat.le_refl _
+  | succ m ih =>
+    rcases Nat.lt_or_eq_of_le h with h' | h'
+    · simp only [dueCount]
+      have := ih (by omega)
+      omega
+    · rw [h']; exact Nat.le_refl _
+
+/--
+**Liveness under fairness.**  If, whenever the exchange is live, the shell eventually delivers an
+event when it is due (at or after the next deadline), unless the exchange has ended by then, the
+exchange ends.  The events in between are arbitrary, in kind and time.
+-/
+theorem Reachable.ends_of_fair {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent)
+    (fair : ∀ n, (stateAt ex ev n).terminal = false →
+      ∃ m, n ≤ m ∧ ((stateAt ex ev m).terminal = true ∨ dueAt (stateAt ex ev m) (ev m).1 = true)) :
+    ∃ n, (stateAt ex ev n).terminal = true := by
+  apply Classical.byContradiction
+  intro hno
+  have live : ∀ n, (stateAt ex ev n).terminal = false := fun n => by
+    cases ht : (stateAt ex ev n).terminal
+    · rfl
+    · exact absurd ⟨n, ht⟩ hno
+  have grow : ∀ k, ∃ N, k ≤ dueCount ex ev N := by
+    intro k
+    induction k with
+    | zero => exact ⟨0, Nat.zero_le _⟩
+    | succ k ih =>
+      obtain ⟨N, hN⟩ := ih
+      obtain ⟨m, hm, hd⟩ := fair N (live N)
+      have hd : dueAt (stateAt ex ev m) (ev m).1 = true := by
+        rcases hd with hd | hd
+        · rw [live m] at hd; cases hd
+        · exact hd
+      refine ⟨m + 1, ?_⟩
+      have := dueCount_mono (ex := ex) (ev := ev) hm
+      simp only [dueCount, hd, ↓reduceIte]
+      omega
+  obtain ⟨N, hN⟩ := grow (ex.deadline - ex.now + 1)
+  have := h.dueCount_bound ev N
+  omega
+
+/--
+**A shell that only waits ends the exchange in time.**  If every event the shell reports while the
+exchange is live is due (a tick at the next deadline, say), the exchange has ended after
+`deadline - now` events.
+-/
+theorem Reachable.ends_of_allDue {ex : Exchange} (h : Reachable ex)
+    (ev : Nat → Timestamp × ExchangeEvent)
+    (hall : ∀ n, (stateAt ex ev n).terminal = false → dueAt (stateAt ex ev n) (ev n).1 = true) :
+    (stateAt ex ev (ex.deadline - ex.now)).terminal = true := by
+  have key : ∀ n, (stateAt ex ev n).terminal = true ∨ dueCount ex ev n = n := by
+    intro n
+    induction n with
+    | zero => right; rfl
+    | succ n ih =>
+      rcases ih with ih | ih
+      · left; exact stateAt_terminal ih 1
+      · cases ht : (stateAt ex ev n).terminal
+        · right
+          simp only [dueCount, hall n ht, ↓reduceIte, ih]
+        · left; exact stateAt_terminal ht 1
+  rcases key (ex.deadline - ex.now) with hk | hk
+  · exact hk
+  · exact h.ended_after_waits ev _ (by rw [hk]; exact Nat.le_refl _)
+
+/--
+**The shell can always wait.**  A reachable exchange that has not ended can be ticked at its next
+deadline: the tick is due, so it is not ignored, and it comes after the exchange's clock and no
+later than its deadline.
+-/
+theorem Reachable.tick_due {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = false) :
+    ∃ t, ex.nextDeadline = some t ∧ dueAt ex t = true ∧ stale ex t .tick = false ∧ ex.now < t ∧
+      t ≤ ex.deadline := by
+  obtain ⟨t, hn, hlt, hle⟩ := h.deadlineAhead ht
+  exact ⟨t, hn, by simp [dueAt, hn], by simp [stale, hn], hlt, hle⟩
+
+/-! ## The checker's clock -/
+
+/--
+A run with the checker's model of it (`Observed`) in which no event but a tick is earlier than the
+model's clock: the shell's clock never goes backwards, except that a tick may come late.  The
+checker's random runs and its exploration are such runs.
+-/
+inductive ObservedMono : Exchange → Obs → Prop where
+  /-- The start. -/
+  | begin (req : PreparedRequest) (now deadline : Timestamp) :
+      ObservedMono (Exchange.begin req now deadline).1
+        ((Exchange.begin req now deadline).2.foldl Obs.see { now })
+  /-- One more step: a tick, or an event no earlier than the model's clock. -/
+  | step {ex : Exchange} {m : Obs} (now : Timestamp) (e : ExchangeEvent)
+      (hm : e = .tick ∨ m.now ≤ now) : ObservedMono ex m →
+      ObservedMono (ex.step now e).1
+        ((ex.step now e).2.foldl Obs.see { m.observe e with now := max m.now now })
+
+theorem ObservedMono.reachable {ex : Exchange} {m : Obs} (h : ObservedMono ex m) : Reachable ex := by
+  induction h with
+  | begin req now deadline => exact .begin req now deadline
+  | step now e _ _ ih => exact .step now e ih
+
+/--
+**A live exchange has a deadline ahead, by the checker's clock** (checker: "a live exchange has a
+deadline ahead", literally).  The checker compares the next deadline with its model's clock, the
+latest time of any event, which a stale tick moves past the exchange's own clock.  When no event but
+a tick is earlier than the model's clock, every reachable exchange that has not ended has a next
+deadline strictly after the model's clock and no later than its deadline.  Without that hypothesis
+the statement is false: an event earlier than a stale tick sets its timers from the exchange's
+older clock (`logs/2026-10-28/live/clock/`).
+-/
+theorem ObservedMono.deadlineAhead {ex : Exchange} {m : Obs} (h : ObservedMono ex m)
+    (ht : ex.terminal = false) : ∃ t, ex.nextDeadline = some t ∧ m.now < t ∧ t ≤ ex.deadline := by
+  induction h with
+  | begin req now deadline =>
+    obtain ⟨t, hn, hlt, hle⟩ := (Reachable.begin req now deadline).deadlineAhead ht
+    refine ⟨t, hn, ?_, hle⟩
+    rw [← Array.foldl_toList, see_now]
+    have := (begin_good req now deadline).fixed.now
+    rw [this] at hlt
+    exact hlt
+  | @step ex m now e hm hob ih =>
+    rw [← Array.foldl_toList, see_now]
+    simp only
+    have hr := hob.reachable
+    rcases step_now hr.inv now e with ⟨hc, _⟩ | ⟨hc, hs⟩
+    · rw [step_ignored hc] at ht ⊢
+      obtain ⟨t, hn, hlt, hle⟩ := ih ht
+      refine ⟨t, hn, ?_, hle⟩
+      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true] at hc
+      exact Nat.max_lt.mpr ⟨hlt, hc⟩
+    · -- A tick that is not ignored is due, so no earlier than the model's clock either.
+      have hm' : m.now ≤ now := by
+        rcases hm with rfl | hm
+        · have ht0 := not_terminal_of hc
+          obtain ⟨t, hn, hlt, _⟩ := ih ht0
+          simp only [ht0, Bool.false_or, stale, hn, decide_eq_false_iff_not, Nat.not_lt] at hc
+          exact Nat.le_of_lt (Nat.lt_of_lt_of_le hlt hc)
+        · exact hm
+      obtain ⟨t, hn, hlt, hle⟩ := (Reachable.step now e hr).deadlineAhead ht
+      refine ⟨t, hn, ?_, hle⟩
+      rw [hs] at hlt
+      rw [Nat.max_eq_right hm']
+      exact Nat.lt_of_le_of_lt (Nat.le_max_right _ _) hlt
 
 end LeanHttp.Exchange

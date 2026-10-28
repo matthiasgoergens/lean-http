@@ -33,8 +33,8 @@ What they do not cover:
   complete response", "a finished response delivered its whole body", "the body is the response's",
   and the clause of "reusable only when safe" that the bytes read are exactly one reusable response)
   depend on the machine parsing correctly, and are not proved.
-- "A live exchange has a deadline ahead" is not proved, and is false when `gapMs = 0` (a write's
-  timeout is then `now`).
+- "A live exchange has a deadline ahead", and liveness under the deadline, are proved in
+  `LeanHttp.Exchange.Liveness`, which builds on this module.
 
 ## Within a step
 
