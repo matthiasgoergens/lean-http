@@ -48,3 +48,4 @@ open LeanHttp.Exchange
 #print axioms Reachable.ended_at_deadline
 #print axioms Reachable.ends_of_fair
 #print axioms Reachable.ends_of_allDue
+#print axioms step_empty_received
