@@ -989,7 +989,8 @@ def wAfter (ex : Exchange) : ExchangeEvent → Option Nat
 
 /-- Whether a read is in flight once `e` was taken into account. -/
 def rAfter (ex : Exchange) : ExchangeEvent → Bool
-  | .received _ | .endOfInput | .readFailed _ => false
+  | .received b => b.isEmpty && ex.readInFlight
+  | .endOfInput | .readFailed _ => false
   | _ => ex.readInFlight
 
 theorem isSending_false_of {p : Phase} (h : p = .sending → False) : p.isSending = false := by
@@ -1038,6 +1039,9 @@ theorem handle_good (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (ht : ex.t
   cases e with
   | received bytes =>
     simp only [handle, wAfter, rAfter, startOf]
+    rcases Bool.eq_false_or_eq_true bytes.isEmpty with hb | hb <;>
+      simp only [hb, ↓reduceIte, Bool.true_and, Bool.false_and, Bool.false_eq_true]
+    · exact Good.start (ex₀ := ex) (ex' := ex) hf hi ht rfl rfl rfl rfl rfl
     simp only [getEx_bind_run]
     simp only [bind_run, setEx_run]
     have hg := Good.start (ex₀ := ex) (ex' := { ex with readInFlight := false, readBy := none })
@@ -1045,11 +1049,9 @@ theorem handle_good (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (ht : ex.t
     split
     · exact failNow_good _ _ hg
     · rename_i hp
-      rcases Bool.eq_false_or_eq_true bytes.isEmpty with hb | hb <;>
-        simp only [hb, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-      · exact hg
-      · exact absorb_good (GoodA.empty (hg.agree (by agree_rfl) rfl (by simp))
-          (isSending_false_of hp))
+      simp only [bind_run, setEx_run]
+      exact absorb_good (GoodA.empty (hg.agree (by agree_rfl) rfl (by simp))
+        (isSending_false_of hp))
   | endOfInput =>
     simp only [handle, wAfter, rAfter, startOf]
     simp only [getEx_bind_run]
@@ -1164,10 +1166,11 @@ theorem schedule_terminal {s : S} (h : s.1.terminal = true) : (schedule.run s).2
 /-- The exchange a step works on: the time advanced, nothing else changed. -/
 abbrev advanced (ex : Exchange) (now : Timestamp) : Exchange := { ex with now := max ex.now now }
 
-/-- `true` when `step` ignores `e` at `now`: a tick before the next deadline. -/
+/-- `true` when `step` ignores `e` at `now`: a tick, or an empty read, before the next deadline. -/
 def stale (ex : Exchange) (now : Timestamp) (e : ExchangeEvent) : Bool :=
   match e, ex.nextDeadline with
   | .tick, some due => decide (now < due)
+  | .received bytes, some due => bytes.isEmpty && decide (now < due)
   | _, _ => false
 
 theorem step_def (ex : Exchange) (now : Timestamp) (e : ExchangeEvent) :
@@ -1282,6 +1285,19 @@ theorem step_of_terminal {ex : Exchange} (h : ex.terminal = true) (now : Timesta
 theorem step_stale_tick {ex : Exchange} {now due : Timestamp} (hd : ex.nextDeadline = some due)
     (hlt : now < due) : ex.step now .tick = (ex, #[]) :=
   step_ignored (by simp [stale, hd, hlt])
+
+/--
+**An empty read is a tick** (checker: "an empty read is a tick").  A read reported with no bytes
+does exactly what a tick at the same time does: it completes no read, so the read stays in flight
+and its read gap keeps running.  Before the next deadline it changes nothing (`step_stale_tick`).
+-/
+theorem step_empty_received {ex : Exchange} (now : Timestamp) {bytes : ByteArray}
+    (hb : bytes.isEmpty = true) : ex.step now (.received bytes) = ex.step now .tick := by
+  rw [step_def, step_def]
+  have hs : stale ex now (.received bytes) = stale ex now .tick := by
+    simp only [stale]; split <;> simp_all
+  have hh : handle (.received bytes) = handle .tick := by simp [handle, hb]
+  rw [hs, hh]
 
 /--
 **No head before the request head is written, and only one** (checker: "no head before the request
@@ -1414,7 +1430,7 @@ theorem step_reads {ex : Exchange} (hi : Inv ex) (ht : ex.terminal = false) (now
   · left
     simp only [ex', acts, hs, Array.countP_empty, true_and]
     simp only [ht, Bool.false_or, stale] at hc
-    cases e <;> simp_all [rAfter]
+    cases e <;> (cases hnd : ex.nextDeadline <;> simp only [hnd] at hc) <;> simp_all [rAfter]
   · have g := hg hi
     rcases g.reads with ⟨h1, h2⟩ | ⟨h1, h2⟩
     · left; exact ⟨h1, h2⟩
@@ -1443,12 +1459,13 @@ theorem step_chunk_after_head {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e
 
 /--
 **Bytes before the request head fail the exchange** (checker: "unsolicited bytes fail the exchange",
-and with `step_of_terminal`, "unsolicited bytes never make a response").  Bytes reported while fewer
-than `headBytes` request bytes have been written end the exchange with that failure and nothing
-else; they are not handed to the machine, and the exchange emits nothing more.
+and with `step_of_terminal`, "unsolicited bytes never make a response").  Bytes (at least one)
+reported while fewer than `headBytes` request bytes have been written end the exchange with that
+failure and nothing else; they are not handed to the machine, and the exchange emits nothing more.
 -/
 theorem step_unsolicited {ex : Exchange} (hi : Inv ex) (ht : ex.terminal = false)
-    (hw : ex.written < ex.headBytes) (now : Timestamp) (bytes : ByteArray) :
+    (hw : ex.written < ex.headBytes) (now : Timestamp) (bytes : ByteArray)
+    (hb : bytes.isEmpty = false) :
     ∃ f, (ex.step now (.received bytes)).2 = #[.fail f] ∧
       f.cause = .protocol "bytes arrived before the request head was written" := by
   have hs : ex.phase = .sending := by
@@ -1459,7 +1476,8 @@ theorem step_unsolicited {ex : Exchange} (hi : Inv ex) (ht : ex.terminal = false
     all_goals
       have := hi.headWritten (by simp [hp, Phase.isActive])
       omega
-  have hc : (ex.terminal || stale ex now (.received bytes)) = false := by simp [ht, stale]
+  have hc : (ex.terminal || stale ex now (.received bytes)) = false := by
+    cases hnd : ex.nextDeadline <;> simp [ht, stale, hb, hnd]
   rw [step_run hc]
   simp only [bind_run]
   let ex1 : Exchange := { ex with now := max ex.now now, readInFlight := false, readBy := none }
@@ -1467,7 +1485,7 @@ theorem step_unsolicited {ex : Exchange} (hi : Inv ex) (ht : ex.terminal = false
   have hh : ((handle (.received bytes)).run (advanced ex now, #[])).2 =
       ({ ex1 with phase := .failed f, writeBy := none, readBy := none, drainBy := none },
         #[.fail f]) := by
-    simp only [handle]
+    simp only [handle, hb, Bool.false_eq_true, ↓reduceIte]
     simp only [getEx_bind_run]
     simp only [bind_run, setEx_run]
     split
@@ -1488,7 +1506,8 @@ def clearsWrite : ExchangeEvent → Bool
 
 /-- `true` for the events that end the read in flight. -/
 def clearsRead : ExchangeEvent → Bool
-  | .received _ | .endOfInput | .readFailed _ => true
+  | .received b => !b.isEmpty
+  | .endOfInput | .readFailed _ => true
   | _ => false
 
 theorem wAfter_eq (ex : Exchange) (e : ExchangeEvent) :
@@ -1497,12 +1516,15 @@ theorem wAfter_eq (ex : Exchange) (e : ExchangeEvent) :
 
 theorem rAfter_eq (ex : Exchange) (e : ExchangeEvent) :
     rAfter ex e = if clearsRead e then false else ex.readInFlight := by
-  cases e <;> rfl
+  cases e <;> try rfl
+  rename_i b
+  cases h : b.isEmpty <;> simp [rAfter, clearsRead, h]
 
 /--
 A run as the shell sees it: the exchange, the writes it was asked for whose outcome it has not yet
 reported, and the same for reads.  As in the checker's model, a reported completion or failure ends
-the write (or read) in flight, if there is one, and nothing changes once the exchange has ended.
+the write (or read) in flight, if there is one (an empty read is no completion), and nothing changes
+once the exchange has ended.
 -/
 inductive Run : Exchange → Nat → Nat → Prop where
   /-- The start. -/
@@ -1804,6 +1826,10 @@ theorem step_deadline {ex : Exchange} (hr : Reachable ex) {now : Timestamp} {e :
         have := nextDeadline_le hn
         simp only [decide_eq_true_eq] at hc
         exact absurd hd (Nat.not_le.mpr (Nat.max_lt.mpr ⟨hb, Nat.lt_of_lt_of_le hc this⟩))
+      · rename_i b due hn
+        have := nextDeadline_le hn
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+        exact absurd hd (Nat.not_le.mpr (Nat.max_lt.mpr ⟨hb, Nat.lt_of_lt_of_le hc.2 this⟩))
       · cases hc
     · rfl
   · exact step_deadline_aux hr.inv hc hd
@@ -2042,10 +2068,10 @@ theorem Observed.agrees {ex : Exchange} {m : Obs} (h : Observed ex m) : Agrees e
       have hobs : m.observe e = m := by
         cases ht : ex.terminal
         · simp only [ht, Bool.false_or, stale] at hc
-          have he : e = .tick := by revert hc; cases e <;> simp
-          subst he
-          simp only [Obs.observe, ie, ht]
-          rfl
+          cases e <;> first
+            | (simp only [Obs.observe, ie, ht]; done)
+            | (simp only [Obs.observe, ie, ht]; rfl)
+            | (exfalso; revert hc; simp)
         · simp only [Obs.observe, ie, ht, ↓reduceIte]
       simp only [hobs, Array.foldl_empty]
       exact ⟨ia, io, iw, ihd, ie, iea, ieo⟩
@@ -2113,6 +2139,12 @@ theorem Observed.clock {ex : Exchange} {m : Obs} (h : Observed ex m) :
           simp only [decide_eq_true_eq] at hc
           have h1 : ¬ ex.deadline ≤ m.now := fun h2 => by rw [ihl h2] at ht; cases ht
           have h3 : now < ex.deadline := Nat.lt_of_lt_of_le hc this
+          exact absurd hd (Nat.not_le.mpr (Nat.max_lt.mpr ⟨Nat.lt_of_not_le h1, h3⟩))
+        · rename_i b due hn
+          have := nextDeadline_le hn
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+          have h1 : ¬ ex.deadline ≤ m.now := fun h2 => by rw [ihl h2] at ht; cases ht
+          have h3 : now < ex.deadline := Nat.lt_of_lt_of_le hc.2 this
           exact absurd hd (Nat.not_le.mpr (Nat.max_lt.mpr ⟨Nat.lt_of_not_le h1, h3⟩))
         · cases hc
       · rfl

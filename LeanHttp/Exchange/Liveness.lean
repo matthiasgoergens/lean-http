@@ -379,14 +379,16 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
     Timers ((handle e).run (ex, #[])).2.1 := by
   cases e with
   | received bytes =>
-    simp only [handle, bind_run, setEx_run]
+    simp only [handle]
+    rcases Bool.eq_false_or_eq_true bytes.isEmpty with hb | hb <;>
+      simp only [hb, ↓reduceIte, Bool.false_eq_true]
+    · exact h
+    simp only [bind_run, setEx_run]
     have h1 := h.agree (b := { ex with readInFlight := false, readBy := none }) (by tagree_rfl)
     split
     · exact failNow_timers _ _ h1
-    · rcases Bool.eq_false_or_eq_true bytes.isEmpty with hb | hb <;>
-        simp only [hb, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
-      · exact h1
-      · exact absorb_timers (h1.agree (by tagree_rfl))
+    · simp only [bind_run, setEx_run]
+      exact absorb_timers (h1.agree (by tagree_rfl))
   | endOfInput =>
     simp only [handle, bind_run, setEx_run]
     have h1 := h.agree (b := { ex with readInFlight := false, readBy := none, inputEnded := true })
@@ -812,8 +814,11 @@ theorem Reachable.due_advances {ex : Exchange} (h : Reachable ex) {t : Timestamp
     cases hn'
     rcases step_now h.inv t e with ⟨hc, _⟩ | ⟨_, hs⟩
     · exfalso
-      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true] at hc
-      exact Nat.lt_irrefl t (Nat.lt_of_lt_of_le hc hd)
+      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true,
+        Bool.and_eq_true] at hc
+      all_goals first
+        | exact Nat.lt_irrefl t (Nat.lt_of_lt_of_le hc hd)
+        | exact Nat.lt_irrefl t (Nat.lt_of_lt_of_le hc.2 hd)
     · rw [hs]
       exact Nat.lt_of_lt_of_le hlt (Nat.le_trans hd (Nat.le_max_right _ _))
   · cases hd
@@ -1024,8 +1029,11 @@ theorem ObservedMono.deadlineAhead {ex : Exchange} {m : Obs} (h : ObservedMono e
     · rw [step_ignored hc] at ht ⊢
       obtain ⟨t, hn, hlt, hle⟩ := ih ht
       refine ⟨t, hn, ?_, hle⟩
-      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true] at hc
-      exact Nat.max_lt.mpr ⟨hlt, hc⟩
+      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true,
+        Bool.and_eq_true] at hc
+      all_goals first
+        | exact Nat.max_lt.mpr ⟨hlt, hc⟩
+        | exact Nat.max_lt.mpr ⟨hlt, hc.2⟩
     · -- A tick that is not ignored is due, so no earlier than the model's clock either.
       have hm' : m.now ≤ now := by
         rcases hm with rfl | hm

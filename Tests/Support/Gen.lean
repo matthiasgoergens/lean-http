@@ -232,7 +232,7 @@ def genEvent (c : Case) (ex : Exchange) (m : Model) (env : Env) : Gen (Nat × Ex
     if remaining == 0 && s.closeAfter then
       options := options ++ [(24, pure (.endOfInput, { env with closed := true }))]
     options := options ++ [(2, pure (.endOfInput, { env with closed := true })),
-      (2, pure (.readFailed "reset", env))]
+      (2, pure (.readFailed "reset", env)), (2, pure (.received .empty, env))]
   if remaining > 0 && !env.closed then
     options := options ++ [(3, do
       let (e, env) ← chunk

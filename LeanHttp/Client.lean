@@ -272,6 +272,8 @@ private partial def drive (socket : TCP.Socket.Client) (ex : Exchange)
   let (event, next) ← match ← awaitFirst pending wait with
     | none => pure (ExchangeEvent.tick, driver)
     | some (.read result) =>
+      -- An empty read, which a receive of a positive size should not return, changes nothing in
+      -- the core; no receive is pending after it, so the core's read gap ends the call.
       let event := match result with
         | .ok (some bytes) => ExchangeEvent.received bytes
         | .ok none => .endOfInput

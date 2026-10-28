@@ -206,7 +206,9 @@ What the shell reports to the core.
 -/
 inductive ExchangeEvent where
   /--
-  A read returned these bytes.
+  A read returned these bytes.  An empty read counts as a `tick`: the read is still in flight as far
+  as the core is concerned and its read gap still runs, so a shell that reports empty reads cannot
+  hold the exchange open past the gap.
   -/
   | received (bytes : ByteArray)
 
@@ -860,16 +862,17 @@ private def absorb : StepM Unit := fun s =>
 Handles one event from the shell.
 -/
 private def handle : ExchangeEvent → StepM Unit
-  | .received bytes => do
-    let ex ← getEx
-    let ex := { ex with readInFlight := false, readBy := none }
-    setEx ex
-    match ex.phase with
-    | .sending =>
-      -- No response can be due before the server has the whole request head: never parse this.
-      failNow (.protocol "bytes arrived before the request head was written")
-    | _ =>
-      unless bytes.isEmpty do
+  | .received bytes =>
+    -- An empty read is no completion: like a tick, it leaves the read in flight.
+    if bytes.isEmpty then pure () else do
+      let ex ← getEx
+      let ex := { ex with readInFlight := false, readBy := none }
+      setEx ex
+      match ex.phase with
+      | .sending =>
+        -- No response can be due before the server has the whole request head: never parse this.
+        failNow (.protocol "bytes arrived before the request head was written")
+      | _ =>
         setEx { ex with machine := ex.machine.feed bytes }
         absorb
   | .endOfInput => do
@@ -1011,13 +1014,15 @@ def begin (req : PreparedRequest) (now deadline : Timestamp) : Exchange × Array
 
 /--
 Advances the exchange by one event that happened at time `now`, and returns the actions to perform,
-in order.  An exchange that has ended ignores every event, and a tick earlier than `nextDeadline`
-changes nothing.
+in order.  An exchange that has ended ignores every event.  A tick earlier than `nextDeadline`
+changes nothing, not even the time, and an empty read is a tick: it is no completion of the read in
+flight.
 -/
 def step (ex : Exchange) (now : Timestamp) (event : ExchangeEvent) :
     Exchange × Array ExchangeAction :=
   let stale := match event, ex.nextDeadline with
     | .tick, some due => now < due
+    | .received bytes, some due => bytes.isEmpty && now < due
     | _, _ => false
   if ex.terminal || stale then
     (ex, #[])

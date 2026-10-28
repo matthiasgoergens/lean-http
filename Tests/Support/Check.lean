@@ -102,6 +102,8 @@ def Model.observe (m : Model) (event : ExchangeEvent) : Model :=
     | none => m
   | .writeFailed _ => { m with outstanding := none }
   | .received bytes =>
+    -- An empty read completes nothing: the core counts it as a tick.
+    if bytes.isEmpty then m else
     { m with readOutstanding := false, fed := m.fed ++ bytes,
              unsolicited := m.unsolicited || m.acked < m.headBytes }
   | .endOfInput => { m with readOutstanding := false, eofSeen := true }
@@ -230,9 +232,17 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
   found := flag found "after the deadline the exchange has ended"
     (m.now ≥ m.deadline && !post.terminal) fun _ => s!"now={m.now}, deadline={m.deadline}"
   found := flag found "unsolicited bytes fail the exchange"
-    (!wasEnded && event matches .received _ && before.acked < before.headBytes &&
+    (!wasEnded && (match event with | .received b => !b.isEmpty | _ => false) &&
+      before.acked < before.headBytes &&
       !(actions.any fun | .fail _ => true | _ => false))
     fun _ => s!"{actions.map renderAction}"
+  if let .received bytes := event then
+    if bytes.isEmpty then
+      let (asTick, tickActions) := pre.step now .tick
+      found := flag found "an empty read is a tick"
+        (fingerprint post != fingerprint asTick ||
+          actions.map renderAction != tickActions.map renderAction)
+        fun _ => s!"empty read at {now}: {actions.map renderAction}, a tick: {tickActions.map renderAction}"
   if let (.tick, some due) := (event, pre.nextDeadline) then
     found := flag found "a stale tick changes nothing"
       (now < due && (!actions.isEmpty || fingerprint post != fingerprint pre))

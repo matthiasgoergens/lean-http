@@ -275,6 +275,18 @@ def traces : List Trace := [
       (29999, .tick, []),
       (30000, .tick,
         [s!"fail write timeout (0 of {p.bytes.size} request bytes accepted) [maybe delivered, written=0]"])] },
+  { name := "empty reads change nothing before the read gap, and the read gap still ends the exchange"
+    config := { keepAlive := true, gapMs := 100 }
+    steps := fun p => writtenSteps p 10 ++ [
+      (50, recv "", []),
+      (109, recv "", []),
+      (110, recv "", [s!"fail read timeout [maybe delivered, written={p.bytes.size}]"])] },
+  { name := "an empty read before the request head is written is no unsolicited response"
+    steps := fun p => [
+      (1, recv "", []),
+      (2, .written p.bytes.size, ["read"]),
+      (3, lots, []),
+      (4, recv okResponse, okActions)] },
   { name := "a tick from the past changes nothing"
     steps := fun p => [
       (50, .written p.bytes.size, ["read"]),
