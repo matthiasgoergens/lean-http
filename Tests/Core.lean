@@ -10,6 +10,9 @@ core-tests props <runs> <seed> properties at every step of random event sequence
 core-tests explore <depth>     bounded breadth-first exploration over a small alphabet
 ```
 
+`props` and `explore` take `--skip <property>` (repeatable) to leave a property unchecked, for
+positive controls that show another property catching a planted bug on its own.
+
 Each prints one line per trace, run summary or search, and exits with status 1 if anything failed.
 A failing random run is shrunk and printed step by step.
 -/
@@ -48,7 +51,7 @@ def endName : Option ExchangeAction → String
   | _ => "no end within the step limit"
 
 /-- Runs `n` random sequences from `seed`. -/
-def runProps (n seed : Nat) : IO UInt32 := do
+def runProps (n seed : Nat) (skip : List String) : IO UInt32 := do
   let mut rng : Rng := ⟨seed.toUInt64⟩
   let mut steps := 0
   let mut adversarial := 0
@@ -58,7 +61,7 @@ def runProps (n seed : Nat) : IO UInt32 := do
   let mut perScript : Std.HashMap String Nat := {}
   for i in [0:n] do
     let (c, r) := genCase.run rng
-    let (res, r) := (genRun c).run r
+    let (res, r) := (genRun c skip).run r
     rng := r
     steps := steps + res.steps
     if res.adversarial then adversarial := adversarial + 1
@@ -71,8 +74,8 @@ def runProps (n seed : Nat) : IO UInt32 := do
     if let some (idx, v) := res.violation then
       IO.println s!"FAIL run {i} (seed {seed}), step {idx}: {v.property}: {v.detail}"
       IO.println s!"  case: {c.describe}"
-      let small := shrink c res.events v.property
-      let detail := match replay c small with
+      let small := shrink c res.events v.property skip
+      let detail := match replay c small skip with
         | some (_, v) => s!"{v.property}: {v.detail}"
         | none => "(the shrunk sequence passes)"
       IO.println s!"  shrunk from {res.events.size} to {small.size} events, failing {detail}:"
@@ -90,12 +93,12 @@ def runProps (n seed : Nat) : IO UInt32 := do
   return 0
 
 /-- Runs every search to `depth`. -/
-def runExplore (depth : Nat) : IO UInt32 := do
+def runExplore (depth : Nat) (skip : List String) : IO UInt32 := do
   let mut failing := 0
   let mut totalStates := 0
   let mut totalTransitions := 0
   for s in searches do
-    let r := explore s depth
+    let r := explore s depth skip
     totalStates := totalStates + r.states
     totalTransitions := totalTransitions + r.transitions
     match r.violation with
@@ -110,11 +113,19 @@ def runExplore (depth : Nat) : IO UInt32 := do
     s!"{totalTransitions} steps checked, {failing} failing")
   return if failing == 0 then 0 else 1
 
+/-- Splits `--skip <property>` options off the arguments. -/
+def skipOptions : List String → List String × List String
+  | "--skip" :: p :: rest => let (args, skip) := skipOptions rest; (args, p :: skip)
+  | a :: rest => let (args, skip) := skipOptions rest; (a :: args, skip)
+  | [] => ([], [])
+
 def main (args : List String) : IO UInt32 := do
+  let (args, skip) := skipOptions args
+  unless skip.isEmpty do IO.println s!"not checking: {skip}"
   match args with
   | ["traces"] => runTraces
-  | ["props", n, seed] => runProps n.toNat! seed.toNat!
-  | ["explore", depth] => runExplore depth.toNat!
+  | ["props", n, seed] => runProps n.toNat! seed.toNat! skip
+  | ["explore", depth] => runExplore depth.toNat! skip
   | _ =>
     IO.eprintln "usage: core-tests traces | props <runs> <seed> | explore <depth>"
     return 2

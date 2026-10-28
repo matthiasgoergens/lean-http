@@ -143,95 +143,100 @@ def renderEvent : ExchangeEvent → String
 
 /--
 Checks one step: the core was in `pre`, the environment reported `event` at time `now`, and the core
-went to `post` with `actions`.  Returns the updated model and the first violation, if any.
+went to `post` with `actions`.  Returns the updated model and the first violation, if any.  The
+properties named in `skip` are not checked (for showing, in a positive control, that another
+property catches a planted bug on its own).
 -/
 def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event : ExchangeEvent)
-    (post : Exchange) (actions : Array ExchangeAction) : Model × Option Violation := Id.run do
+    (post : Exchange) (actions : Array ExchangeAction) (skip : List String := []) :
+    Model × Option Violation := Id.run do
   let wasEnded := m.ended
   let before := m
   let mut m := { m.observe event with now := max m.now now }
-  let bad (p d : String) : Option Violation := some { property := p, detail := d }
-  if wasEnded && !actions.isEmpty then
-    return (m, bad "nothing after the end" s!"{actions.map renderAction}")
+  let mut found : Option Violation := none
+  -- Records the first violation: `broken` is true when property `p` does not hold.
+  let flag (found : Option Violation) (p : String) (broken : Bool) (detail : Unit → String) :
+      Option Violation :=
+    if found.isNone && broken && !skip.contains p then some { property := p, detail := detail () }
+    else found
+  found := flag found "nothing after the end" (wasEnded && !actions.isEmpty)
+    fun _ => s!"{actions.map renderAction}"
   for action in actions do
-    if m.ended then
-      return (m, bad "one end, last" s!"{renderAction action} after the end")
+    found := flag found "one end, last" m.ended fun _ => s!"{renderAction action} after the end"
     match action with
     | .write bytes =>
-      if m.outstanding.isSome then
-        return (m, bad "one write in flight" s!"write {bytes.size} while {m.outstanding} in flight")
-      if bytes.isEmpty || bytes != m.request.extract m.acked (m.acked + bytes.size) then
-        return (m, bad "writes follow the request" s!"write {bytes.size} at {m.acked}")
+      found := flag found "one write in flight" m.outstanding.isSome
+        fun _ => s!"write {bytes.size} while {m.outstanding} in flight"
+      found := flag found "writes follow the request"
+        (bytes.isEmpty || bytes != m.request.extract m.acked (m.acked + bytes.size))
+        fun _ => s!"write {bytes.size} at {m.acked}"
       m := { m with outstanding := some bytes.size, everWrote := true }
     | .read _ =>
-      if m.readOutstanding then
-        return (m, bad "one read in flight" "read while a read is in flight")
+      found := flag found "one read in flight" m.readOutstanding
+        fun _ => "read while a read is in flight"
       m := { m with readOutstanding := true }
     | .deliverHead head =>
-      if m.headDelivered then
-        return (m, bad "one head" s!"second head {head.status.toCode}")
-      if m.acked < m.headBytes then
-        return (m, bad "no head before the request head is written"
-          s!"head {head.status.toCode} with {m.acked} of {m.headBytes} head bytes written")
-      if m.unsolicited then
-        return (m, bad "unsolicited bytes never make a response" s!"head {head.status.toCode}")
+      found := flag found "one head" m.headDelivered fun _ => s!"second head {head.status.toCode}"
+      found := flag found "no head before the request head is written" (m.acked < m.headBytes)
+        fun _ => s!"head {head.status.toCode} with {m.acked} of {m.headBytes} head bytes written"
+      found := flag found "unsolicited bytes never make a response" m.unsolicited
+        fun _ => s!"head {head.status.toCode}"
       m := { m with headDelivered := true, ackedAtHead := m.acked }
     | .deliverBody bytes =>
-      if !m.headDelivered then
-        return (m, bad "no body before the head" s!"{bytes.size} bytes")
+      found := flag found "no body before the head" (!m.headDelivered) fun _ => s!"{bytes.size} bytes"
       m := { m with body := m.body ++ bytes }
       if let some whole := oracle.body then
-        if !m.body.isPrefixOf whole then
-          return (m, bad "the body is the response's" s!"{m.body.size} bytes delivered, not a prefix")
+        found := flag found "the body is the response's" (!(m.body.isPrefixOf whole))
+          fun _ => s!"{m.body.size} bytes delivered, not a prefix"
     | .finish reusable =>
       m := { m with ended := true }
       if !m.abandoned then
         match oracle.bodyFor m.fed with
         | none =>
-          return (m, bad "finish only after a complete response"
-            s!"finish after {m.fed.size} bytes {repr (String.fromUTF8? m.fed |>.getD "")}")
+          found := flag found "finish only after a complete response" true
+            fun _ => s!"finish after {m.fed.size} bytes {repr (String.fromUTF8? m.fed |>.getD "")}"
         | some expected =>
-          if oracle.needsEnd && !m.eofSeen then
-            return (m, bad "finish only after a complete response" "a close-delimited body before the end")
-          if m.body != expected || !m.headDelivered then
-            return (m, bad "a finished response delivered its whole body"
-              s!"{m.body.size} body bytes, expected {expected.size}")
+          found := flag found "finish only after a complete response"
+            (oracle.needsEnd && !m.eofSeen) fun _ => "a close-delimited body before the end"
+          found := flag found "a finished response delivered its whole body"
+            (m.body != expected || !m.headDelivered)
+            fun _ => s!"{m.body.size} body bytes, expected {expected.size}"
       if reusable then
         let reasons := [
           (m.keepAlive, "keep-alive is off"),
           (m.acked == m.request.size, s!"only {m.acked} of {m.request.size} request bytes written"),
           (m.ackedAtHead == m.request.size, s!"the head arrived after {m.ackedAtHead} bytes"),
           (!m.eofSeen, "the peer closed"),
-          (oracle.exactReusable m.fed, s!"the {m.fed.size} bytes read are not exactly one reusable response"),
+          (oracle.exactReusable m.fed,
+            s!"the {m.fed.size} bytes read are not exactly one reusable response"),
           (m.headDelivered, "no head")]
         if let some (_, why) := reasons.find? (!·.1) then
-          return (m, bad "reusable only when safe" why)
+          found := flag found "reusable only when safe" true fun _ => why
     | .fail f =>
       m := { m with ended := true }
       let ok := match f.delivery with
         | .notSent => !m.everWrote
         | .maybeDelivered => m.everWrote && !m.headDelivered
         | .responseReceived => m.headDelivered
-      if !ok then
-        return (m, bad "delivery follows what was written"
-          s!"{f.delivery.name}, wrote={m.everWrote}, head={m.headDelivered}")
-      if f.written != m.acked then
-        return (m, bad "a failure counts the bytes written" s!"{f.written}, model {m.acked}")
+      found := flag found "delivery follows what was written" (!ok)
+        fun _ => s!"{f.delivery.name}, wrote={m.everWrote}, head={m.headDelivered}"
+      found := flag found "a failure counts the bytes written" (f.written != m.acked)
+        fun _ => s!"{f.written}, model {m.acked}"
   -- Properties of the state after the step.
-  if post.terminal != m.ended then
-    return (m, bad "the core ends only with an action" s!"terminal={post.terminal}, ended={m.ended}")
-  if m.now ≥ m.deadline && !post.terminal then
-    return (m, bad "after the deadline the exchange has ended" s!"now={m.now}, deadline={m.deadline}")
-  if !wasEnded && event matches .received _ && before.acked < before.headBytes then
-    if !(actions.any fun | .fail _ => true | _ => false) then
-      return (m, bad "unsolicited bytes fail the exchange" s!"{actions.map renderAction}")
+  found := flag found "the core ends only with an action" (post.terminal != m.ended)
+    fun _ => s!"terminal={post.terminal}, ended={m.ended}"
+  found := flag found "after the deadline the exchange has ended"
+    (m.now ≥ m.deadline && !post.terminal) fun _ => s!"now={m.now}, deadline={m.deadline}"
+  found := flag found "unsolicited bytes fail the exchange"
+    (!wasEnded && event matches .received _ && before.acked < before.headBytes &&
+      !(actions.any fun | .fail _ => true | _ => false))
+    fun _ => s!"{actions.map renderAction}"
   if let (.tick, some due) := (event, pre.nextDeadline) then
-    if now < due && (!actions.isEmpty || fingerprint post != fingerprint pre) then
-      return (m, bad "a stale tick changes nothing" s!"tick at {now}, due {due}")
+    found := flag found "a stale tick changes nothing"
+      (now < due && (!actions.isEmpty || fingerprint post != fingerprint pre))
+      fun _ => s!"tick at {now}, due {due}"
   if !post.terminal then
-    match post.nextDeadline with
-    | none => return (m, bad "a live exchange has a deadline" "none")
-    | some d =>
-      if d > post.deadline then
-        return (m, bad "a live exchange has a deadline" s!"{d} after {post.deadline}")
-  return (m, none)
+    found := flag found "a live exchange has a deadline"
+      (match post.nextDeadline with | none => true | some d => d > post.deadline)
+      fun _ => s!"{post.nextDeadline} with deadline {post.deadline}"
+  return (m, found)

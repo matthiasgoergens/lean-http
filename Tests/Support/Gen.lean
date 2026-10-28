@@ -270,35 +270,36 @@ structure RunResult where
   steps : Nat := 0
 
 /-- Checks `begin` like a step whose event changes nothing in the model. -/
-def checkBegin (oracle : Oracle) (prepared : PreparedRequest) (deadline : Nat) :
-    Exchange × Model × Option Violation :=
+def checkBegin (oracle : Oracle) (prepared : PreparedRequest) (deadline : Nat)
+    (skip : List String := []) : Exchange × Model × Option Violation :=
   let (ex, actions) := Exchange.begin prepared 0 deadline
   let m := Model.init prepared deadline 0
-  let (m, v) := checkStep oracle m ex 0 (.wantBody 0) ex actions
+  let (m, v) := checkStep oracle m ex 0 (.wantBody 0) ex actions skip
   (ex, m, v)
 
 /-- Replays `events` on case `c`, checking every step. -/
-def replay (c : Case) (events : Array (Nat × ExchangeEvent)) : Option (Nat × Violation) := Id.run do
+def replay (c : Case) (events : Array (Nat × ExchangeEvent)) (skip : List String := []) :
+    Option (Nat × Violation) := Id.run do
   let .ok prepared := c.prepare | return some (0, { property := "prepare", detail := "refused" })
   let oracle := scripts[c.script]!.oracle
-  let (ex, m, v) := checkBegin oracle prepared c.deadline
+  let (ex, m, v) := checkBegin oracle prepared c.deadline skip
   if let some v := v then return some (0, v)
   let mut ex := ex
   let mut m := m
   for (i, (now, event)) in events.zipIdx.map (fun (e, i) => (i, e)) do
     let (ex', actions) := ex.step now event
-    let (m', v) := checkStep oracle m ex now event ex' actions
+    let (m', v) := checkStep oracle m ex now event ex' actions skip
     if let some v := v then return some (i + 1, v)
     ex := ex'
     m := m'
   return none
 
 /-- Generates and checks one run of case `c`. -/
-def genRun (c : Case) (maxSteps : Nat := 80) : Gen RunResult := do
+def genRun (c : Case) (skip : List String := []) (maxSteps : Nat := 80) : Gen RunResult := do
   let .ok prepared := c.prepare
     | return { violation := some (0, { property := "prepare", detail := "refused" }) }
   let oracle := scripts[c.script]!.oracle
-  let (ex, m, v) := checkBegin oracle prepared c.deadline
+  let (ex, m, v) := checkBegin oracle prepared c.deadline skip
   let mut result : RunResult := { steps := 1, violation := v.map (0, ·) }
   if v.isSome then return result
   let mut ex := ex
@@ -312,7 +313,7 @@ def genRun (c : Case) (maxSteps : Nat := 80) : Gen RunResult := do
     let (now, event, env') ← genEvent c ex m env
     env := env'
     let (ex', actions) := ex.step now event
-    let (m', v) := checkStep oracle m ex now event ex' actions
+    let (m', v) := checkStep oracle m ex now event ex' actions skip
     result := { result with events := result.events.push (now, event), steps := result.steps + 1 }
     if let some v := v then
       return { result with violation := some (result.events.size, v), adversarial := env.adversarial }
@@ -330,8 +331,8 @@ def genRun (c : Case) (maxSteps : Nat := 80) : Gen RunResult := do
 /--
 Shrinks a failing sequence: deletes events, one at a time, while the same property still fails.
 -/
-def shrink (c : Case) (events : Array (Nat × ExchangeEvent)) (property : String) :
-    Array (Nat × ExchangeEvent) := Id.run do
+def shrink (c : Case) (events : Array (Nat × ExchangeEvent)) (property : String)
+    (skip : List String := []) : Array (Nat × ExchangeEvent) := Id.run do
   let mut current := events
   let mut changed := true
   while changed do
@@ -339,7 +340,7 @@ def shrink (c : Case) (events : Array (Nat × ExchangeEvent)) (property : String
     let mut i := 0
     while i < current.size do
       let candidate := current.eraseIdx! i
-      match replay c candidate with
+      match replay c candidate skip with
       | some (_, v) =>
         if v.property == property then
           current := candidate

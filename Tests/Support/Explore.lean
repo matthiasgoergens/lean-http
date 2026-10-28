@@ -135,11 +135,11 @@ structure SearchResult where
   violation : Option (Array (Nat × ExchangeEvent) × Violation) := none
 
 /-- Searches every sequence of letters up to `depth`. -/
-def explore (s : Search) (depth : Nat) : SearchResult := Id.run do
+def explore (s : Search) (depth : Nat) (skip : List String := []) : SearchResult := Id.run do
   let .ok prepared := s.case.prepare
     | return { violation := some (#[], { property := "prepare", detail := "refused" }) }
   let oracle := scripts[s.case.script]!.oracle
-  let (ex, m, v) := checkBegin oracle prepared s.case.deadline
+  let (ex, m, v) := checkBegin oracle prepared s.case.deadline skip
   if let some v := v then return { violation := some (#[], v) }
   let start : Node := { ex, model := m, env := {}, path := #[] }
   let mut seen : Std.HashSet String := Std.HashSet.emptyWithCapacity 4096 |>.insert start.key
@@ -151,7 +151,7 @@ def explore (s : Search) (depth : Nat) : SearchResult := Id.run do
       for letter in alphabet do
         let some (now, event, env) := letterEvent s n letter | continue
         let (ex', actions) := n.ex.step now event
-        let (m', v) := checkStep oracle n.model n.ex now event ex' actions
+        let (m', v) := checkStep oracle n.model n.ex now event ex' actions skip
         result := { result with transitions := result.transitions + 1 }
         let path := n.path.push (now, event)
         if let some v := v then
