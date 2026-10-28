@@ -77,6 +77,10 @@ In order of value per effort; each stage stands alone.
 7. **Proofs** of the single-step properties (cheap, once the cores have the right types: cause-typed errors, an in-flight token), then the pool invariant ("returned or dropped exactly once"), then, if it proves tractable, liveness under the deadline.  Veil only if the plain explorer cannot settle an invariant.
 8. **Real-socket tests** on loopback for `TCP_NODELAY`, connect timeouts per address, IPv6 literals, idle connections closed by the server, and prompt exit.
 
+## From fuzzed properties to proved ones
+
+Every property the fuzzer or the random runs check should end up as a theorem, with fuzzing kept as the cheap first line (Matthias, 2026-10-28).  The exchange core's properties hold whatever the HTTP/1.1 machine returns, so they can be proved about `Exchange.step` directly, treating the machine as opaque.  The codec's properties (termination, body length within `Content-Length`, no body after HEAD, 204 or 304, split invariance) live inside the vendored machine, whose `partial def`s no proof can unfold; proving them needs a codec of our own written for proof, with total functions, and the vendored machine and h11 then serve as its differential oracles under the fuzzer.
+
 ## Not yet
 
 TLS (a transport class that carries the server name for SNI and distinguishes a clean TLS close from a truncated one; the request target form is already a parameter of the exchange core, so absolute-form for proxies needs no change to it), HTTP/2, proxies (CONNECT), cookies, authentication handlers, decompression (when it comes: off for HEAD and ranges, with a decompressed-size limit), middleware.
