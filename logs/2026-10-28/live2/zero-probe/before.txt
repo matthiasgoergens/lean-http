@@ -1,0 +1,71 @@
+Build completed successfully (42 jobs).
+$ net-client call GET http://127.0.0.1:18080/ repeat=5
+call 0 ok status=200 bytes=1004 ms=8.569 rounds=1 address=127.0.0.1:18080 seed=3406318611853528952 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=13.131 rounds=1 address=127.0.0.1:18080 seed=1618115804305847826 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=9.575 rounds=1 address=127.0.0.1:18080 seed=14881465658429236255 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=9.165 rounds=1 address=127.0.0.1:18080 seed=2458235442816853721 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=5.707 rounds=1 address=127.0.0.1:18080 seed=8221192381680645784 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=5.707 p50=9.165 p90=13.131 max=13.131 ms ok=5
+fds_after_calls=11
+main returning at ms=47.064
+exit status 0
+$ net-client call GET http://127.0.0.1:18080/ connect=0 repeat=5
+call 0 ok status=200 bytes=1004 ms=7.536 rounds=1 address=127.0.0.1:18080 seed=9462642399304622461 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=5.680 rounds=1 address=127.0.0.1:18080 seed=10382635694671188705 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=16.926 rounds=1 address=127.0.0.1:18080 seed=13410945945470414534 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=4.101 rounds=1 address=127.0.0.1:18080 seed=15166968199007948571 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=1.853 rounds=1 address=127.0.0.1:18080 seed=4589716612557169720 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=1.853 p50=5.680 p90=16.926 max=16.926 ms ok=5
+fds_after_calls=11
+main returning at ms=36.953
+exit status 0
+$ net-client call GET http://127.0.0.1:18080/ stagger=0 repeat=5
+call 0 ok status=200 bytes=1004 ms=8.611 rounds=1 address=127.0.0.1:18080 seed=13808914931962085330 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=8.942 rounds=1 address=127.0.0.1:18080 seed=11770339844732046162 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=4.041 rounds=1 address=127.0.0.1:18080 seed=12438613717457908054 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=8.372 rounds=1 address=127.0.0.1:18080 seed=8525171869075969112 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=5.490 rounds=1 address=127.0.0.1:18080 seed=7143413414639603400 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=4.041 p50=8.372 p90=8.942 max=8.942 ms ok=5
+fds_after_calls=11
+main returning at ms=36.229
+exit status 0
+$ net-client call GET http://localhost:18080/ stagger=0 repeat=5
+call 0 ok status=200 bytes=1004 ms=7.770 rounds=1 address=127.0.0.1:18080 seed=10722621419186036742 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=15.559 rounds=1 address=127.0.0.1:18080 seed=4913075561138004464 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=7.756 rounds=1 address=127.0.0.1:18080 seed=2978007841626071591 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=4.246 rounds=1 address=127.0.0.1:18080 seed=9759392657645491237 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=4.773 rounds=1 address=127.0.0.1:18080 seed=8004635987245498765 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=4.246 p50=7.756 p90=15.559 max=15.559 ms ok=5
+fds_after_calls=11
+main returning at ms=40.742
+exit status 0
+$ net-client call GET http://127.0.0.1:18080/ deadline=0 repeat=5
+call 0 error delivery=not sent ms=3.419 rounds=1 seed=1012747561280746648 status=none cause="deadline timeout" detail="could not connect: "
+call 1 error delivery=not sent ms=0.096 rounds=1 seed=15934449836409183443 status=none cause="deadline timeout" detail="could not connect: "
+call 2 error delivery=not sent ms=0.026 rounds=1 seed=3045677024304025441 status=none cause="deadline timeout" detail="could not connect: "
+call 3 error delivery=not sent ms=0.020 rounds=1 seed=6508448975004309093 status=none cause="deadline timeout" detail="could not connect: "
+call 4 error delivery=not sent ms=0.021 rounds=1 seed=12714261754141090746 status=none cause="deadline timeout" detail="could not connect: "
+summary calls n=5 min=0.020 p50=0.026 p90=3.419 max=3.419 ms ok=0
+fds_after_calls=10
+main returning at ms=4.277
+exit status 0
+$ net-client call GET http://localhost:18080/ deadline=0 repeat=5
+call 0 error delivery=not sent ms=21.752 rounds=1 seed=7738620945555905420 status=none cause="deadline timeout" detail="could not connect: "
+call 1 error delivery=not sent ms=0.717 rounds=0 seed=3527099913678326656 status=none cause="deadline timeout" detail="could not connect: "
+call 2 error delivery=not sent ms=0.564 rounds=0 seed=16941273219353792293 status=none cause="deadline timeout" detail="could not connect: "
+call 3 error delivery=not sent ms=0.161 rounds=0 seed=3776656821100933671 status=none cause="deadline timeout" detail="could not connect: "
+call 4 error delivery=not sent ms=0.775 rounds=0 seed=15138473782434057521 status=none cause="deadline timeout" detail="could not connect: "
+summary calls n=5 min=0.161 p50=0.717 p90=21.752 max=21.752 ms ok=0
+fds_after_calls=10
+main returning at ms=24.465
+exit status 0
+$ net-client call GET http://localhost:18080/ connect=0 repeat=5
+call 0 ok status=200 bytes=1004 ms=10.581 rounds=1 address=127.0.0.1:18080 seed=2989224743749140507 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=3.475 rounds=1 address=127.0.0.1:18080 seed=10324271033679304895 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=6.178 rounds=1 address=127.0.0.1:18080 seed=4095832238744272819 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=4.672 rounds=1 address=127.0.0.1:18080 seed=877790412816067669 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=5.613 rounds=1 address=127.0.0.1:18080 seed=16389186878268930113 failed_attempts=[] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=3.475 p50=5.613 p90=10.581 max=10.581 ms ok=5
+fds_after_calls=11
+main returning at ms=31.240
+exit status 0
