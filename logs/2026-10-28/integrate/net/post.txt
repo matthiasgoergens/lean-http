@@ -1,0 +1,5 @@
+$ net-client call POST http://127.0.0.1:18080/echo body=11
+call 0 ok status=200 bytes=76 ms=1.688 rounds=1 address=127.0.0.1:18080 seed=14577356600255580404 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=11
+main returning at ms=1.927
+exit status=0 wall_ms=11 exit_after_main_ms=10

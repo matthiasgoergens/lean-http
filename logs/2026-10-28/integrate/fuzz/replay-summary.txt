@@ -1,0 +1,8 @@
+== seeds: 56 files
+     56 ok
+== cmin: 795 files
+    795 ok
+== old-inputs: 16703 files
+  16703 ok
+== main2: 4233 files
+   4233 ok

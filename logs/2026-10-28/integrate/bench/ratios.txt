@@ -1,0 +1,11 @@
+== bench-100.txt
+length: core / former core: median 0.947 (95% interval 0.904 to 0.982), below 1 in 67 of 100 blocks
+chunked16k: core / former core: median 0.811 (95% interval 0.773 to 0.869), below 1 in 83 of 100 blocks
+chunked1k: core / former core: median 0.662 (95% interval 0.629 to 0.686), below 1 in 98 of 100 blocks
+== xbench-40.txt
+length: branch core / main's core: median 0.922 (95% interval 0.767 to 1.062), below 1 in 26 of 40 blocks
+length: oracle copy / main's core: median 1.000 (95% interval 0.897 to 1.181), below 1 in 20 of 40 blocks
+chunked16k: branch core / main's core: median 0.854 (95% interval 0.746 to 0.937), below 1 in 33 of 40 blocks
+chunked16k: oracle copy / main's core: median 1.070 (95% interval 0.917 to 1.167), below 1 in 17 of 40 blocks
+chunked1k: branch core / main's core: median 0.761 (95% interval 0.712 to 0.817), below 1 in 40 of 40 blocks
+chunked1k: oracle copy / main's core: median 1.038 (95% interval 0.963 to 1.100), below 1 in 14 of 40 blocks

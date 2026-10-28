@@ -1,0 +1,10 @@
+FAIL .lake/fuzz/campaigns/plant-b-codec/sync/main/crashes/id:000000,sig:06,src:000009,time:34446,execs:76750,op:frameshift,rep:0: exchange/split: completed with 4 body bytes, Content-Length 5
+  method=Std.Http.Method.get eof=false bytewise=false reads=[42, 1, 0, 0, 0]
+  response="HTTP/1.1 200 OK\x0d\nContent-Length: 5\x0d\n\x0d\nhello"
+  exchange/whole: done 200 interim=0 body=5B#1549438516948791737 reusable=true
+  exchange/split: done 200 interim=0 body=4B#1852008234374785618 reusable=true
+  exchange/split, keep-alive off: done 200 interim=0 body=4B#1852008234374785618 reusable=false
+  machine/whole:  #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 5, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=5B#1549438516948791737 reuse=true leftover=0
+  machine/split:  #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 5, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=5B#1549438516948791737 reuse=true leftover=0
+  machine/flipped end of input: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 5, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=5B#1549438516948791737 reuse=false
+1 inputs, 1 failing

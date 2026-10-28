@@ -1,0 +1,24 @@
+$ ssh buildhost 'cd ~/lean-http-integrate && bash tests/net/strace-nodelay.sh'
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:32345/echo body=100 nodelay=1
+call 0 ok status=200 bytes=165 ms=18.874 rounds=1 address=127.0.0.1:32345 seed=7879030152207921387 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=13
+main returning at ms=30.984
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+1181876 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 12
+1181876 connect(12, {sa_family=AF_INET, sin_port=htons(32345), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+1181879 setsockopt(12, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+1181876 write(12, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+PASS nodelay=1: TCP_NODELAY set once on the connected socket (fd 12)
+PASS nodelay=1: the 186-byte request went out in one write (1 writes on the socket)
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:32345/echo body=100 nodelay=0
+call 0 ok status=200 bytes=165 ms=104.269 rounds=1 address=127.0.0.1:32345 seed=145656835894444316 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=13
+main returning at ms=104.663
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+1181915 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 12
+1181915 connect(12, {sa_family=AF_INET, sin_port=htons(32345), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+1181915 write(12, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+PASS nodelay=0 (control): TCP_NODELAY not set (fd 12)
+PASS nodelay=0: the 186-byte request went out in one write (1 writes on the socket)
+### 0 failed
+exit status 0
