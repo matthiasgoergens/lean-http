@@ -77,11 +77,12 @@ structure EncodedRequest where
   keepAlive : Bool
 
 /--
-Encodes `head` with `body`.  `keepAlive` says whether the caller wants the connection kept open; the
+Encodes the head of a request with a body of `bodySize` bytes, and says whether it asks for the
+connection to stay open.  `keepAlive` says whether the caller wants the connection kept open; the
 head's own fields may still refuse it (`requestKeepAlive`).  The fields are changed in the order the
 vendored writer changed them, so that the bytes are the same.
 -/
-def encodeRequest (keepAlive : Bool) (head : Request.Head) (body : ByteArray) : EncodedRequest :=
+def encodeHead (keepAlive : Bool) (head : Request.Head) (bodySize : Nat) : ByteArray × Bool :=
   let keepAlive := keepAlive && requestKeepAlive head
   let headers := head.headers
     |>.erase Header.Name.contentLength
@@ -90,14 +91,20 @@ def encodeRequest (keepAlive : Bool) (head : Request.Head) (body : ByteArray) : 
   let headers :=
     headers.insert Header.Name.connection (if keepAlive then .mk "keep-alive" else .mk "close")
   let headers :=
-    if body.isEmpty && !anticipatesContent head.method then headers
+    if bodySize == 0 && !anticipatesContent head.method then headers
     else
       headers
         |>.erase Header.Name.contentLength
         |>.erase Header.Name.transferEncoding
-        |>.insert Header.Name.contentLength (.ofString! (toString body.size))
-  let headBytes :=
-    (Internal.Encode.encode (v := .v11) Internal.ChunkedBuffer.empty { head with headers }).toByteArray
+        |>.insert Header.Name.contentLength (.ofString! (toString bodySize))
+  ((Internal.Encode.encode (v := .v11) Internal.ChunkedBuffer.empty { head with headers }).toByteArray,
+    keepAlive)
+
+/--
+Encodes `head` with `body` (`encodeHead`, then the body).
+-/
+def encodeRequest (keepAlive : Bool) (head : Request.Head) (body : ByteArray) : EncodedRequest :=
+  let (headBytes, keepAlive) := encodeHead keepAlive head body.size
   { bytes := headBytes ++ body, headBytes := headBytes.size, keepAlive }
 
 end LeanHttp.Codec
