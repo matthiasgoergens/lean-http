@@ -1,0 +1,13 @@
+Build completed successfully (35 jobs).
+## proof
+     41 depends on axioms: [propext, Classical.choice, Quot.sound]
+## codec
+     39 depends on axioms: [propext, Classical.choice, Quot.sound]
+      2 depends on axioms: [propext]
+## call
+     27 depends on axioms: [propext, Classical.choice, Quot.sound]
+      1 depends on axioms: [propext, Quot.sound]
+Build completed successfully (58 jobs).
+  caught as: [Host not rewritten ×651]
+139 checks, 0 failing
+56 checks, 0 failing
