@@ -56,6 +56,10 @@ lean_exe «call-tests» where
 lean_exe «call-diff» where
   root := `Tests.CallDiff
 
+/-- Executable verification of the pool core: traces, random properties, exploration, planted bugs. -/
+lean_exe «pool-tests» where
+  root := `Tests.Pool
+
 /-- Real-socket test driver, run by `tests/net/run.sh` against local servers. -/
 lean_exe «net-client» where
   root := `Tests.Net
