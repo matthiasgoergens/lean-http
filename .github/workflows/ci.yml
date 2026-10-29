@@ -1,0 +1,77 @@
+# Builds lean-http (which checks every proof), checks the theorems' axioms, and runs the tests and
+# the README's examples.  The steps are scripts/ci.sh, which runs the same way outside GitHub.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: check (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Lean toolchains to check; the first is the repository's lean-toolchain.
+        toolchain: [leanprover/lean4:v4.34.1]
+    env:
+      ELAN_VERSION: v4.2.4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select the toolchain
+        run: echo '${{ matrix.toolchain }}' > lean-toolchain
+
+      - name: Cache elan and the toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.elan
+          key: elan-${{ runner.os }}-${{ env.ELAN_VERSION }}-${{ matrix.toolchain }}
+
+      - name: Install elan
+        run: |
+          if [ ! -x ~/.elan/bin/elan ]; then
+            dir=$(mktemp --directory)
+            curl --silent --show-error --fail --location \
+              "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz" \
+              | tar --extract --gzip --directory "$dir"
+            "$dir/elan-init" -y --no-modify-path --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      # The vendored layer depends only on scripts/vendor.sh, which names the lean4 commit.  .lake is
+      # not cached, so that every run builds from scratch and checks every proof again.
+      - name: Cache the vendored protocol layer
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor
+          key: vendor-${{ hashFiles('scripts/vendor.sh') }}
+
+      # The real-socket suite wants these; scripts/ci.sh changes no system state itself.  It skips,
+      # and says so, dns-timeout, which needs root.
+      - name: Prepare the runner for the real-socket tests
+        run: |
+          sudo sysctl --write net.ipv4.tcp_syn_retries=2
+          sudo sh -c 'cat tests/net/hosts >> /etc/hosts'
+
+      - name: Run scripts/ci.sh
+        run: scripts/ci.sh
+
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: logs-${{ strategy.job-index }}
+          path: out/
+          if-no-files-found: warn
