@@ -145,7 +145,8 @@ trace_ok() {
 }
 
 # gaps_within <scenario> <slack>: every retry went out no earlier than its delay and at most <slack>
-# ms after it, from the time the planner decided.
+# ms after it, from the time the planner decided.  Never early is the property; the slack only allows
+# for a loaded machine (30 ms failed under load: a timer woke up to 100 ms late).
 gaps_within() {
   local line delays gaps ok=1 i
   line=$(grep --max-count=1 '^trace call 0 retry delays=' "$out/$1.txt")
@@ -331,7 +332,7 @@ if scenario refused-backoff; then
   # backoff 42 gives [23, 49]: the call takes at least their sum.
   within refused-backoff 72 400 "at least the 23 + 49 ms of backoff for seed 42"
   expect refused-backoff '^trace call 0 retry delays=\[23, 49\] ' "the planner's delays are the schedule of seed 42"
-  gaps_within refused-backoff 30
+  gaps_within refused-backoff 150
   trace_ok refused-backoff
   # With a backoff of up to 1 s and a deadline of 300 ms: seed 5 draws 738 ms for the first retry,
   # which would reach the deadline, so the call fails at once rather than wait for it.
@@ -739,7 +740,7 @@ if scenario retry-after; then
   expect retry-503-backoff 'call 0 ok status=200 .*retries=2 .*body_start="recovered after 2"' \
     "without a Retry-After, the backoff"
   expect retry-503-backoff '^trace call 0 retry delays=\[23, 49\] ' "of seed 42"
-  gaps_within retry-503-backoff 30
+  gaps_within retry-503-backoff 150
   client retry-503-post call POST "http://127.0.0.1:18115/flaky?key=f&after=1" body=5 retry503=1
   expect retry-503-post 'call 0 ok status=503 .*retries=0 ' "a POST is not sent again after a 503"
   n=$(requests "$log" ' POST /flaky\?key=f')

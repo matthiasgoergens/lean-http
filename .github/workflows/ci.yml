@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         # The Lean toolchains to check; the first is the repository's lean-toolchain.
-        toolchain: [leanprover/lean4:v4.34.1]
+        toolchain: [leanprover/lean4:v4.34.1, leanprover/lean4:v4.35.0]
     env:
       ELAN_VERSION: v4.2.4
     steps:

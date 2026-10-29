@@ -49,7 +49,7 @@ git = "https://github.com/matthiasgoergens/lean-http"
 rev = "<commit>"
 ```
 
-and `import LeanHttp`.  Your package must use the same Lean toolchain as lean-http: `leanprover/lean4:v4.34.1`, the version in `lean-toolchain` and the only one CI checks.
+and `import LeanHttp`.  It builds on Lean `leanprover/lean4:v4.34.1` (the version in `lean-toolchain`) and `leanprover/lean4:v4.35.0`, both checked by CI; Lake builds a dependency with your package's toolchain.
 
 ## Making requests
 
