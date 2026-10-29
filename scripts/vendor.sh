@@ -23,9 +23,20 @@ dest=$out/LeanHttpProto/Http
 git -C "$clone" cat-file -e "$commit^{commit}" || { echo "vendor.sh: $clone lacks $commit" >&2; exit 1; }
 tmp=$(mktemp --directory) || exit 1
 trap 'rm --recursive --force "$tmp"' EXIT
-git -C "$clone" archive "$commit" src/Std/Http/Protocol \
-  | tar --extract --directory "$tmp" || exit 1
-[ -f "$tmp/src/Std/Http/Protocol/H1.lean" ] || { echo "vendor.sh: no H1.lean in the archive" >&2; exit 1; }
+# File by file rather than with `git archive`: in a partial clone (blobs fetched on demand, as CI
+# makes one) this fetches only these files, where `git archive` fetched about 100 MB.
+git -C "$clone" ls-tree -r -z "$commit" -- src/Std/Http/Protocol > "$tmp/files" || exit 1
+while IFS= read -r -d '' entry; do
+  meta=${entry%%$'\t'*}
+  path=${entry#*$'\t'}
+  case $meta in
+    *" blob "*) ;;
+    *) echo "vendor.sh: not a file: $entry" >&2; exit 1 ;;
+  esac
+  mkdir --parents "$tmp/$(dirname "$path")" || exit 1
+  git -C "$clone" cat-file blob "${meta##* }" > "$tmp/$path" || exit 1
+done < "$tmp/files"
+[ -f "$tmp/src/Std/Http/Protocol/H1.lean" ] || { echo "vendor.sh: no H1.lean at $commit" >&2; exit 1; }
 
 rm --recursive --force "$out" || exit 1
 mkdir --parents "$dest" || exit 1
