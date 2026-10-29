@@ -499,9 +499,13 @@ def checkRequest (f : Findings) (head : Request.Head) (body : ByteArray) (keepAl
   | .error _ => return f.add "REQUEST refused by the machine" desc
   | .ok theirs =>
     let mut f := f.add "(requests) compared" ""
-    if theirs.bytes.data != mine.bytes.data then
+    -- The serialiser names keep-alive in a field the machine left out; the rest must be the same.
+    let some ours := MachineCore.machineBytes? mine.config.keepAlive mine.bytes
+      | return f.add "REQUEST kept alive without exactly one Connection: keep-alive" desc
+    let field := mine.bytes.size - ours.size
+    if theirs.bytes.data != ours.data then
       f := f.add "REQUEST bytes differ" s!"machine {escape theirs.bytes} / core {desc}"
-    if theirs.headBytes != mine.headBytes then
+    if theirs.headBytes + field != mine.headBytes then
       f := f.add "REQUEST head length differs" s!"machine {theirs.headBytes} / core {mine.headBytes}: {desc}"
     if theirs.machine.keepAlive != mine.config.keepAlive then
       f := f.add "REQUEST keep-alive differs" s!"machine {theirs.machine.keepAlive}: {desc}"

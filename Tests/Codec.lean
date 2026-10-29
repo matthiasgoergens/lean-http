@@ -78,21 +78,26 @@ def requestCases : List RequestCase := [
   { name := "POST without body", method := .post
     expected := "POST / HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\nContent-Length: 0\r\n\r\n" },
   { name := "GET with keep-alive", method := .get, keepAlive := true
-    expected := "GET / HTTP/1.1\r\nHost: example.test\r\n\r\n", expectKeepAlive := true },
+    expected := "GET / HTTP/1.1\r\nHost: example.test\r\nConnection: keep-alive\r\n\r\n"
+    expectKeepAlive := true },
   { name := "DELETE with a body", method := .delete, body := "x", keepAlive := true
-    expected := "DELETE / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 1\r\n\r\nx"
+    expected := "DELETE / HTTP/1.1\r\nHost: example.test\r\nConnection: keep-alive\r\nContent-Length: 1\r\n\r\nx"
     expectKeepAlive := true },
   { name := "the caller's framing and Connection fields are replaced", method := .put, body := "ab"
     keepAlive := true
     extra := [("Transfer-Encoding", "chunked"), ("Content-Length", "9"), ("Connection", "upgrade")]
-    expected := "PUT / HTTP/1.1\r\nHost: example.test\r\nContent-Length: 2\r\n\r\nab"
+    expected := "PUT / HTTP/1.1\r\nHost: example.test\r\nConnection: keep-alive\r\nContent-Length: 2\r\n\r\nab"
     expectKeepAlive := true },
   { name := "Connection: close from the caller turns keep-alive off", method := .get, keepAlive := true
     extra := [("Connection", "close")]
     expected := "GET / HTTP/1.1\r\nHost: example.test\r\nConnection: close\r\n\r\n" },
   { name := "HTTP/1.0 without keep-alive in its fields turns keep-alive off", method := .get
     keepAlive := true, http10 := true
-    expected := "GET / HTTP/1.0\r\nHost: example.test\r\nConnection: close\r\n\r\n" }
+    expected := "GET / HTTP/1.0\r\nHost: example.test\r\nConnection: close\r\n\r\n" },
+  { name := "HTTP/1.0 with keep-alive in its fields keeps it, and says so", method := .get
+    keepAlive := true, http10 := true, extra := [("Connection", "keep-alive")]
+    expected := "GET / HTTP/1.0\r\nHost: example.test\r\nConnection: keep-alive\r\n\r\n"
+    expectKeepAlive := true }
 ]
 
 /-- Checks one request encoding; returns whether it matched. -/

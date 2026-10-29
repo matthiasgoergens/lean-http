@@ -962,6 +962,35 @@ def endOfInput (r : Run) : Run :=
 
 end Run
 
+/--
+The client's request bytes without the `Connection: keep-alive` field its serialiser writes for a
+kept-alive request, where the machine's writer wrote no `Connection` field: what the machine encodes
+for the same request.  `none` unless the field is there exactly once.
+-/
+def withoutKeepAlive (bytes : ByteArray) : Option ByteArray :=
+  match String.fromUTF8? bytes with
+  | none => none
+  | some text =>
+    match text.splitOn "Connection: keep-alive\r\n" with
+    | [before, after] => some (before ++ after).toUTF8
+    | _ => none
+
+/--
+`prepared` writing `core`'s request bytes instead of the machine's, which lack the `Connection:
+keep-alive` field the serialiser writes for a kept-alive request (`withoutKeepAlive`).  The former
+core only writes the request; its machine has encoded it already and parses only the response, so
+both cores then see the same request and the same events.
+-/
+def PreparedRequest.writing (prepared : PreparedRequest) (core : LeanHttp.PreparedRequest) : PreparedRequest :=
+  { prepared with bytes := core.bytes, headBytes := core.headBytes }
+
+/--
+The client's request bytes as the machine would encode them: without `Connection: keep-alive` if
+`keepAlive` (`withoutKeepAlive`), unchanged otherwise.
+-/
+def machineBytes? (keepAlive : Bool) (bytes : ByteArray) : Option ByteArray :=
+  if keepAlive then withoutKeepAlive bytes else some bytes
+
 /-- Prepares a request with the machine, panicking if it refuses (tests only use valid heads). -/
 def prepare! (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) : PreparedRequest :=
   match Exchange.prepare config head body with

@@ -13,8 +13,8 @@ core-tests compare <runs> <seed> random event sequences replayed on the former c
 ```
 
 `compare` generates random runs as `props` does (without checking them), replays each run's events
-on the former exchange core over the vendored machine (`Tests/Support/MachineCore.lean`), and
-compares how the two ended: the end action (with the failure's cause and delivery), the status of
+on the former exchange core over the vendored machine (`Tests/Support/MachineCore.lean`), writing
+the same request bytes, and compares how the two ended: the end action (with the failure's cause and delivery), the status of
 the head delivered and the body delivered.  It prints the agreements and every class of
 disagreement, with examples; differences are findings to explain, not failures.
 
@@ -134,8 +134,9 @@ def machineActions (c : Case) (events : Array (Nat × ExchangeEvent)) : Array Ex
     readChunk_pos := k.readChunk_pos, writeChunk := k.writeChunk, gapMs := k.gapMs, gapMs_pos := k.gapMs_pos,
     drainBytes := k.drainBytes, drainMs := k.drainMs }
   let body := ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8)
+  let .ok core := c.prepare | return #[]
   let .ok prepared := MachineCore.Exchange.prepare config c.head body | return #[]
-  let (ex, actions) := MachineCore.Exchange.begin prepared 0 c.deadline
+  let (ex, actions) := MachineCore.Exchange.begin (prepared.writing core) 0 c.deadline
   let mut ex := ex
   let mut all := actions
   for (now, e) in events do
@@ -238,7 +239,7 @@ def showCompare (k seed : Nat) : IO UInt32 := do
         gapMs := k'.gapMs, gapMs_pos := k'.gapMs_pos, drainBytes := k'.drainBytes, drainMs := k'.drainMs }
       let body := ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8)
       let .ok mp := MachineCore.Exchange.prepare config c.head body | return 1
-      let (mx, macts) := MachineCore.Exchange.begin mp 0 c.deadline
+      let (mx, macts) := MachineCore.Exchange.begin (mp.writing prepared) 0 c.deadline
       IO.println s!"  begin: core {acts.toList.map renderAction} / machine {macts.toList.map renderAction}"
       let mut ex := ex
       let mut mx := mx

@@ -53,16 +53,16 @@ def tenHello : String := "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nhello"
 /-- The head of an early response to an upload, and its three-byte body. -/
 def early413 : String := "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 3\r\n\r\n"
 
-/-- A request body of 100 bytes. -/
-def upload : String := String.ofList (List.replicate 100 'x')
+/-- A request body of 200 bytes: with the head, three 96-byte slices or fewer. -/
+def upload : String := String.ofList (List.replicate 200 'x')
 
 /-- The first steps of most traces: the request written in one write, and the whole body wanted. -/
 def writtenSteps (p : PreparedRequest) (t : Nat := 1) : List (Nat × ExchangeEvent × List String) :=
   [(t, .written p.bytes.size, ["read"]), (t, lots, [])]
 
-/-- The first steps of an upload in 64-byte slices: the head is covered by the first one. -/
+/-- The first steps of an upload in 96-byte slices: the head is covered by the first one. -/
 def uploadSteps : List (Nat × ExchangeEvent × List String) :=
-  [(1, .written 64, ["write 64", "read"]), (1, lots, [])]
+  [(1, .written 96, ["write 96", "read"]), (1, lots, [])]
 
 /-- The traces. -/
 def traces : List Trace := [
@@ -99,25 +99,25 @@ def traces : List Trace := [
   { name := "an early response during an upload is read to its end, delivered, and not reusable"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, recv (early413 ++ "big"), ["head 413", "body \"big\"", "finish reusable=false"])] },
   { name := "an early response whose upload then completes is still not reusable"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, recv early413, ["head 413", "read"]),
-      (4, .written 64, ["write 32"]),
-      (5, .written 32, []),
+      (4, .written 96, ["write 92"]),
+      (5, .written 92, []),
       (6, recv "big", ["body \"big\"", "finish reusable=false"])] },
   { name := "an early response whose upload stalls: the upload stops, the response completes"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64, gapMs := 100 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96, gapMs := 100 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, recv early413, ["head 413", "read"]),
       (101, .tick, []),
@@ -125,8 +125,8 @@ def traces : List Trace := [
   { name := "an early response whose upload fails: the response still completes"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, recv early413, ["head 413", "read"]),
       (4, .writeFailed "broken pipe", []),
@@ -141,17 +141,17 @@ def traces : List Trace := [
   { name := "a failed write after the request head stops the upload; the end of input then fails the exchange"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, .writeFailed "connection reset", []),
       (4, .endOfInput,
-        ["fail the connection closed before a complete response (a write failed earlier: connection reset) [maybe delivered, written=64]"])] },
+        ["fail the connection closed before a complete response (a write failed earlier: connection reset) [maybe delivered, written=96]"])] },
   { name := "a failed write after the request head: an early response waiting to be read is still delivered"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, .writeFailed "connection reset", []),
       (4, recv (early413 ++ "big"), ["head 413", "body \"big\"", "finish reusable=false"])] },
@@ -165,14 +165,14 @@ def traces : List Trace := [
   { name := "write slices: one write in flight, a partial write is resumed where it stopped"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => [
-      (1, .written 10, ["write 64"]),
-      (2, .written 64, ["write 64", "read"]),
-      (3, .written 64, ["write 22"]),
-      (4, .written 22, []),
-      (5, .written 22, []),
+      (1, .written 10, ["write 96"]),
+      (2, .written 96, ["write 96", "read"]),
+      (3, .written 96, ["write 82"]),
+      (4, .written 82, []),
+      (5, .written 82, []),
       (6, lots, []),
       (7, recv okResponse, okActions)] },
   { name := "abandoning mid-body: the rest arrives within the drain limit, reusable"
@@ -277,13 +277,13 @@ def traces : List Trace := [
   { name := "a stalled write that fails late does not restart the read gap"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64, gapMs := 100 }
-    begins := fun _ => ["write 64"]
+    config := { keepAlive := true, writeChunk := 96, gapMs := 100 }
+    begins := fun _ => ["write 96"]
     steps := fun _ => uploadSteps ++ [
       (3, recv early413, ["head 413", "read"]),
       (101, .tick, []),
       (190, .writeFailed "broken pipe", []),
-      (201, .tick, ["fail read timeout [response received, written=64, status=413]"])] },
+      (201, .tick, ["fail read timeout [response received, written=96, status=413]"])] },
   { name := "a stale tick changes nothing; the write gap is the next deadline"
     deadline := 60000
     steps := fun p => [
@@ -344,10 +344,10 @@ def traces : List Trace := [
   { name := "a write that completes after the deadline: the deadline, nothing more written"
     method := .post
     body := upload
-    config := { keepAlive := true, writeChunk := 64 }
+    config := { keepAlive := true, writeChunk := 96 }
     deadline := 500
-    begins := fun _ => ["write 64"]
-    steps := fun _ => [(600, .written 64, ["fail deadline timeout [maybe delivered, written=64]"])] }
+    begins := fun _ => ["write 96"]
+    steps := fun _ => [(600, .written 96, ["fail deadline timeout [maybe delivered, written=96]"])] }
 ]
 
 /-- Runs one trace; returns the lines describing its failures (empty when it passed). -/

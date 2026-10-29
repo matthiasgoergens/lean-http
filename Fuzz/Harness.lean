@@ -187,12 +187,17 @@ def prepared (method : Method) (keepAlive : Bool) : PreparedRequest :=
 
 /--
 The machine after encoding the same request (with keep-alive on), for the direct driver; `none` if
-the machine refused it, or encoded it differently from the core, which the harness reports.
+the machine refused it, or encoded it differently from the core (but for the `Connection:
+keep-alive` field the core writes and the machine left out), which the harness reports.
 -/
 def machineFor? (method : Method) : Option (H1.Machine .sending) :=
   let body := if method == .post then postBody else .empty
   match MachineCore.Exchange.prepare (machineConfig true) (requestHead method) body with
-  | .ok p => if p.bytes.data == (prepared method true).bytes.data then some p.machine else none
+  | .ok p =>
+    let core := prepared method true
+    match MachineCore.machineBytes? core.config.keepAlive core.bytes with
+    | some bytes => if p.bytes.data == bytes.data then some p.machine else none
+    | none => none
   | .error _ => none
 
 /-! ## Decoding the input -/

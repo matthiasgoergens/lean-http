@@ -9,13 +9,19 @@ public import Std.Http.Data
 
 The client's request serialiser: a request head and a body with a `Content-Length`, in HTTP/1.1.
 It makes the same bytes as the vendored HTTP/1.1 machine's writer did for the requests the client
-sends (`codec-diff` compares the two on generated heads), and decides the same request-side keep-alive:
+sends, except for one field (`codec-diff` compares the two on generated heads), and decides the same
+request-side keep-alive:
 
 - the framing fields of the head are replaced by a `Content-Length` for the body, which is left out
   for an empty body when the method does not anticipate content (RFC 9110 section 8.6);
-- the head's `Connection` fields are replaced by `Connection: close` unless the connection is to be
-  kept alive, which needs keep-alive asked for and a head that allows it (RFC 9112 section 9.3: in
-  HTTP/1.1 no `close` option, in HTTP/1.0 a `keep-alive` option).
+- the head's `Connection` fields are replaced by `Connection: close`, or by `Connection: keep-alive`
+  if the connection is to be kept alive, which needs keep-alive asked for and a head that allows it
+  (RFC 9112 section 9.3: in HTTP/1.1 no `close` option, in HTTP/1.0 a `keep-alive` option).
+
+The machine's writer sent no `Connection` field at all for a kept-alive request.  In HTTP/1.1 that
+asks for keep-alive too, but an HTTP/1.0 request without `keep-alive` asks the server to close, and
+some servers and proxies that speak HTTP/1.0 keep a connection open only when asked to, so the
+serialiser always says which it wants.
 
 Like the response codec, it depends only on `Std.Http`'s data types.
 -/
@@ -66,7 +72,7 @@ structure EncodedRequest where
 
   /--
   Whether the request asks for the connection to stay open: keep-alive was asked for and the head
-  allows it.  When `false`, the head carries `Connection: close`.
+  allows it.  The head carries `Connection: keep-alive` if so, `Connection: close` if not.
   -/
   keepAlive : Bool
 
@@ -81,7 +87,8 @@ def encodeRequest (keepAlive : Bool) (head : Request.Head) (body : ByteArray) : 
     |>.erase Header.Name.contentLength
     |>.erase Header.Name.transferEncoding
     |>.erase Header.Name.connection
-  let headers := if keepAlive then headers else headers.insert Header.Name.connection (.mk "close")
+  let headers :=
+    headers.insert Header.Name.connection (if keepAlive then .mk "keep-alive" else .mk "close")
   let headers :=
     if body.isEmpty && !anticipatesContent head.method then headers
     else
