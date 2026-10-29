@@ -51,6 +51,10 @@ lean_exe «core-tests» where
 lean_exe «call-tests» where
   root := `Tests.Call
 
+/-- Differential test of the planner's redirect decisions against the vendored and toolchain planners. -/
+lean_exe «call-diff» where
+  root := `Tests.CallDiff
+
 /-- Real-socket test driver, run by `tests/net/run.sh` against local servers. -/
 lean_exe «net-client» where
   root := `Tests.Net
