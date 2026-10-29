@@ -47,6 +47,10 @@ lean_exe «unit-tests» where
 lean_exe «core-tests» where
   root := `Tests.Core
 
+/-- Unit tests of the per-call planner, random runs checked step by step, and planted bugs. -/
+lean_exe «call-tests» where
+  root := `Tests.Call
+
 /-- Real-socket test driver, run by `tests/net/run.sh` against local servers. -/
 lean_exe «net-client» where
   root := `Tests.Net
