@@ -14,10 +14,10 @@ lean_lib LeanHttpProto where
 @[default_target]
 lean_lib LeanHttp where
   leanOptions := #[⟨`autoImplicit, false⟩]
-  -- The proofs about the exchange core and the codec are checked by every build, but no other module
+  -- The proofs about the exchange core, the codec and the planner are checked by every build, but no other module
   -- imports them.
   roots := #[`LeanHttp, `LeanHttp.Codec, `LeanHttp.Codec.Proofs, `LeanHttp.Exchange.Proofs,
-    `LeanHttp.Exchange.Liveness, `LeanHttp.Exchange.Response]
+    `LeanHttp.Exchange.Liveness, `LeanHttp.Exchange.Response, `LeanHttp.Call.Proofs]
 
 /-- Helpers shared by the test executables. -/
 lean_lib TestSupport where
