@@ -124,3 +124,50 @@ What the campaign and the differential check against h11 (over its 6,161 distinc
 - **Reuse needs more than the machine's `keepAlive`.**  It stays on after the peer has closed, and when bytes follow a response (a body after HEAD, 204 or 304, or stray bytes); a pool must also check that input has not ended and that nothing is left over.  It also only ever turns off, so an HTTP/1.0 interim response, or one with `Connection: close`, stops reuse even if the final response allows it, as does a `Connection` value that is not a list of tokens; both are safe.  An HTTP/1.0 response with `keep-alive` is reusable, as RFC 9112 section 9.3 allows (h11 never reuses HTTP/1.0).
 - **Chunk data is streamed only when it arrives in pieces.**  Given a whole chunk in one read, the machine waits for its terminator before handing out its data; given it in pieces, it streams the data at once.  Outcomes agree, but a chunk over the body limit is refused at different points.
 - Expected strictness, not defects: bytes 0x80-0xFF (obs-text) in a reason phrase or field value are refused (the upstream parser documents this, although RFC 9112 and 9110 allow them); bare LF, obsolete line folding, HTTP/1.0 with chunked and malformed chunk extensions are refused where h11 accepts them; whitespace before a chunk extension is accepted where h11 refuses it, as the RFC allows.  The machine treats a 101 nobody asked for as a final response; the exchange core refuses it.
+
+## The per-call planner
+
+Built on 2026-10-29, not yet wired into the client.  `LeanHttp.Call` decides what follows each exchange of a call (`Call.plan : State → Clock → Outcome → State × Step`), `LeanHttp.Call.Redirect` decides redirects and rewrites the next request, `LeanHttp.Call.RetryAfter` parses `Retry-After`, and `LeanHttp/Call/Proofs.lean` proves the rules.  The library does not import the vendored protocol layer again: the planner is written against `Std.Http`'s types, and the upstream redirect planner, in its PR-head copy (vendored) and its v4.34.1 copy, is the oracle of `call-diff`.
+
+Deliberate differences from the upstream redirect planner and the upstream client's redirect loop, each of which `call-diff` neutralises to show that it explains the disagreements it is given for:
+
+- **The hop limit is an error.**  The upstream loop delivers the last 3xx when its budget is spent, as if it were the answer; the planner fails with `tooManyRedirects`, as Go, curl and browsers do (the review, item 8).
+- **No cycle detection keyed on URLs.**  The upstream loop delivers a 3xx whose origin, path and query it has already visited, ignoring the method, so POST, 303, GET to the same URL comes back as the bare 303.  The hop limit alone ends a real loop.
+- **Only 301, 302, 303, 307 and 308 are followed.**  The upstream planner follows any other 3xx with a `Location` except 300, 304, 305 and 306; codes without defined redirect semantics are delivered, as the Fetch standard's "redirect status" list has it.
+- **HTTP/1.0 responses are not treated differently.**  The upstream planner follows only 301 and 302 from an HTTP/1.0 server and keeps POST on them.  The Fetch standard does not look at the version either, and keeping POST on a 301 or 302 is what no user agent does.
+- **301 and 302 keep every method but POST**, with its body if that is replayable, as the Fetch standard does; the upstream planner refuses 301 and 302 for methods other than GET, HEAD and POST.
+- **A GET or HEAD body is not dropped silently.**  On a redirect that keeps the method, the upstream planner sends a GET or HEAD without its body; the planner sends the body again if it can, and otherwise delivers the redirect, like any other request whose body cannot be sent again.
+- **Credentials are given back at the original origin.**  The upstream planner judges each hop against the previous one, so after A, B, A the request to A has lost its `Authorization`; the planner judges against the call's first request, as Go does (Go by host alone, subdomains allowed; the planner by scheme, host and port).
+- **`Host` stays within its origin.**  A `Host` the first request gives is kept on hops within the same origin (a virtual host chosen on purpose) and rewritten on a hop to another; when there is none, the client writes one from the target.  A credential field the first request's `Connection` names is hop-by-hop, so it is neither carried over nor given back.
+- **The digest fields go with a method change.**  RFC 9110 section 15.4 names `Digest` among the content fields to remove; the planner removes it, `Content-Digest` and `Repr-Digest` too.
+- **No `onlySafeRedirects`.**  v4.34.1's planner has an option to refuse every method that is not safe; the PR head removed it, and `Policy.followRedirects` is the planner's only switch.
+- v4.34.1's planner leaves dot segments and an empty path in an absolute `Location` as they are; the PR head and the planner resolve them (RFC 3986 section 5.2.2, RFC 9112 section 3.2.1).
+
+Retry choices:
+
+- **Every retry after a failure waits the backoff**, not only a failed connect: the n-th retry of the call waits `Backoff.delayMs` for draw n, so the whole schedule replays from the seed.
+- **A wait must end before the deadline**, strictly: a retry that would start at the deadline would time out at once.
+- **A 429 or 503 is retried only for a request that could be retried after bytes were sent** (idempotent, replayable), since the server has received the request.  This makes one theorem (`plan_no_resend`) cover every way a request is sent again.
+- **A `Retry-After` date is measured from the response's `Date`**, when it has one, rather than from the local clock, so that clock skew between client and server does not change the wait; a stale `Date` can only make the wait longer, and `Policy.maxRetryAfterMs` and the deadline bound it.  `Clock.wallSec` has no default, so that a shell cannot leave it at 1970.
+- A retry after a `notSent` failure may send a streamed body, which is safe only if nothing of the stream was read before the failure: an obligation on the streaming shell to come.
+
+Two things learnt while proving it:
+
+- `Std.Http`'s `Headers` can be reasoned about only by `import all` of `Std.Http.Data.Headers` and `Std.Http.Internal.IndexMultiMap`; `Headers.ofList` then gives back its list (`toList_ofList`), so the planner builds every next request's fields as a list and the theorems speak of `Headers.toList`, the entries the encoder writes.
+- `import all LeanHttp.Backoff` in the proof module made the kernel give up with deep recursion on `rfl` about `State.backoff`: `LeanHttp.Call` was compiled without `Backoff`'s bodies, so its definitions' heights are lower than `Backoff.delayMs`'s, and the kernel unfolded the jitter's 64-bit arithmetic instead of `State.backoff`.  The cap lemmas therefore live in `Backoff.lean`, and the proofs import it normally.
+
+Measured on 2026-10-29 (`logs/2026-10-29/planner/`, with `run.sh` holding the commands), from scratch on the build host, on the code of b761dac:
+
+- Every theorem in `scripts/call-axioms.lean` depends on no axiom beyond `propext`, `Classical.choice` and `Quot.sound`, and none on `sorryAx`.
+- `call-tests` passes at both seeds; its 200,000 random calls take every kind of step and break no rule, and each of the nine planted bugs is caught.
+- `call-diff`: about a quarter of the decisions differ from each oracle, every one explained by the differences above; each planted bug leaves disagreements unexplained; and every chain that differs from the upstream loop differs by the hop limit or by the absence of cycle detection.
+
+What wiring the planner into the client needs:
+
+- A loop in `Client.request` around the exchange: `Call.start` with the request (its target absolute, as now), the body's kind (`.none` for an empty body, `.bytes` otherwise; `.stream` when streaming bodies arrive) and the seed and deadline the call already has; then, for each step, send `State.current` (`follow` and `retry` both mean that), waiting `delayMs` first for a retry.  `Reachable.target` says the hop's target and `Hop.origin` agree, so the pool can key on either.
+- `Clock`: `IO.monoMsNow` for `now`, on the clock of the deadline, and the wall clock in seconds for `wallSec`.
+- Outcomes: the final response head as `.response` before its body is read; any `Failure` of the exchange as it is; a connect that failed as `{ cause := .connect attempts, delivery := .notSent }`, with `Connect.run` making one round only, since the planner now owns the retries and their backoff (or keeping its rounds and setting the planner's retries to zero for connects, which would leave two schedules).  Name resolution and invalid requests are never retried, so they may go to the planner or straight to the caller.
+- A response that is followed or retried has its body read and discarded within the drain limit (keeping the connection) or its connection closed, before the next request.
+- `Config` gains the policy's fields (`followRedirects`, `maxRedirects`, retries per hop and per call, `retry429`, `retry503`, `maxRetryAfterMs`), the backoff fields being shared; `Error` gains a cause for `tooManyRedirects` (with the last status) and a way to say which hop failed; `CallInfo` can record the hops and retries.
+- `Client.plan` already writes `Host` from the target when the head has none, which the planner relies on after it drops a `Host` it cannot rewrite.
+- `Cause.localClose` and `Cause.isConnect` have docstrings from milestone 1 ("never produces it", "the only cause the client retries") that the wiring will make wrong.
