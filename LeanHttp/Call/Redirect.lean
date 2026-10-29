@@ -299,10 +299,12 @@ def methodStep (methodChanged : Bool) (fields : Fields) : Fields :=
 /--
 Drops the credential fields unless the next origin is the original one (`toOriginal`); there they
 are kept if the current origin is the original one too (`fromOriginal`), and given back from the
-original request (`given`) if not.
+original request (`firstCredentials`) if not.
 -/
-def credentialStep (toOriginal fromOriginal : Bool) (given : Fields) (fields : Fields) : Fields :=
-  if toOriginal then (if fromOriginal then fields else dropNames credentialNames fields ++ given)
+def credentialStep (toOriginal fromOriginal : Bool) (firstCredentials : Fields) (fields : Fields) :
+    Fields :=
+  if toOriginal then
+    (if fromOriginal then fields else dropNames credentialNames fields ++ firstCredentials)
   else dropNames credentialNames fields
 
 /--
@@ -320,11 +322,11 @@ fields name, are dropped, and then come `crossOriginStep`, `methodStep`, `creden
 `hostStep`.
 -/
 def nextFields (fields : Fields) (crossOrigin methodChanged toOriginal fromOriginal : Bool)
-    (given : Fields) (host : Option Header.Value) : Fields :=
+    (firstCredentials : Fields) (host : Option Header.Value) : Fields :=
   dropNames (hopByHopNames ++ nominatedNames fields) fields
     |> crossOriginStep crossOrigin
     |> methodStep methodChanged
-    |> credentialStep toOriginal fromOriginal given
+    |> credentialStep toOriginal fromOriginal firstCredentials
     |> hostStep crossOrigin host
 
 /--
@@ -379,11 +381,11 @@ deriving Repr
 
 /--
 Decides what `response` to the request of `current` means for redirects.  `kind` is the kind of the
-call's original body, `original` the origin of the call's first request and `given` its
+call's original body, `original` the origin of the call's first request and `firstCredentials` its
 credential fields.
 -/
-def decideRedirect (kind : BodyKind) (original : URI.Origin) (given : Fields) (current : Hop)
-    (response : Response.Head) : Decision :=
+def decideRedirect (kind : BodyKind) (original : URI.Origin) (firstCredentials : Fields)
+    (current : Hop) (response : Response.Head) : Decision :=
   let code := response.status.toCode.toNat
   if code ∉ followedCodes then .final else
   match response.headers.get? .location with
@@ -408,7 +410,7 @@ def decideRedirect (kind : BodyKind) (original : URI.Origin) (given : Fields) (c
   let (path, query) :=
     resolvePathQuery ref current.head.uri.pathOrRoot (targetQuery current.head.uri)
   let fields := nextFields current.head.headers.toList crossOrigin methodChanged toOriginal
-    fromOriginal given (Header.Value.ofString? origin.hostHeader)
+    fromOriginal firstCredentials (Header.Value.ofString? origin.hostHeader)
   .follow {
     origin
     head := { current.head with

@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18113/redir/302?to=https://127.0.0.1:18113/echo
+call 0 error delivery=response received ms=5.429 rounds=1 seed=1203127671404734958 reused=false redispatched=false hops=1 retries=0 not_retried=none status=none cause="invalid request: cannot follow the redirect to https://127.0.0.1:18113/echo: unsupported scheme https: this client speaks plain HTTP only (no TLS yet)" detail=""
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=6.553
+exit status=0 wall_ms=112 exit_after_main_ms=106

@@ -1,0 +1,8 @@
+      21.9 listening on 127.0.0.1:18110
+     108.0 conn1 accepted from ('127.0.0.1', 54746)
+     114.9 conn1 req1 GET /chain/3 {'host': ['127.0.0.1:18110'], 'connection': ['keep-alive']} body=0B
+     116.6 conn1 req2 GET /chain/2 {'host': ['127.0.0.1:18110'], 'connection': ['keep-alive']} body=0B
+     118.2 conn1 req3 GET /chain/1 {'host': ['127.0.0.1:18110'], 'connection': ['keep-alive']} body=0B
+     118.9 conn1 req4 GET /chain/0 {'host': ['127.0.0.1:18110'], 'connection': ['keep-alive']} body=0B
+     120.3 conn1 EOF from client after 4 requests
+     120.4 conn1 closed by server

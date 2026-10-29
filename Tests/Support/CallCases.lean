@@ -13,7 +13,7 @@ instance : Inhabited URI.Origin :=
   ⟨{ scheme := default, host := .ipv4 (Std.Net.IPv4Addr.ofParts 127 0 0 1), port := 80 }⟩
 
 instance : Inhabited State :=
-  ⟨{ policy := {}, originalOrigin := default, given := [], bodyKind := .none,
+  ⟨{ policy := {}, originalOrigin := default, firstCredentials := [], bodyKind := .none,
      current := { origin := default, head := default, body := .original }, seed := 0, deadline := 0 }⟩
 
 /-- The status with this code: a named one, or a custom one for a code `Std.Http` has no name for. -/
