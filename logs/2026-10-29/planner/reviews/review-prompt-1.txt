@@ -1,0 +1,19 @@
+You are reviewing the theorem statements of a pure "per-call planner" for an HTTP/1.1 client written in Lean 4 (v4.34.1). Read only; do not modify anything.
+
+Files: LeanHttp/Call.lean (the planner: State, Outcome, Step, start, plan, Reachable), LeanHttp/Call/Redirect.lean (redirect decision, header steps), LeanHttp/Call/RetryAfter.lean, LeanHttp/Call/Proofs.lean (the theorems), LeanHttp/Backoff.lean, LeanHttp/Error.lean and LeanHttp/Exchange.lean (Failure, Cause, Delivery). All proofs compile with no sorry and only propext, Classical.choice and Quot.sound; you do not need to check the proofs, only the statements.
+
+The rules the theorems are meant to establish:
+1. Credential fields (Authorization, Cookie, Proxy-Authorization) never appear on a request to a different origin than the one they were given for (the origin of the call's first request); https to http counts as a different origin.
+2. The hop count (redirects followed) never exceeds the limit, and reaching it fails with an error rather than delivering the last 3xx.
+3. A request whose method is not idempotent, or whose body is not replayable, is never retried after any byte may have been written.
+4. A failure whose cause is localClose is never retried.
+5. Every planned delay is within [0, remaining time before the deadline] and within the backoff cap (or the Retry-After limit for Retry-After delays).
+6. A followed 303 always yields GET, or HEAD for HEAD.
+7. A method-changing redirect carries no body and no content headers.
+Plus: retries never cross a redirect; Host follows the origin; the retry counters stay within limits.
+
+For each main theorem in Proofs.lean (those whose docstring starts with a bold rule name, and Reachable.*):
+- Does the Lean statement say what its docstring says? Quote any word in the docstring the statement does not back.
+- Does it actually establish the rule above, or something weaker (a vacuous or unsatisfiable hypothesis, a property of the wrong object, a single step where the rule needs every request of a call, a hypothesis the shell cannot be expected to meet)? Consider whether `Reachable` and `State.current` really cover every request the shell sends, whether `Outcome.mayHaveSent` captures "any byte may have been written", whether `originKey` is a sound notion of "same origin", and whether the delay bound is relative to the right clock.
+- Is anything in the rules above not covered by any theorem?
+Be concrete: cite file and line, and give the strongest objection you can for each theorem, with your confidence. End with a list of findings ordered by importance.
