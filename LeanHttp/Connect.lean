@@ -3,7 +3,6 @@ module
 public import Std.Async.TCP
 public import Std.Async.DNS
 public import LeanHttp.Address
-public import LeanHttp.Backoff
 public import LeanHttp.Config
 public import LeanHttp.Error
 public import LeanHttp.Wait
@@ -13,8 +12,8 @@ public section
 /-!
 # Connecting
 
-Name resolution, bounded only by the call's deadline and the resolver's own timeouts, then rounds of
-connect attempts, with backoff between rounds.
+Name resolution, bounded only by the call's deadline and the resolver's own timeouts, then one round
+of connect attempts.
 
 Within a round the addresses are tried in order, each with its own time limit
 (`Config.connectTimeoutMs`).  The next attempt starts when the current one fails, or when it has not
@@ -24,9 +23,9 @@ dropped, which closes it.  v4.34.1 cannot cancel a pending connect, so a loser s
 answer keeps its socket until the kernel gives up on it; it holds no worker and does not keep the
 process from exiting.
 
-A round fails when every attempt in it has failed.  The client then waits a jittered backoff
-(`LeanHttp.Backoff`) and starts the next round, up to `Config.maxConnectRetries` more, all within
-the call's deadline.
+A round fails when every attempt in it has failed.  Whether to try again, and after what backoff, is
+the per-call planner's decision (`Call.plan`), which sees a failed round as a failure with nothing
+sent; the client then starts the next round with the next attempt of the call.
 -/
 
 namespace LeanHttp
@@ -50,14 +49,9 @@ structure Connected where
   address : SocketAddress
 
   /--
-  Every attempt that did not win, in every round.
+  Every attempt of the round that did not win.
   -/
   attempts : Array ConnectAttempt
-
-  /--
-  How many rounds of attempts were made, counting the successful one.
-  -/
-  rounds : Nat
 
 /--
 Why connecting failed.
@@ -69,14 +63,14 @@ inductive ConnectError where
   | resolve (host : String) (detail : String)
 
   /--
-  Every attempt of every round failed.
+  Every attempt of the round failed.
   -/
-  | exhausted (attempts : Array ConnectAttempt) (rounds : Nat)
+  | exhausted (attempts : Array ConnectAttempt)
 
   /--
   The call's deadline passed while connecting.
   -/
-  | deadline (attempts : Array ConnectAttempt) (rounds : Nat)
+  | deadline (attempts : Array ConnectAttempt)
 
 namespace Connect
 
@@ -220,7 +214,7 @@ def resolve (target : Target) (port : UInt16) (deadline : Nat) :
     -- up by its own timeouts.  So the client leaves those timeouts to decide.
     let lookup ← start (DNS.getAddrInfo host (toString port))
     match ← awaitWithin lookup (← remainingMs deadline) with
-    | none => return .error (.deadline #[] 0)
+    | none => return .error (.deadline #[])
     | some (.error err) => return .error (.resolve host (toString err))
     | some (.ok answers) =>
       let addrs := Address.connectOrder answers
@@ -229,31 +223,21 @@ def resolve (target : Target) (port : UInt16) (deadline : Nat) :
       return .ok (addrs.map (Address.withPort · port))
 
 /--
-Connects to `target`: resolves it, then runs rounds of attempts with jittered backoff between them,
-within `deadline` (a value of `IO.monoMsNow`).  `seed` drives the backoff jitter.
+Connects to `target`: resolves it, then runs one round of attempts, numbered `roundIndex` in their
+records, within `deadline` (a value of `IO.monoMsNow`).  Each round resolves the name again, as
+Go's dialer does for each dial, so that a retry sees a changed answer; a lookup is cheap next to
+the backoff before it.
 -/
-def run (config : Config) (target : Target) (port : UInt16) (seed : UInt64) (deadline : Nat) :
+def run (config : Config) (target : Target) (port : UInt16) (roundIndex : Nat) (deadline : Nat) :
     Async (Except ConnectError Connected) := do
   let addrs ← match ← resolve target port deadline with
     | .error err => return .error err
     | .ok addrs => pure addrs
-  let mut attempts : Array ConnectAttempt := #[]
-  for roundIndex in [0:config.maxConnectRetries + 1] do
-    if roundIndex > 0 then
-      let delay := Backoff.delayMs config.backoffBaseMs config.backoffCapMs seed (roundIndex - 1)
-      if delay ≥ (← remainingMs deadline) then
-        -- No time for another round: report the failures rather than wait for the deadline.
-        return .error (.exhausted attempts roundIndex)
-      if delay > 0 then
-        Std.Async.sleep (.ofNat delay)
-    let (result, roundAttempts) ← round config roundIndex addrs deadline
-    attempts := attempts ++ roundAttempts
-    match result with
-    | .connected socket address =>
-      return .ok { socket, address, attempts, rounds := roundIndex + 1 }
-    | .deadline => return .error (.deadline attempts (roundIndex + 1))
-    | .failed => pure ()
-  return .error (.exhausted attempts (config.maxConnectRetries + 1))
+  let (result, attempts) ← round config roundIndex addrs deadline
+  match result with
+  | .connected socket address => return .ok { socket, address, attempts }
+  | .deadline => return .error (.deadline attempts)
+  | .failed => return .error (.exhausted attempts)
 
 end Connect
 

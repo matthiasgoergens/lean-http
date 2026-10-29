@@ -33,7 +33,10 @@ What they do not cover:
 - That the shell sends the request a step names, waits the delay it names from the time it passed,
   and reports outcomes truthfully (in particular `Failure.delivery` and `Failure.written`) is the
   wiring's obligation.  The theorems of the exchange core (`LeanHttp.Exchange.Proofs`) cover how
-  `delivery` is computed there.
+  `delivery` is computed there.  `Call.validate` checks the client's record of each call
+  (`Config.observe`) against the planner: the steps, the requests as written, the waits and the
+  errors; the real-socket tests do so for every call they make.  That the outcomes in the record are
+  the true ones it cannot check.
 - A retry after a `notSent` failure may send a streamed body, which is safe only if the shell has
   not read any of the stream before the failure; the exchange core takes the whole body as bytes
   today, so this is an obligation on the streaming shell to come.
