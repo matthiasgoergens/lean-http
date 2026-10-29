@@ -69,9 +69,9 @@ Performance.  Parsing a 60 MB body fed in 64 KiB reads, driven as `Client.reques
 Left open:
 
 - The request head's length is measured by the serialiser; the checker finds it independently, as the first blank line, and no theorem says the two agree (it depends on `Std.Http`'s encoding of validated fields).
-- A delivery can exceed what the caller asked for by up to one read.  A streaming body that wants exact backpressure would have to split the held pieces.
+- A delivery can exceed what the caller asked for by up to one read.  The body stream splits what it is handed, so a caller's read never returns more than it asked for ("Wiring the planner into the client, and streaming", below).
 - The interim heads' part in the keep-alive verdict rests on the codec's code, not a theorem.
-- The per-call planner of milestone 2 was to use the vendored redirect planner; that would bring the vendored layer back into the library, so it may need its own.
+- The per-call planner has a redirect planner of its own rather than the vendored one, which would have brought the vendored layer back into the library ("The per-call planner", below).
 
 ## What can outlive a call, and other limits of milestone 1
 
@@ -82,7 +82,7 @@ Measured on 2026-10-27 (`logs/2026-10-27/net/`); v4.34.1 can cancel a pending re
 - **An abandoned name lookup** keeps running in libuv's thread pool (four threads by default) until the resolver gives up, and libuv joins that pool when the process exits: with a name server that never answers, the process waited 8 s at exit after a call that ended at its 2 s deadline (`dns-timeout`, reported as a known limitation).  Worse, when the lookup ends during exit the process often dies with a segmentation fault: 3 of 10 runs in `logs/2026-10-27/dns-exit/`, and 4 of 6 in an earlier unsaved batch.  The cause is not established; it looks like the runtime-shutdown race in which a libuv callback runs after Lean's task manager has been freed.  So the client bounds lookups only by the deadline and leaves the rest to the resolver's own timeouts (`/etc/resolv.conf`).
 - **An early response during an upload is heard, unless a write fails first.**  Since the exchange core became a step function (2026-10-28), the response is read once the request head is written, while the body is still going out.  A server that answers 413 after the head and stops reading now gets its response delivered in about 24 ms of a 32 MB upload, where milestone 1 ended the call with a write timeout at the 1 s gap (`early-response` in `logs/2026-10-28/core/net/`, and the control against milestone 1's client in `logs/2026-10-28/core/early-response-control/`).  A server that answers and then closes can make the pending write fail before the response is read; the call then fails as a closed connection, maybe delivered, without the response, unless the response head arrived first.  That race is not tested over TCP.
 - **The write gap is per slice.**  `readGapMs` bounds each 64 KiB slice of the request (`writeChunkBytes`), since a write's completion is the only progress the client can observe.
-- **No cancellation.**  The exchange core fails with `Cause.localClose` when the caller abandons it before the response head, but `Client.request` never abandons.  Closing a client came with the pool (`Client.close`); cancelling a call has not.
+- **No cancellation.**  The exchange core fails with `Cause.localClose` when the caller abandons it before the response head, but the client abandons an exchange only after its head (a body left unread).  Closing a client came with the pool (`Client.close`); cancelling a call has not.
 
 ## The exit hang is a runtime bug, fixed by an open upstream PR
 
@@ -127,7 +127,7 @@ What the campaign and the differential check against h11 (over its 6,161 distinc
 
 ## The per-call planner
 
-Built on 2026-10-29, not yet wired into the client.  `LeanHttp.Call` decides what follows each exchange of a call (`Call.plan : State → Clock → Outcome → State × Step`), `LeanHttp.Call.Redirect` decides redirects and rewrites the next request, `LeanHttp.Call.RetryAfter` parses `Retry-After`, and `LeanHttp/Call/Proofs.lean` proves the rules.  The library does not import the vendored protocol layer again: the planner is written against `Std.Http`'s types, and the upstream redirect planner, in its PR-head copy (vendored) and its v4.34.1 copy, is the oracle of `call-diff`.
+Built on 2026-10-29, and wired into the client the same day ("Wiring the planner into the client, and streaming", below).  `LeanHttp.Call` decides what follows each exchange of a call (`Call.plan : State → Clock → Outcome → State × Step`), `LeanHttp.Call.Redirect` decides redirects and rewrites the next request, `LeanHttp.Call.RetryAfter` parses `Retry-After`, and `LeanHttp/Call/Proofs.lean` proves the rules.  The library does not import the vendored protocol layer again: the planner is written against `Std.Http`'s types, and the upstream redirect planner, in its PR-head copy (vendored) and its v4.34.1 copy, is the oracle of `call-diff`.
 
 Deliberate differences from the upstream redirect planner and the upstream client's redirect loop, each of which `call-diff` neutralises to show that it explains the disagreements it is given for:
 
@@ -149,7 +149,7 @@ Retry choices:
 - **A wait must end before the deadline**, strictly: a retry that would start at the deadline would time out at once.
 - **A 429 or 503 is retried only for a request that could be retried after bytes were sent** (idempotent, replayable), since the server has received the request.  This makes one theorem (`plan_no_resend`) cover every way a request is sent again.
 - **A `Retry-After` date is measured from the response's `Date`**, when it has one, rather than from the local clock, so that clock skew between client and server does not change the wait; a stale `Date` can only make the wait longer, and `Policy.maxRetryAfterMs` and the deadline bound it.  `Clock.wallSec` has no default, so that a shell cannot leave it at 1970.
-- A retry after a `notSent` failure may send a streamed body, which is safe only if nothing of the stream was read before the failure: an obligation on the streaming shell to come.
+- A retry after a `notSent` failure may send a streamed body, which is safe only if nothing of the stream was read before the failure: an obligation on a shell with streamed request bodies, which is not built (bodies are bytes).
 
 Two things learnt while proving it:
 
@@ -161,16 +161,6 @@ Measured on 2026-10-29 (`logs/2026-10-29/planner/`, with `run.sh` holding the co
 - Every theorem in `scripts/call-axioms.lean` depends on no axiom beyond `propext`, `Classical.choice` and `Quot.sound`, and none on `sorryAx`.
 - `call-tests` passes at both seeds; its 200,000 random calls take every kind of step and break no rule, and each of the nine planted bugs is caught.
 - `call-diff`: about a quarter of the decisions differ from each oracle, every one explained by the differences above; each planted bug leaves disagreements unexplained; and every chain that differs from the upstream loop differs by the hop limit or by the absence of cycle detection.
-
-What wiring the planner into the client needs:
-
-- A loop in `Client.request` around the exchange: `Call.start` with the request (its target absolute, as now), the body's kind (`.none` for an empty body, `.bytes` otherwise; `.stream` when streaming bodies arrive) and the seed and deadline the call already has; then, for each step, send `State.current` (`follow` and `retry` both mean that), waiting `delayMs` first for a retry.  `Reachable.target` says the hop's target and `Hop.origin` agree, so the pool can key on either.
-- `Clock`: `IO.monoMsNow` for `now`, on the clock of the deadline, and the wall clock in seconds for `wallSec`.
-- Outcomes: the final response head as `.response` before its body is read; any `Failure` of the exchange as it is; a connect that failed as `{ cause := .connect attempts, delivery := .notSent }`, with `Connect.run` making one round only, since the planner now owns the retries and their backoff (or keeping its rounds and setting the planner's retries to zero for connects, which would leave two schedules).  Name resolution and invalid requests are never retried, so they may go to the planner or straight to the caller.
-- A response that is followed or retried has its body read and discarded within the drain limit (keeping the connection) or its connection closed, before the next request.
-- `Config` gains the policy's fields (`followRedirects`, `maxRedirects`, retries per hop and per call, `retry429`, `retry503`, `maxRetryAfterMs`), the backoff fields being shared; `Error` gains a cause for `tooManyRedirects` (with the last status) and a way to say which hop failed; `CallInfo` can record the hops and retries.
-- `Client.plan` already writes `Host` from the target when the head has none, which the planner relies on after it drops a `Host` it cannot rewrite.
-- `Cause.isConnect` has a docstring from milestone 1 ("the only cause the client retries") that the wiring will make wrong; `Cause.localClose`'s was brought up to date with the pool, which produces it.
 
 ## The connection pool
 
@@ -194,13 +184,45 @@ Real-socket scenarios (`tests/net/run.sh`; every one exits within tens of millis
 
 An independent review of the theorems and the shell (a fresh Claude, and Gemini through `agy-readonly`; `reviews/`) found no defect in the pool core, and these in the shell, all fixed: `Client.close` did nothing with pooling off; an error after a re-dispatch said "not sent" when only the second attempt was not, though the first may have been delivered; an exception in the exchange could leave a receive pending, and an exception while waiting at the cap escaped `request`; the idle check did not stop at the deadline; a cap of zero active connections was accepted.  It also asked for the theorems on what operations let go and on closing, now proved, and for the headline "exactly once" to say whose half it is.
 
-The re-dispatch sits below the per-call planner (`LeanHttp.Call`): for the planner it is part of one exchange, and it spends none of the planner's retries.  When the planner is wired in, a call it retries or follows starts again from `take`.
+The re-dispatch sits below the per-call planner (`LeanHttp.Call`): for the planner it is part of one exchange, and it spends none of the planner's retries.  Each request the planner sends (the first, a redirect's, a retry) starts again from `take`.
 
 Left open:
 
-- Streaming responses, and with them abandoning a body and draining it for reuse, are not wired: `Client.request` reads every body whole.
 - A POST that crosses the server's close of an idle connection fails, maybe delivered.  Nothing short of the server's cooperation (or HTTP/2's GOAWAY) can tell whether it was processed.
 - Origins are keyed by the host as written and the port: `localhost` and `127.0.0.1` are separate origins.
 - Waiting calls at the active cap are not served in order, and there is no limit on connections over all origins.
 - `Client.close` does not cancel calls in flight; their connections are closed when they end.
-- The per-call planner (redirects, retries) is not wired into the client yet; "The per-call planner", above, lists what that needs.
+
+## Wiring the planner into the client, and streaming
+
+Done on 2026-10-29 (`logs/2026-10-29/wire/`, with `COMMAND` listing every run).  `Client.withResponse` runs a call as a thin driver of the per-call planner and hands the final response to a callback that pulls its body (`BodyStream`); `Client.request` reads the whole body on top of the same loop.  `LeanHttp/Body.lean` drives an exchange in pieces (`Live`: until the head, one pull, or to the end), `LeanHttp/Wire.lean` holds the two pure parts the record of a call is checked against (`Client.plan`, `Client.redispatch?`), and `LeanHttp/Call/Trace.lean` the record and its check (`Call.validate`).
+
+Decisions, and why:
+
+- **The planner owns every retry; `Connect.run` makes one round.**  A failed round is a failure with cause `connect` and nothing sent, so the planner's backoff and budget cover connects too, with one schedule rather than two.  `Config.maxConnectRetries` became `Config.maxRetriesPerHop` (and `retryBudget`, `followRedirects`, `maxRedirects`, `retry429`, `retry503`, `maxRetryAfterMs`, `drainBytes`, `drainMs`).  Each round resolves the name again, as Go's dialer does for each dial: a retry then sees a changed answer, and a lookup costs little next to the backoff before it.  The seed's schedule is unchanged (the n-th retry of the call waits draw n), so recorded seeds replay as before.
+- **The outcome is the final head, before the body.**  The planner decides on the head; the client then drains the body of a response it follows or retries (within `drainBytes` and `drainMs`, keeping the connection) or drops the connection.  A head and a body failure that arrive in the same read are reported as the head, which is what a later read would give too, so the outcome does not depend on how TCP cut the bytes; a body error surfaces in the read that meets it.
+- **A call's error says how far the call got**, not its last exchange: the furthest any request got (a call that followed a redirect, retried a request that may have arrived, or re-dispatched one is never "not sent"), with the hop that failed, the retries made and the planner's reason for not retrying (`Error.hops`, `retries`, `notRetried`).  `Cause.tooManyRedirects` is new.
+- **A retry waits from the time the planner decided, until that time plus the delay, measured by `IO.monoMsNow`.**  A libuv timer can fire up to a millisecond before its time by that clock (it measures from the time cached at the start of the loop's iteration), so the client sleeps again for any remainder.  The trace check found this: a retry went out 1 ms before its delay ended.
+- **`https` is refused** with `invalidRequest`, for the first request and for a redirect, until there is TLS.
+- **A read gives the core credit for one more read.**  The core then delivers what it holds, or reads once and delivers that, and holds nothing more, so between two reads nothing is in flight and the read gap is not armed while the caller is busy; the stream splits a piece longer than the caller asked for.  `readAll` (which `request` uses) gives credit for the whole body and reads in one loop with the wait in it.  Each layer of `Async` calls above a wait costs a continuation, and so a thread hop, per read: reading through `read` made `request` slower than before, and the single loop restored it (below).
+- **Leaving the callback abandons the body**: drained within the limits, or the connection dropped; a stream used afterwards raises an error.  A read in progress in another task when the callback ends has its receive cancelled and is waited for, and whoever takes the stream's settle function owns the connection, so the release never touches a socket the reader has already given back.  An error the stream raised that leaves the callback becomes the call's `Error` (matched by its message); any other exception goes on.
+- **The record of a call** (`Config.observe`, numbered per call) holds the start, each request as written (the origin and the encoded head) and when it went out, each re-dispatch, each decision with its clock and outcome, each wait, and the end.  `Call.validate` replays it through a planner of its own and recomputes each request with `Client.plan` and the request serialiser (`Codec.encodeHead`, split out of `encodeRequest` for this, with the same bytes).  The record is the client's own account; what the check rules out is a loop that decides anything itself.  `net-client` checks every call it makes; the unit tests check that mutated records are rejected (a retry sent early, a wait too short or missing, an old request sent after a redirect, a wrong body size, head or origin, a step or outcome the planner did not have, a re-dispatch `redispatch?` does not allow, two re-dispatches, wrong error causes, reasons, counts or deliveries, a refusal of a request the client can send).
+
+Measured on 2026-10-29 (`logs/2026-10-29/wire/`, `run-final.sh` holding the commands), on the code of f5bf799, on the shared build host (load average 150-210 on 128 CPUs):
+
+- From a clean build, without warnings: every theorem of the exchange core, the codec, the pool and the planner depends on `propext`, `Classical.choice` and `Quot.sound` at most, and none on `sorryAx`; unit (119 checks), codec, response-codec, traces, props and explore of the exchange core, codec-diff (the same classes as before, and every generated request encoded as the machine encodes it, through `encodeHead` now), the pool's and the planner's suites all pass.
+- The real-socket suite: 291 checks pass, with the one known limitation of `dns-timeout` as before; the 743 calls it makes all replay through the planner.  The strace check still finds `TCP_NODELAY` set and a small request in one write.
+- A 200 MB body read through `withResponse` in pulls of 4 KiB: peak resident memory 31.5 MB, against 480 MB when `request` reads the same body whole (the control).
+- A 60 MB body over loopback, `request` against main's client, in 20 randomised blocks (each cell the median of five calls, client and server pinned to a CPU each): median ratio 0.98 (95% interval 0.85 to 1.10), so no slowdown was detected; the streamed read in 64 KiB pulls took 1.17 times main's whole read (0.95 to 1.23), the cost of a pull per read and no read-ahead.  Before `readAll` became one loop, `request` read through `read` and took about 1.4 times as long, and a profile showed the difference in the scheduler, not in copying.
+- Planted defects the checks see: without keeping the bytes that came with the head, `stream-badchunk` fails; without taking a body that has arrived in full, `stream-unread-big` fails; the unit tests reject each mutated record listed above.
+
+Two rounds of independent review of the shell (a fresh Claude and Gemini each time; `reviews/README` says what came of every finding) found, among smaller things: an error after a 408 re-dispatch whose fresh connection was refused said "not sent"; a read in another task could keep a receive pending, and the connection checked out, after the callback ended, and then release could cancel a receive on a connection already back in the pool; the record could not see re-dispatches and its request check compared the planner's head with itself; the stream could hold two reads and leave a read and its gap armed between pulls; bytes that came with the head were lost when the same read failed the body; a wall clock that threw would leak a connection.  All fixed.
+
+Left open:
+
+- `https` is refused: no TLS yet.  Request bodies are bytes; streamed request bodies are not built.  A call cannot be cancelled.
+- `request`'s body limit applies to the bodies of redirects and retried responses too, so with `maxBodyBytes` below `drainBytes` such a body costs its connection rather than being drained.
+- The record covers the planner's steps only: the exchange and pool cores are not recorded, and the outcomes the client reports are taken as given.  A retry's real wake-up time has a lower bound in the check, not an upper one.  The record of a delivered call ends at the delivery.
+- A read in flight through a long upload gains a continuation per write slice; after an early response head the write in flight stays in the race until the upload stops (at most the write gap).
+- Reading a stream in small pulls costs a pull per read from the socket; a caller that wants throughput should pull large pieces or use `request`.
+- Each retry of a connect resolves the name again; a lookup cut by the deadline still holds a thread of libuv's pool and can delay exit, as before.
