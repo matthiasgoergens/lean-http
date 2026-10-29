@@ -2,6 +2,7 @@ module
 
 public import LeanHttp.Address
 public import LeanHttp.Backoff
+public import LeanHttp.Call
 public import LeanHttp.Client
 public import LeanHttp.Config
 public import LeanHttp.Connect
