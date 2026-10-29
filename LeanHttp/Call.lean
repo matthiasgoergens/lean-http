@@ -200,48 +200,12 @@ inductive DelayKind where
 deriving Repr, DecidableEq
 
 /--
-Why a failed exchange is not retried.
--/
-inductive NoRetry where
-  /--
-  The cause is never retried: the client closed the connection itself, the call's deadline passed,
-  the name did not resolve, the request was invalid, or the response was malformed or too large.
-  -/
-  | cause
-
-  /--
-  Request bytes may have reached the server, and the method is not idempotent or the body cannot be
-  sent again.
-  -/
-  | delivered
-
-  /--
-  The response head had arrived.
-  -/
-  | responseReceived
-
-  /--
-  The current hop was retried `Policy.maxRetriesPerHop` times already.
-  -/
-  | hopLimit
-
-  /--
-  The call made `Policy.retryBudget` retries already.
-  -/
-  | budget
-
-  /--
-  The backoff would reach the call's deadline.
-  -/
-  | noTime
-deriving Repr, DecidableEq
-
-/--
 Why a call fails.
 -/
 inductive FailReason where
   /--
-  The exchange failed and is not retried.
+  The exchange failed and is not retried, for the reason `why`.  `NoRetry` is defined with the
+  client's errors (`LeanHttp.Error`), so that a call's error can say it.
   -/
   | failure (failure : Failure) (why : NoRetry)
 

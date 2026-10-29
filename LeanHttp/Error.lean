@@ -131,8 +131,9 @@ What went wrong.
 -/
 inductive Cause where
   /--
-  The client closed the connection on its own initiative: the exchange was abandoned before the
-  response head, or the client was closed (`Client.close`) before the call took a connection.
+  The client gave up on the call itself: the client was closed (`Client.close`) before the call
+  took a connection, or the exchange was abandoned before the response head arrived.  It is never
+  retried, so that closing a client cannot make it send a request again.
   -/
   | localClose
 
@@ -167,10 +168,74 @@ inductive Cause where
   | resolve (host : String) (detail : String)
 
   /--
-  The request was refused before any I/O (an unsupported scheme, a URI without a host).
+  A request was refused before it was sent: the call's own (an unsupported scheme, a URI without a
+  host, a setting no call can meet), or the request of a redirect to a target the client cannot
+  reach (an `https` URI, until the client has TLS).
   -/
   | invalidRequest (detail : String)
+
+  /--
+  A redirect arrived after `limit` redirects had been followed (`Config.maxRedirects`).  The last
+  redirect's status is the error's `status`.
+  -/
+  | tooManyRedirects (limit : Nat)
 deriving Repr, Inhabited
+
+namespace Call
+
+/--
+Why a failed exchange is not retried.
+-/
+inductive NoRetry where
+  /--
+  The cause is never retried: the client closed the connection itself, the call's deadline passed,
+  the name did not resolve, the request was invalid, or the response was malformed or too large.
+  -/
+  | cause
+
+  /--
+  Request bytes may have reached the server, and the method is not idempotent or the body cannot be
+  sent again.
+  -/
+  | delivered
+
+  /--
+  The response head had arrived.
+  -/
+  | responseReceived
+
+  /--
+  The current hop was retried `Policy.maxRetriesPerHop` times already.
+  -/
+  | hopLimit
+
+  /--
+  The call made `Policy.retryBudget` retries already.
+  -/
+  | budget
+
+  /--
+  The backoff would reach the call's deadline.
+  -/
+  | noTime
+deriving Repr, DecidableEq
+
+namespace NoRetry
+
+/--
+A short description for messages.
+-/
+def describe : NoRetry → String
+  | .cause => "never retried"
+  | .delivered => "the request may have been delivered and cannot be sent again"
+  | .responseReceived => "the response had begun"
+  | .hopLimit => "the request was retried as often as allowed"
+  | .budget => "the call made as many retries as allowed"
+  | .noTime => "the backoff would reach the deadline"
+
+end NoRetry
+
+end Call
 
 /--
 A failed call.
@@ -182,7 +247,10 @@ structure Error where
   cause : Cause
 
   /--
-  How far the request got.
+  How far the call got: the furthest any of its requests got.  A call that followed a redirect, or
+  retried a request that may have reached the server, has had requests delivered even if the one
+  that failed was not sent, so `notSent` holds only when no request of the call can have reached a
+  server.
   -/
   delivery : Delivery
 
@@ -227,6 +295,25 @@ structure Error where
   attempt.
   -/
   redispatched : Bool := false
+
+  /--
+  Redirects the call followed before it failed: the request that failed is that of hop `hops`, the
+  first request being hop 0.
+  -/
+  hops : Nat := 0
+
+  /--
+  Retries the call made (over all its hops) before it failed.
+  -/
+  retries : Nat := 0
+
+  /--
+  Why the failure was not retried, when the per-call planner judged it; `none` for an error found
+  before any exchange (an invalid request), for the failures that follow a response (too many
+  redirects, a deadline that passed before a redirect, a body that failed while it was read) and for
+  a redirect to a target the client cannot reach.
+  -/
+  notRetried : Option Call.NoRetry := none
 deriving Inhabited
 
 namespace TimeoutKind
@@ -263,12 +350,27 @@ def name : Delivery → String
   | .maybeDelivered => "maybe delivered"
   | .responseReceived => "response received"
 
+/--
+How far a request got, as a number: not sent 0, maybe delivered 1, response received 2.
+-/
+def rank : Delivery → Nat
+  | .notSent => 0
+  | .maybeDelivered => 1
+  | .responseReceived => 2
+
+/--
+The further of two deliveries.
+-/
+def max (a b : Delivery) : Delivery :=
+  if a.rank ≥ b.rank then a else b
+
 end Delivery
 
 namespace Cause
 
 /--
-`true` for a connect failure, the only cause the client retries.
+`true` for a connect failure: no connection could be made, so nothing was sent.  The per-call
+planner retries connect failures like the other causes it may retry (`Call.retryableCause`).
 -/
 def isConnect : Cause → Bool
   | .connect _ => true
@@ -293,6 +395,7 @@ def describe : Cause → String
     s!"could not connect: {String.intercalate "; " parts}"
   | .resolve host detail => s!"could not resolve {host}: {detail}"
   | .invalidRequest detail => s!"invalid request: {detail}"
+  | .tooManyRedirects n => s!"more than {n} redirects"
 
 end Cause
 
@@ -307,7 +410,9 @@ def notSent (e : Error) : Bool :=
 instance : ToString Error where
   toString e :=
     let detail := if e.detail.isEmpty then "" else s!" ({e.detail})"
-    s!"{e.target}: {e.cause.describe}{detail} [{e.delivery.name}, seed {e.seed}]"
+    let hops := if e.hops > 0 then s!", after {e.hops} redirects" else ""
+    let retries := if e.retries > 0 then s!", after {e.retries} retries" else ""
+    s!"{e.target}: {e.cause.describe}{detail} [{e.delivery.name}{hops}{retries}, seed {e.seed}]"
 
 /--
 Converts the error for code that works with `IO.Error`, as the throwing `Client.send` does.
