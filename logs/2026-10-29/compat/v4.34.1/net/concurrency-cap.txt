@@ -1,0 +1,19 @@
+$ net-client call GET http://127.0.0.1:18098/sleep?ms=200 concurrent=6 maxactive=2
+call 0 ok status=200 bytes=9 ms=208.612 rounds=1 address=127.0.0.1:18098 seed=4273467529684288026 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 body_start="slept 200"
+call 1 ok status=200 bytes=9 ms=209.848 rounds=1 address=127.0.0.1:18098 seed=13065498614986065808 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 body_start="slept 200"
+call 2 ok status=200 bytes=9 ms=420.851 rounds=0 address=127.0.0.1:18098 seed=5602213622285753452 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=448 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 body_start="slept 200"
+call 3 ok status=200 bytes=9 ms=635.327 rounds=0 address=127.0.0.1:18098 seed=2584761541400403030 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=167 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 body_start="slept 200"
+call 4 ok status=200 bytes=9 ms=635.401 rounds=0 address=127.0.0.1:18098 seed=8494272820348731789 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=474 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 body_start="slept 200"
+call 5 ok status=200 bytes=9 ms=420.412 rounds=0 address=127.0.0.1:18098 seed=18312164157734355793 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=719 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 body_start="slept 200"
+round 0 of 6 calls took ms=635.425
+summary calls n=6 min=208.612 p50=420.851 p90=635.401 max=635.401 ms ok=6
+pool idle=2 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+trace call 4 ok steps=1
+trace call 5 ok steps=1
+fds_after_calls=11
+main returning at ms=636.480
+exit status=0 wall_ms=695 exit_after_main_ms=59
