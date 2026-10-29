@@ -6,7 +6,9 @@
 # Usage: scripts/remote.sh <command> [args...]
 #   e.g. scripts/remote.sh lake build
 #        scripts/remote.sh bash tests/net/run.sh all
-host=${LEAN_HTTP_HOST:-buildhost}
+# The build host: $LEAN_HTTP_HOST, else the first line of an untracked .build-host file at the root.
+host=${LEAN_HTTP_HOST:-$(head -n 1 "$(dirname "$0")/../.build-host" 2>/dev/null)}
+[ -n "$host" ] || { echo "set LEAN_HTTP_HOST, or put the build host's ssh name in .build-host" >&2; exit 1; }
 # The directory on the host; give each worktree its own, so that parallel runs do not share a tree.
 rdir=${LEAN_HTTP_REMOTE_DIR:-lean-http}
 here=$(cd "$(dirname "$0")/.." && pwd) || exit 1

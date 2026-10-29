@@ -1,3 +1,4 @@
 .lake/
 build/
 vendor/
+.build-host
