@@ -1,0 +1,14 @@
+$ /home/runner/w/.lake/build/bin/pool-tests control 20000 1 7
+ignore-clock, all checks: random runs: agrees with the model; exploration: reused other than a live idle connection
+ignore-clock, properties alone: random runs: gone came back; exploration: reused other than a live idle connection
+accept-any, all checks: random runs: invariant; exploration: invariant
+accept-any, properties alone: random runs: invariant; exploration: invariant
+cap-off-by-one, all checks: random runs: invariant; exploration: invariant
+cap-off-by-one, properties alone: random runs: invariant; exploration: invariant
+ignore-verdict, all checks: random runs: agrees with the model; exploration: agrees with the model
+ignore-verdict, properties alone: random runs: gone came back; exploration: reused other than a live idle connection
+drop-keeps, all checks: random runs: agrees with the model; exploration: agrees with the model
+drop-keeps, properties alone: random runs: given back while not checked out; exploration: gone came back
+no plant: random runs: pass; exploration: pass
+5 plants, 0 runs that did not catch theirs
+exit status 0, wall 41300 ms

@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18080/interim-forever?ms=5
+call 0 error delivery=maybe delivered ms=93.814 rounds=1 seed=10586041124010272990 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="interim responses limit exceeded" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=94.464
+exit status=0 wall_ms=118 exit_after_main_ms=24

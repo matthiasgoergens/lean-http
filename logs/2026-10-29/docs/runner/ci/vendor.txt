@@ -1,0 +1,3 @@
+$ scripts/vendor.sh /tmp/tmp.wPTPSjVcRP
+vendored 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b into /home/runner/w/vendor
+exit status 0, wall 7408 ms
