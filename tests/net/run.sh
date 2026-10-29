@@ -111,7 +111,8 @@ within() {
 # median_within <scenario> <lo> <hi> <description>: the median of repeated calls is in [lo, hi] ms.
 median_within() {
   local ms
-  ms=$(sed --quiet 's/^summary .* p50=\([0-9]*\)\..*/\1/p' "$out/$1.txt")
+  # The summary of all calls (net-client also summarises the later calls and the idle checks).
+  ms=$(sed --quiet '/^summary \(later calls\|idle checks\) /d; s/^summary .* p50=\([0-9]*\)\..*/\1/p' "$out/$1.txt")
   if [ -n "$ms" ] && [ "$ms" -ge "$2" ] && [ "$ms" -le "$3" ]; then
     result PASS "$1" "$4: ${ms} ms"
   else
@@ -161,8 +162,8 @@ fi
 if scenario post; then
   client post call POST "http://127.0.0.1:$EVIL/echo" body=11
   expect post 'call 0 ok status=200 .*body_start="POST /echo ' "POST is answered"
-  if grep --quiet --extended-regexp "POST /echo \{'host': \['127\.0\.0\.1:18080'\], 'connection': \['close'\], 'content-length': \['11'\]\} body=11B" "$out/shared.evil.log"; then
-    result PASS post "the server read Host, Content-Length: 11, Connection: close and an 11-byte body"
+  if grep --quiet --extended-regexp "POST /echo \{'host': \['127\.0\.0\.1:18080'\], 'connection': \['keep-alive'\], 'content-length': \['11'\]\} body=11B" "$out/shared.evil.log"; then
+    result PASS post "the server read Host, Content-Length: 11, Connection: keep-alive and an 11-byte body"
   else
     result FAIL post "the server did not log an 11-byte body"
   fi
@@ -208,7 +209,8 @@ fi
 if scenario blackhole-first; then
   start blackhole-first hole "blackhole" "$PY" -I "$here/blackhole.py" ::1 $DUAL || exit 1
   start blackhole-first evil "listening" "$PY" -I "$here/evil.py" --port $DUAL || exit 1
-  client blackhole-first call GET "http://dual.test:$DUAL/ok" repeat=10
+  # Without pooling, so that every call connects (and the ::1 attempt is abandoned every time).
+  client blackhole-first call GET "http://dual.test:$DUAL/ok" repeat=10 pool=0
   expect blackhole-first 'call 0 ok status=200 bytes=5 .*address=127\.0\.0\.1:18083' \
     "connects to 127.0.0.1 when ::1 drops SYNs"
   expect blackhole-first 'summary calls n=10 .* ok=10$' "ten calls out of ten"
@@ -227,7 +229,7 @@ if scenario blackhole-first; then
     result FAIL blackhole-first "a call's connection was still open when the next call connected"
   fi
   median_within blackhole-first 240 400 "median call within about the 250 ms stagger"
-  client blackhole-stagger50 call GET "http://dual.test:$DUAL/ok" repeat=10 stagger=50
+  client blackhole-stagger50 call GET "http://dual.test:$DUAL/ok" repeat=10 stagger=50 pool=0
   median_within blackhole-stagger50 40 200 "with a 50 ms stagger, the median call is about 50 ms"
 fi
 
@@ -320,7 +322,7 @@ if scenario nodelay; then
   client nodelay-raw-split-keepalive rawpost $ONEWRITE n=50 size=100 keepalive=1 nodelay=0
   client nodelay-raw-split-keepalive-nodelay rawpost $ONEWRITE n=300 size=100 keepalive=1 nodelay=1
   client nodelay-raw-split-fresh rawpost $ONEWRITE n=300 size=100 keepalive=0 nodelay=0
-  p50() { sed --quiet 's/^summary .* p50=\([0-9]*\)\..*/\1/p' "$out/$1.txt"; }
+  p50() { sed --quiet '/^summary \(later calls\|idle checks\) /d; s/^summary .* p50=\([0-9]*\)\..*/\1/p' "$out/$1.txt"; }
   for s in nodelay nodelay-off nodelay-raw-split-fresh nodelay-raw-split-keepalive-nodelay; do
     v=$(p50 $s)
     if [ -n "$v" ] && [ "$v" -lt 20 ]; then

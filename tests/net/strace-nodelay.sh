@@ -33,14 +33,14 @@ for nodelay in 1 0; do
   fd=$(sed --quiet 's/.*connect(\([0-9]*\), {sa_family=AF_INET, sin_port=htons('"$port"').*/\1/p' "$trace" | head --lines=1)
   nodelays=$(grep --count "setsockopt($fd, SOL_TCP, TCP_NODELAY, \[1\], 4) = 0" "$trace")
   writes=$(grep --count -e "write($fd, " -e "writev($fd, " -e "sendmsg($fd, " -e "sendto($fd, " "$trace")
-  whole=$(grep --count "write($fd, \"POST /echo HTTP/1.1.*, 186) = 186" "$trace")
+  whole=$(grep --count "write($fd, \"POST /echo HTTP/1.1.*, 191) = 191" "$trace")
   if [ "$nodelay" = 1 ]; then
     [ "$nodelays" = 1 ]; check $? "nodelay=1: TCP_NODELAY set once on the connected socket (fd ${fd:-?})"
   else
     [ "$nodelays" = 0 ]; check $? "nodelay=0 (control): TCP_NODELAY not set (fd ${fd:-?})"
   fi
   [ "$writes" = 1 ] && [ "$whole" = 1 ]
-  check $? "nodelay=$nodelay: the 186-byte request went out in one write ($writes writes on the socket)"
+  check $? "nodelay=$nodelay: the 191-byte request went out in one write ($writes writes on the socket)"
 done
 echo "### $fails failed"
 [ "$fails" -eq 0 ]

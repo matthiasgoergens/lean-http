@@ -5,7 +5,7 @@ import Tests.Support.Drive
 # Unit tests
 
 Pure parts of the client: the backoff schedule, address ordering and de-duplication, request
-planning, and error classification.  Prints one line per check and exits with status 1 if any
+planning, error classification, the pool's settings and when a call is sent again.  Prints one line per check and exits with status 1 if any
 failed.
 -/
 
@@ -186,8 +186,51 @@ def errorChecks : Checks Unit := do
     (!(Cause.peerClosed).isConnect && !(Cause.resolve "h" "x").isConnect
       && !(Cause.timeout .deadline).isConnect)
 
+/-! ## Pooling: settings and re-dispatch -/
+
+def poolChecks : Checks Unit := do
+  let d : Config := {}
+  checkEq "pooling is on by default" d.pool true
+  checkEq "the exchange keeps the connection alive when pooling is on"
+    ((Client.exchangeConfig d).toOption.map (·.keepAlive)) (some true)
+  checkEq "and not when it is off"
+    ((Client.exchangeConfig { d with pool := false }).toOption.map (·.keepAlive)) (some false)
+  let pc := Client.poolConfig { d with maxIdlePerOrigin := 2, idleTimeoutMs := 77, maxActivePerOrigin := some 3 }
+  checkEq "the pool's limits come from the configuration" (pc.maxIdle, pc.idleTimeoutMs, pc.maxActive)
+    (2, 77, some 3)
+  checkEq "the pool's default limits" (Client.poolConfig d).maxIdle 4
+  check "a cap of zero active connections is refused"
+    (Client.checkConfig { d with maxActivePerOrigin := some 0 } matches .error (.invalidRequest _))
+  check "a cap of one is accepted" (Client.checkConfig { d with maxActivePerOrigin := some 1 } matches .ok ())
+  let head (status : Status) : Response.Head := { status }
+  let response (status : Status) (interim : Nat := 0) : Client.Ended :=
+    .response (head status) .empty false interim
+  let failure (cause : Cause) (delivery : Delivery) (received : Bool := false) : Client.Ended :=
+    .failure { cause, delivery, written := 0 } received
+  let r := fun (m : Method) (e : Client.Ended) => Client.redispatch? m e
+  checkEq "a 408 before any other response is sent again, whatever the method"
+    (r .post (response .requestTimeout)) (some .requestTimeout)
+  checkEq "a 408 after an interim response is not" (r .get (response .requestTimeout 1)) none
+  checkEq "any other response is not" (r .get (response .ok)) none
+  checkEq "a 503 is not" (r .get (response .serviceUnavailable)) none
+  checkEq "nothing sent: sent again, whatever the method" (r .post (failure .peerClosed .notSent))
+    (some .notSent)
+  checkEq "closed before any response byte: a GET is sent again"
+    (r .get (failure .peerClosed .maybeDelivered)) (some .closedBeforeResponse)
+  checkEq "so is a PUT" (r .put (failure .peerClosed .maybeDelivered)) (some .closedBeforeResponse)
+  checkEq "a POST is not" (r .post (failure .peerClosed .maybeDelivered)) none
+  checkEq "nor a PATCH" (r .patch (failure .peerClosed .maybeDelivered)) none
+  checkEq "closed after part of a response: a GET is not"
+    (r .get (failure .peerClosed .maybeDelivered (received := true))) none
+  checkEq "closed after the response head: not" (r .get (failure .peerClosed .responseReceived)) none
+  checkEq "a read timeout is not" (r .get (failure (.timeout .read) .maybeDelivered)) none
+  checkEq "a deadline before anything was sent is not" (r .get (failure (.timeout .deadline) .notSent))
+    none
+  checkEq "an invalid response is not" (r .get (failure (.protocol "x") .maybeDelivered)) none
+
 def main : IO UInt32 := do
-  let ((), results) ← (do backoffChecks; addressChecks; planChecks; errorChecks : Checks Unit).run #[]
+  let ((), results) ←
+    (do backoffChecks; addressChecks; planChecks; errorChecks; poolChecks : Checks Unit).run #[]
   let failed := results.filter (!·.2)
   IO.println s!"{results.size} checks, {failed.size} failing"
   return if failed.isEmpty then 0 else 1

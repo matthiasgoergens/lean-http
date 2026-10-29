@@ -131,8 +131,8 @@ What went wrong.
 -/
 inductive Cause where
   /--
-  The client closed the connection on its own initiative.  Reserved for closing a client and for
-  cancellation, which arrive with connection reuse; milestone 1 never produces it.
+  The client closed the connection on its own initiative: the exchange was abandoned before the
+  response head, or the client was closed (`Client.close`) before the call took a connection.
   -/
   | localClose
 
@@ -215,6 +215,18 @@ structure Error where
   A human-readable detail, such as the operating system's error message.
   -/
   detail : String := ""
+
+  /--
+  Whether the exchange that failed ran on a connection taken from the pool.
+  -/
+  reused : Bool := false
+
+  /--
+  Whether the call was sent a second time, on a fresh connection, after the pooled connection it
+  first took turned out to be closed (`Client.request`); the error then describes the second
+  attempt.
+  -/
+  redispatched : Bool := false
 deriving Inhabited
 
 namespace TimeoutKind

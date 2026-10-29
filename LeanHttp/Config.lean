@@ -98,6 +98,50 @@ structure Config where
   writeChunkBytes : Nat := 64 * 1024
 
   /--
+  Whether connections are kept open after a call and reused by later calls to the same origin
+  (default: `true`).  Requests then say `Connection: keep-alive`.  With `false`, every call opens a
+  connection of its own and closes it, sending `Connection: close`.
+  -/
+  pool : Bool := true
+
+  /--
+  Most idle connections kept per origin (default: 4).  A reusable connection that comes back while
+  its origin has this many idle is closed instead.
+  -/
+  maxIdlePerOrigin : Nat := 4
+
+  /--
+  How long an idle connection is kept before it is closed (default: 4 s, below the keep-alive
+  timeouts common servers use, 5 s and up).  It is closed when a call next uses the pool after that
+  time, not by a timer.  Zero keeps no connection idle, which turns reuse off.
+  -/
+  idleTimeoutMs : Nat := 4 * 1000
+
+  /--
+  Most connections in use at once per origin, or `none` (the default) for no limit; only with
+  `pool` on.  A call that finds its origin at the limit waits for a connection to come back, within
+  its deadline; waiting calls are not served in order.  Zero is refused as an invalid request.
+  -/
+  maxActivePerOrigin : Option Nat := none
+
+  /--
+  Whether a pooled connection is checked before it is reused (default: `true`).  The check watches
+  the connection for `idleCheckMs`: bytes, the end of input or an error mean the server closed it or
+  sent something unasked (a 408, say), and the connection is closed and another one taken.  Without
+  the check, a closed connection is found only when the request fails on it, and only some requests
+  can then be sent again (`Client.request`).
+  -/
+  idleCheck : Bool := true
+
+  /--
+  How long the idle check watches a connection, in milliseconds (default: 0).  Zero still waits for
+  one turn of the event loop, which sees whatever arrived while the connection was idle; a longer
+  window also sees what arrives during it, and every reuse waits that long.  `NOTES.md` has the
+  measurements behind the default.
+  -/
+  idleCheckMs : Nat := 0
+
+  /--
   Parser limits for the response head and framing.  Their `maxInterim` and `maxBody` are replaced
   by `maxInterimResponses` and `maxBodyBytes` above.
   -/
