@@ -130,6 +130,7 @@ HOLE2=18086     # blackhole on ::1 only, for the connect deadline
 NOREAD=18087    # accepts and never reads
 LARGE=18088     # onewrite.py, for a large POST
 EARLY=18089     # early.py: answers 413 after the head, then reads no more
+# 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
 
 # Names for the resolver tests.  getaddrinfo without a socket type returns each of these addresses
 # once per socket type, three times in all.
@@ -366,6 +367,181 @@ if scenario early-response; then
   expect early-response 'call 0 ok status=413 bytes=3 .*body_start="big"' \
     "a server that answers 413 after the head and stops reading: the response is delivered"
   within early-response 0 900 "before the 1 s write gap"
+fi
+
+# --- Pooling.  Each scenario has an evil.py of its own, so that its log counts the connections.
+
+# conns <scenario> <n> <description>: the scenario's server accepted exactly n connections.
+conns() {
+  local got
+  got=$(grep --count ' accepted from ' "$out/$1.evil.log")
+  if [ "$got" -eq "$2" ]; then
+    result PASS "$1" "$3: $got"
+  else
+    result FAIL "$1" "$3: $got, expected $2"
+  fi
+}
+
+# logged <scenario> <extended regex> <description>: the scenario's server logged a match.
+logged() {
+  if grep --quiet --extended-regexp "$2" "$out/$1.evil.log"; then
+    result PASS "$1" "$3"
+  else
+    result FAIL "$1" "$3 (no match in the server log for: $2)"
+  fi
+}
+
+evil() { # evil <scenario> <port>: an evil.py for one scenario
+  start "$1" evil "listening" "$PY" -I "$here/evil.py" --port "$2"
+}
+
+if scenario pool-reuse; then
+  evil pool-reuse 18090 || exit 1
+  client pool-reuse call GET "http://127.0.0.1:18090/ok" repeat=3
+  expect pool-reuse 'call 0 ok status=200 .* conn=\(some 0\) reused=false' "the first call opens connection 0"
+  expect pool-reuse 'call 1 ok status=200 .* conn=\(some 0\) reused=true discarded=0 .*redispatched=false' \
+    "the second call reuses it after a clean idle check"
+  expect pool-reuse 'call 2 ok status=200 .* conn=\(some 0\) reused=true discarded=0 ' "so does the third"
+  expect pool-reuse '^pool idle=1 checked_out=0 allocated=1$' "one idle connection at the end"
+  conns pool-reuse 1 "the server saw one connection for three calls"
+  logged pool-reuse "req3 GET /ok \{'host': \['127\.0\.0\.1:18090'\], 'connection': \['keep-alive'\]\}" \
+    "the requests say Connection: keep-alive"
+fi
+
+if scenario pool-off; then
+  evil pool-off 18091 || exit 1
+  client pool-off call GET "http://127.0.0.1:18091/ok" repeat=3 pool=0
+  expect pool-off 'call 2 ok status=200 .* conn=none reused=false' "with pooling off, no call reuses"
+  conns pool-off 3 "the server saw a connection per call"
+  logged pool-off "req1 GET /ok \{'host': \['127\.0\.0\.1:18091'\], 'connection': \['close'\]\}" \
+    "the requests say Connection: close"
+fi
+
+if scenario keepalive-close; then
+  # The server closes a connection 200 ms after its last response; the next call comes 500 ms later.
+  evil keepalive-close 18092 || exit 1
+  client keepalive-close call GET "http://127.0.0.1:18092/close-after-idle?ms=200" repeat=3 pause=500
+  expect keepalive-close 'call 1 ok status=200 .*reused=false discarded=1 .*redispatched=false' \
+    "the idle check finds the closed connection; the call opens a new one"
+  expect keepalive-close 'call 2 ok status=200 .*reused=false discarded=1 .*redispatched=false' "and again"
+  expect keepalive-close 'summary calls n=3 .* ok=3$' "no call fails"
+  conns keepalive-close 3 "three connections"
+  # Without the idle check, the closed connection is used: the request goes out, the end of input
+  # comes back, and a GET is sent again on a fresh connection.
+  client keepalive-close-nocheck call GET "http://127.0.0.1:18092/close-after-idle?ms=200" repeat=2 pause=500 idlecheck=off
+  expect keepalive-close-nocheck 'call 1 ok status=200 .*reused=false discarded=0 .*redispatched=true' \
+    "without the idle check, the GET is sent again on a fresh connection"
+  # A POST is not: the server may have acted on it.
+  client keepalive-close-post call POST "http://127.0.0.1:18092/close-after-idle?ms=200" body=5 repeat=2 pause=500 idlecheck=off
+  expect keepalive-close-post 'call 1 error delivery=maybe delivered .*reused=true redispatched=false .*cause="the connection closed before a complete response"' \
+    "without the idle check, a POST on the closed connection fails, maybe delivered"
+fi
+
+if scenario keepalive-race; then
+  # The server closes the connection when the next request arrives, without answering: the request
+  # crosses the server's close, which no idle check can see.
+  evil keepalive-race 18093 || exit 1
+  client keepalive-race call GET "http://127.0.0.1:18093/die-on-next" repeat=2
+  expect keepalive-race 'call 1 ok status=200 .*reused=false .*redispatched=true' \
+    "a GET whose connection closes as it is sent goes again on a fresh connection"
+  logged keepalive-race 'conn1 got [0-9]+ bytes of the next request; closing without answering' \
+    "the server closed the first connection on the second request"
+  conns keepalive-race 2 "two connections"
+  client keepalive-race-rst call GET "http://127.0.0.1:18093/die-on-next?rst=1" repeat=2
+  expect keepalive-race-rst 'call 1 ok status=200 .*redispatched=true' "the same with a reset"
+  client keepalive-race-post call POST "http://127.0.0.1:18093/die-on-next" body=5 repeat=2
+  expect keepalive-race-post 'call 1 error delivery=maybe delivered .*reused=true redispatched=false' \
+    "a POST in the same race fails, maybe delivered"
+fi
+
+if scenario idle-408; then
+  # The server sends 408 and closes 100 ms after its response; the next call comes 400 ms later.
+  evil idle-408 18094 || exit 1
+  client idle-408 call POST "http://127.0.0.1:18094/idle-408?ms=100" body=5 repeat=2 pause=400
+  expect idle-408 'call 1 ok status=200 .*reused=false discarded=1 .*redispatched=false' \
+    "the idle check catches the 408 and the close; the POST goes on a new connection"
+  logged idle-408 'conn1 sent 408' "the server sent the 408"
+  # Without the idle check, and with the server keeping the connection open after the 408, the
+  # request is written and the 408 read as its response: the POST is sent again, any method being
+  # safe after a 408.
+  client idle-408-nocheck call POST "http://127.0.0.1:18094/idle-408?ms=100&linger=2000" body=5 repeat=2 pause=400 idlecheck=off
+  expect idle-408-nocheck 'call 1 ok status=200 .*reused=false .*redispatched=true' \
+    "without the idle check, the 408 read as the response sends the POST again"
+fi
+
+if scenario close-response; then
+  evil close-response 18095 || exit 1
+  client close-response call GET "http://127.0.0.1:18095/close-hdr" repeat=2
+  expect close-response 'call 1 ok status=200 bytes=3 .*reused=false' "a Connection: close response is not reused"
+  expect close-response '^pool idle=0 checked_out=0 allocated=2$' "nothing idle"
+  conns close-response 2 "two connections"
+fi
+
+if scenario head-stray; then
+  evil head-stray 18096 || exit 1
+  client head-stray call HEAD "http://127.0.0.1:18096/head-stray" repeat=2
+  expect head-stray 'call 0 ok status=200 bytes=0 ' "the HEAD response has no body"
+  expect head-stray 'call 1 ok status=200 bytes=0 .*reused=false' "stray bytes after it: not reused"
+  conns head-stray 2 "two connections"
+fi
+
+if scenario concurrency; then
+  evil concurrency 18097 || exit 1
+  client concurrency call GET "http://127.0.0.1:18097/sleep?ms=300" concurrent=8 repeat=2
+  r0=$(sed --quiet 's/^round 0 of 8 calls took ms=\([0-9]*\)\..*/\1/p' "$out/concurrency.txt")
+  r1=$(sed --quiet 's/^round 1 of 8 calls took ms=\([0-9]*\)\..*/\1/p' "$out/concurrency.txt")
+  if [ -n "$r0" ] && [ -n "$r1" ] && [ "$r0" -lt 900 ] && [ "$r1" -lt 900 ]; then
+    result PASS concurrency "eight 300 ms calls at once take ${r0} and ${r1} ms: none waits for another"
+  else
+    result FAIL concurrency "rounds took ${r0:-?} and ${r1:-?} ms, expected under 900"
+  fi
+  expect concurrency 'summary calls n=16 .* ok=16$' "all sixteen calls succeed"
+  expect concurrency '^pool idle=4 checked_out=0 allocated=12$' \
+    "the first round opens eight connections and keeps four; the second reuses those and opens four"
+  conns concurrency 12 "twelve connections"
+  [ "$(grep --count 'reused=true' "$out/concurrency.txt")" -eq 4 ]
+  if [ $? -eq 0 ]; then result PASS concurrency "four calls reused"; else result FAIL concurrency "not four calls reused"; fi
+  evil concurrency-cap 18098 || exit 1
+  client concurrency-cap call GET "http://127.0.0.1:18098/sleep?ms=200" concurrent=6 maxactive=2
+  r0=$(sed --quiet 's/^round 0 of 6 calls took ms=\([0-9]*\)\..*/\1/p' "$out/concurrency-cap.txt")
+  if [ -n "$r0" ] && [ "$r0" -ge 590 ] && [ "$r0" -lt 1200 ]; then
+    result PASS concurrency-cap "six 200 ms calls with at most two at once take ${r0} ms"
+  else
+    result FAIL concurrency-cap "the round took ${r0:-?} ms, expected 600 to 1200"
+  fi
+  expect concurrency-cap 'summary calls n=6 .* ok=6$' "all six succeed"
+  conns concurrency-cap 2 "two connections"
+fi
+
+if scenario pool-close; then
+  evil pool-close 18099 || exit 1
+  client pool-close call GET "http://127.0.0.1:18099/ok" repeat=2 close=1
+  expect pool-close '^after close: pool idle=0 checked_out=0$' "closing the client closes the idle connection"
+  expect pool-close 'after close: call 2 error delivery=not sent .*cause="the client closed the connection"' \
+    "a call after closing fails, not sent"
+  logged pool-close 'conn1 EOF from client after 2 requests' "the server sees the connection closed"
+  client pool-close-off call GET "http://127.0.0.1:18099/ok" close=1 pool=0
+  expect pool-close-off 'after close: call 1 error delivery=not sent .*cause="the client closed the connection"' \
+    "with pooling off, too"
+fi
+
+if scenario redispatch-refused; then
+  # The server goes away between two calls.  Without the idle check, the second call's GET goes out
+  # on the closed connection and is sent again on a fresh connection, which is refused: the error
+  # describes the second attempt, but the first was written, so it says maybe delivered.
+  evil redispatch-refused 18104 || exit 1
+  ( sleep 0.5; kill "${pids[-1]}" ) &
+  client redispatch-refused call GET "http://127.0.0.1:18104/ok" repeat=2 pause=1000 idlecheck=off retries=0
+  expect redispatch-refused 'call 1 error delivery=maybe delivered .*reused=false redispatched=true .*could not connect' \
+    "a re-dispatched GET whose fresh connection is refused: maybe delivered"
+fi
+
+if scenario idle-timeout; then
+  evil idle-timeout 18100 || exit 1
+  client idle-timeout call GET "http://127.0.0.1:18100/ok" repeat=2 pause=600 idletimeout=300
+  expect idle-timeout 'call 1 ok status=200 .*reused=false discarded=0 ' "an expired idle connection is not used"
+  logged idle-timeout 'conn1 EOF from client after 1 requests' "and is closed"
+  conns idle-timeout 2 "two connections"
 fi
 
 # Last, because it points the resolver at a name server that never answers.

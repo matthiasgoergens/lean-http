@@ -308,6 +308,9 @@ def route(mode, method, path, q, headers, body, args, conn, cid):
         return b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Length: 3\r\n\r\nok!"
     if mode == "te-cl":
         return b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\n\r\n"
+    if mode == "head-stray":
+        # a response to HEAD followed by the body it must not have: stray bytes on the connection
+        return resp("200 OK", [("Content-Length", "5")], b"hello")
     if mode == "close-hdr":
         b = b"bye"
         return resp("200 OK", cl(b, [("Connection", "close")]), b)
