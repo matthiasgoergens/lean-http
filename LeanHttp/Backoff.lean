@@ -45,6 +45,33 @@ def delayMs (baseMs capMs : Nat) (seed : UInt64) (attempt : Nat) : Nat :=
   (draw seed attempt).toNat % (ceiling baseMs capMs attempt + 1)
 
 /--
+The ceiling never exceeds the cap.
+-/
+theorem ceiling_le_cap (baseMs capMs attempt : Nat) : ceiling baseMs capMs attempt ≤ capMs := by
+  unfold ceiling
+  split
+  · split <;> omega
+  · exact Nat.min_le_left _ _
+
+/--
+A delay never exceeds the ceiling.
+-/
+theorem delayMs_le_ceiling (baseMs capMs : Nat) (seed : UInt64) (attempt : Nat) :
+    delayMs baseMs capMs seed attempt ≤ ceiling baseMs capMs attempt := by
+  unfold delayMs
+  generalize (draw seed attempt).toNat = x
+  generalize ceiling baseMs capMs attempt = c
+  have := Nat.mod_lt x (show 0 < c + 1 by omega)
+  omega
+
+/--
+A delay never exceeds the cap.
+-/
+theorem delayMs_le_cap (baseMs capMs : Nat) (seed : UInt64) (attempt : Nat) :
+    delayMs baseMs capMs seed attempt ≤ capMs :=
+  Nat.le_trans (delayMs_le_ceiling baseMs capMs seed attempt) (ceiling_le_cap baseMs capMs attempt)
+
+/--
 The delays before the first `n` retries.
 -/
 def schedule (baseMs capMs : Nat) (seed : UInt64) (n : Nat) : List Nat :=
