@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Copies the working tree to ~/$LEAN_HTTP_REMOTE_DIR (default ~/lean-http) on the build host and runs a command there, inside the
+# Runs the container through batchrun, below CI and interactive work on the host, with Podman kept in
+# the batch service's cgroup.  Copies the working tree to ~/$LEAN_HTTP_REMOTE_DIR (default ~/lean-http) on the build host and runs a command there, inside the
 # Lean image with the v4.34.1 toolchain from the b8perf-elan volume (read-only), the tree at /w,
 # uv's CPython at /py, and no network but loopback.  CTR_EXTRA adds podman options.
 #
@@ -20,6 +21,6 @@ grep --quiet --fixed-strings "$commit" "$here/vendor/SOURCE" 2>/dev/null \
 rsync --archive --delete --exclude .lake --exclude .git --exclude logs --exclude out \
   "$here/" "$host:$rdir/" || exit 1
 quoted=$(printf '%q ' "$@")
-ssh "$host" "cd ~/$rdir && nice ionice podman run --rm --network none ${CTR_EXTRA:-} \
+ssh "$host" "cd ~/$rdir && batchrun podman --cgroup-manager=cgroupfs run --cgroups=disabled --rm --network none ${CTR_EXTRA:-} \
   -v b8perf-elan:/root/.elan:ro -v \"\$PWD\":/w -w /w -v $py:/py:ro localhost/b8perf-lean \
   env PATH=/root/.elan/toolchains/leanprover--lean4---v4.34.1/bin:/usr/local/bin:/usr/bin:/bin $quoted"
