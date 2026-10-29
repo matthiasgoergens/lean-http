@@ -10,12 +10,14 @@ many connections the client opened and what it sent on each.
 
 Usage: evil.py --port N [--host 0.0.0.0] [--log FILE] [--v6]
 """
-import argparse, socket, threading, time, urllib.parse, sys
+import argparse, email.utils, socket, threading, time, urllib.parse, sys
 
 LOG = sys.stdout
 LOCK = threading.Lock()
 T0 = time.monotonic()
 CONN_SEQ = [0]
+FLAKY = {}
+LISTENER = [None]
 
 
 def log(msg):
@@ -240,11 +242,51 @@ def route(mode, method, path, q, headers, body, args, conn, cid):
         # /redir/<code>?to=<location>
         code = int(path.strip("/").split("/")[1])
         reason = {301: "Moved", 302: "Found", 303: "See Other", 307: "Temporary", 308: "Permanent"}[code]
-        b = b"redirect body"
+        b = b"redirect body" + b"p" * int(q.get("pad", "0"))
         extra = [("Location", q["to"])]
         if q.get("cookie"):
             extra.append(("Set-Cookie", "sid=abc; Path=/"))
         return resp(f"{code} {reason}", cl(b, extra), b)
+    if mode == "chain":
+        # /chain/<n>?code=C: a redirect (302 by default) to /chain/<n-1> with the same query, and at 0
+        # what /echo answers
+        n = int(path.strip("/").split("/")[1])
+        if n == 0:
+            return route("echo", method, path, q, headers, body, args, conn, cid)
+        code = int(q.get("code", "302"))
+        u = urllib.parse.urlencode(q)
+        b = b"chain"
+        return resp(f"{code} Redirect", cl(b, [("Location", f"/chain/{n - 1}" + (f"?{u}" if u else ""))]), b)
+    if mode == "bounce":
+        # /bounce/<port>/<rest>?code=C: a redirect (302 by default) to http://127.0.0.1:<port>/<rest>
+        # with the same query
+        parts = path.strip("/").split("/")
+        u = urllib.parse.urlencode(q)
+        loc = f"http://127.0.0.1:{parts[1]}/" + "/".join(parts[2:]) + (f"?{u}" if u else "")
+        b = b"bounce"
+        return resp(f"{int(q.get('code', '302'))} Redirect", cl(b, [("Location", loc)]), b)
+    if mode == "flaky":
+        # /flaky?key=K&code=C&n=N&after=A: the first N requests with key K (over all connections)
+        # are answered with status C (503 by default), with Retry-After: A when given (A=dateS sends
+        # an HTTP-date S seconds after the response's Date); later ones with 200
+        key = q.get("key", "")
+        with LOCK:
+            FLAKY[key] = FLAKY.get(key, 0) + 1
+            k = FLAKY[key]
+        if k <= int(q.get("n", "1")):
+            extra = []
+            after = q.get("after")
+            if after is not None and after.startswith("date"):
+                now = int(time.time())
+                extra = [("Date", email.utils.formatdate(now, usegmt=True)),
+                         ("Retry-After", email.utils.formatdate(now + int(after[4:]), usegmt=True))]
+            elif after is not None:
+                extra = [("Retry-After", after)]
+            b = b"busy" + b"p" * int(q.get("pad", "0"))
+            log(f"conn{cid} flaky {key} request {k}: {q.get('code', '503')}")
+            return resp(f"{q.get('code', '503')} Busy", cl(b, extra), b)
+        b = f"recovered after {k - 1}".encode()
+        return resp("200 OK", cl(b), b)
     if mode == "loop":
         nxt = "/loop/b" if path.endswith("/a") else "/loop/a"
         return resp("302 Found", cl(b"", [("Location", nxt)]))
@@ -279,6 +321,11 @@ def route(mode, method, path, q, headers, body, args, conn, cid):
             conn.settimeout(None)
         conn.sendall(resp("408 Request Timeout", [("Connection", "close"), ("Content-Length", "0")]))
         log(f"conn{cid} sent 408")
+        if q.get("unlisten") == "1":
+            # stop accepting connections, keeping this one: a fresh connect is then refused
+            LISTENER[0].shutdown(socket.SHUT_RDWR)
+            LISTENER[0].close()
+            log("stopped listening")
         time.sleep(int(q.get("linger", "0")) / 1000)
         return "close"
     if mode == "trickle":
@@ -303,6 +350,10 @@ def route(mode, method, path, q, headers, body, args, conn, cid):
     if mode == "cl-mismatch":
         # Content-Length larger than the body, then close
         conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort")
+        return "close"
+    if mode == "badchunk":
+        # a chunk, then a chunk-size line that is not one, all in one write, then close
+        conn.sendall(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\nZZ\r\n")
         return "close"
     if mode == "dup-cl":
         return b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nContent-Length: 3\r\n\r\nok!"
@@ -338,9 +389,15 @@ def main():
         s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
     s.bind((a.host, a.port))
     s.listen(64)
+    LISTENER[0] = s
     log(f"listening on {a.host}:{a.port}")
     while True:
-        c, peer = s.accept()
+        try:
+            c, peer = s.accept()
+        except OSError:
+            # the listening socket was closed (idle-408 with unlisten=1): serve what is open
+            while True:
+                time.sleep(3600)
         c.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         CONN_SEQ[0] += 1
         cid = CONN_SEQ[0]

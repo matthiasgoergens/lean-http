@@ -94,7 +94,7 @@ expect() {
 
 # call_ms <scenario>: the time of the first call, in whole milliseconds.
 call_ms() {
-  sed --quiet 's/^call 0 .* ms=\([0-9]*\)\..*/\1/p' "$out/$1.txt" | head --lines=1
+  sed --quiet 's/^\(stream \)\{0,1\}\(call\|stream\) 0 .* ms=\([0-9]*\)\..*/\3/p' "$out/$1.txt" | head --lines=1
 }
 
 # within <scenario> <lo> <hi> <description>: the first call took between lo and hi ms.
@@ -120,6 +120,35 @@ median_within() {
   fi
 }
 
+# trace_ok <scenario>: net-client replayed every call's steps through the planner (`Call.validate`).
+trace_ok() {
+  if grep --quiet 'trace call .* FAIL' "$out/$1.txt"; then
+    result FAIL "$1" "the client did something the planner did not say: $(grep --max-count=1 'trace call .* FAIL' "$out/$1.txt")"
+  elif grep --quiet 'trace call .* ok' "$out/$1.txt"; then
+    result PASS "$1" "every call's steps replay through the planner"
+  else
+    result FAIL "$1" "no call's steps were checked"
+  fi
+}
+
+# gaps_within <scenario> <slack>: every retry went out no earlier than its delay and at most <slack>
+# ms after it, from the time the planner decided.
+gaps_within() {
+  local line delays gaps ok=1 i
+  line=$(grep --max-count=1 '^trace call 0 retry delays=' "$out/$1.txt")
+  delays=($(echo "$line" | sed 's/.*delays=\[\([^]]*\)\].*/\1/' | tr ',' ' '))
+  gaps=($(echo "$line" | sed 's/.*gaps=\[\([^]]*\)\].*/\1/' | tr ',' ' '))
+  [ ${#delays[@]} -gt 0 ] && [ ${#delays[@]} -eq ${#gaps[@]} ] || ok=0
+  for i in "${!delays[@]}"; do
+    [ "${gaps[$i]}" -ge "${delays[$i]}" ] && [ "${gaps[$i]}" -le $(( ${delays[$i]} + $2 )) ] || ok=0
+  done
+  if [ $ok -eq 1 ]; then
+    result PASS "$1" "each retry waited its delay, at most $2 ms more (delays ${delays[*]}, gaps ${gaps[*]})"
+  else
+    result FAIL "$1" "retry gaps outside [delay, delay + $2]: ${line:-no retries recorded}"
+  fi
+}
+
 EVIL=18080      # evil.py on 127.0.0.1
 EVIL6=18081     # evil.py on ::1
 ONEWRITE=18082  # onewrite.py on 127.0.0.1
@@ -131,6 +160,7 @@ NOREAD=18087    # accepts and never reads
 LARGE=18088     # onewrite.py, for a large POST
 EARLY=18089     # early.py: answers 413 after the head, then reads no more
 # 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
+# 18110-18120: the planner's and the streaming scenarios
 
 # Names for the resolver tests.  getaddrinfo without a socket type returns each of these addresses
 # once per socket type, three times in all.
@@ -252,12 +282,23 @@ fi
 if scenario refused-backoff; then
   "$BIN" backoff 42 > "$out/refused-backoff.schedule.txt" 2>&1
   client refused-backoff call GET "http://127.0.0.1:$CLOSED/" seed=42
-  expect refused-backoff 'call 0 error delivery=not sent .*rounds=3 seed=42 .*could not connect' \
-    "refused three times (two retries); nothing sent"
+  expect refused-backoff 'call 0 error delivery=not sent .*rounds=3 seed=42 .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*could not connect' \
+    "refused three times (two retries by the planner); nothing sent"
   expect refused-backoff 'attempts=\[127\.0\.0\.1:18085#0:failed\([^]]*\), 127\.0\.0\.1:18085#1:failed\([^]]*\), 127\.0\.0\.1:18085#2:failed\([^]]*\)\]' \
-    "one attempt per round"
+    "one connect round per attempt"
   # backoff 42 gives [23, 49]: the call takes at least their sum.
   within refused-backoff 72 400 "at least the 23 + 49 ms of backoff for seed 42"
+  expect refused-backoff '^trace call 0 retry delays=\[23, 49\] ' "the planner's delays are the schedule of seed 42"
+  gaps_within refused-backoff 30
+  trace_ok refused-backoff
+  # With a backoff of up to 1 s and a deadline of 300 ms: seed 5 draws 738 ms for the first retry,
+  # which would reach the deadline, so the call fails at once rather than wait for it.
+  "$BIN" backoff 5 base=1000 cap=1000 n=1 > "$out/refused-deadline.schedule.txt" 2>&1
+  client refused-deadline call GET "http://127.0.0.1:$CLOSED/" seed=5 base=1000 cap=1000 deadline=300
+  expect refused-deadline 'call 0 error delivery=not sent .*rounds=1 .*retries=0 not_retried=LeanHttp.Call.NoRetry.noTime .*could not connect' \
+    "a retry whose backoff would reach the deadline is not made"
+  within refused-deadline 0 100 "the call fails at once, not at the deadline"
+  trace_ok refused-deadline
 fi
 
 if scenario deadline-trickle; then
@@ -281,9 +322,15 @@ if scenario interim-limit; then
 fi
 
 if scenario read-gap; then
-  client read-gap call GET "http://127.0.0.1:$EVIL/stall-head?ms=3000" gap=1000
+  client read-gap call GET "http://127.0.0.1:$EVIL/stall-head?ms=3000" gap=1000 retries=0
   expect read-gap 'call 0 error delivery=maybe delivered .*cause="read timeout"' "a silent server hits the read gap"
   within read-gap 990 1400 "after the 1 s gap"
+  # A GET can be sent again after a read timeout: twice more, after backoffs of at most 100 and
+  # 200 ms.
+  client read-gap-retried call GET "http://127.0.0.1:$EVIL/stall-head?ms=3000" gap=1000
+  expect read-gap-retried 'call 0 error delivery=maybe delivered .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*cause="read timeout"' \
+    "by default the GET is tried three times"
+  within read-gap-retried 2990 3700 "three 1 s gaps and two backoffs"
 fi
 
 if scenario body-limit; then
@@ -544,6 +591,255 @@ if scenario idle-timeout; then
   conns idle-timeout 2 "two connections"
 fi
 
+# --- The per-call planner: redirects and retries.  Ports 18110-18116.
+
+# requests <log> <extended regex>: how many requests in a server log match.
+requests() {
+  grep --count --extended-regexp "$2" "$1"
+}
+
+if scenario redirect-chain; then
+  evil redirect-chain 18110 || exit 1
+  client redirect-chain call GET "http://127.0.0.1:18110/chain/3"
+  expect redirect-chain 'call 0 ok status=200 .*hops=3 retries=0 uri=http://127\.0\.0\.1:18110/chain/0 body_start="GET /chain/0 ' \
+    "three redirects within one origin, then the answer"
+  conns redirect-chain 1 "the redirects and the final request share one connection"
+  logged redirect-chain 'conn1 req4 GET /chain/0 ' "the server saw four requests on it"
+  trace_ok redirect-chain
+fi
+
+if scenario redirect-cross; then
+  evil redirect-cross 18111 || exit 1
+  start redirect-cross other "listening" "$PY" -I "$here/evil.py" --port 18112 || exit 1
+  other=$out/redirect-cross.other.log
+  client redirect-cross call GET "http://127.0.0.1:18111/bounce/18112/echo" auth=Bearer-secret cookie=s1
+  expect redirect-cross 'call 0 ok status=200 .*hops=1 .*uri=http://127\.0\.0\.1:18112/echo body_start="GET /echo auth=None cookie=None ' \
+    "a redirect to another origin is followed"
+  logged redirect-cross "req1 GET /bounce/18112/echo \{'authorization': \['Bearer-secret'\], 'cookie': \['s1'\], " \
+    "the first origin got the Authorization and Cookie fields"
+  if grep --quiet --extended-regexp "req1 GET /echo \{'host': \['127\.0\.0\.1:18112'\], 'connection': \['keep-alive'\]\} body=0B" "$other" &&
+      ! grep --quiet --extended-regexp "authorization|cookie" "$other"; then
+    result PASS redirect-cross "the other origin got neither, and its own Host"
+  else
+    result FAIL redirect-cross "the other origin's server log shows credentials or the wrong Host"
+  fi
+  client redirect-back call GET "http://127.0.0.1:18111/bounce/18112/bounce/18111/echo" auth=Bearer-secret cookie=s1
+  expect redirect-back "call 0 ok status=200 .*hops=2 .*body_start=\"GET /echo auth=\['Bearer-secret'\] cookie" \
+    "a hop back to the first origin gives the credentials back"
+  trace_ok redirect-cross
+  trace_ok redirect-back
+fi
+
+if scenario redirect-303; then
+  evil redirect-303 18113 || exit 1
+  log=$out/redirect-303.evil.log
+  client redirect-303 call POST "http://127.0.0.1:18113/redir/303?to=/echo" body=11
+  expect redirect-303 'call 0 ok status=200 .*hops=1 .*body_start="GET /echo ' "a 303 after a POST is followed"
+  logged redirect-303 "req1 POST /redir/303\?to=/echo .*'content-length': \['11'\]\} body=11B" \
+    "the POST went out with its body"
+  logged redirect-303 "req2 GET /echo \{'host': \['127\.0\.0\.1:18113'\], 'connection': \['keep-alive'\]\} body=0B" \
+    "and the 303 made it a GET, with no body and no Content-Length"
+  client redirect-307 call POST "http://127.0.0.1:18113/redir/307?to=/echo" body=11
+  expect redirect-307 "call 0 ok status=200 .*hops=1 .*body_start=\"POST /echo " "a 307 keeps the POST"
+  logged redirect-303 "req2 POST /echo .*'content-length': \['11'\]\} body=11B" "redirect-307: and its body (the server is redirect-303's)"
+  conns redirect-303 2 "each call sent both of its requests on one connection"
+  # There is no TLS yet: an https target, or a redirect to one, is refused with a clear error.
+  client redirect-https call GET "http://127.0.0.1:18113/redir/302?to=https://127.0.0.1:18113/echo"
+  expect redirect-https 'call 0 error delivery=response received .*hops=1 .*cause="invalid request: cannot follow the redirect to https://127\.0\.0\.1:18113/echo: unsupported scheme https: this client speaks plain HTTP only \(no TLS yet\)"' \
+    "a redirect to https fails the call"
+  client https call GET "https://127.0.0.1:18113/echo"
+  expect https 'call 0 error delivery=not sent .*cause="invalid request: unsupported scheme https: this client speaks plain HTTP only \(no TLS yet\)"' \
+    "an https request is refused before any I/O"
+  conns redirect-303 3 "and the https target got no connection"
+  trace_ok redirect-303
+  trace_ok redirect-307
+  trace_ok redirect-https
+fi
+
+if scenario redirect-limit; then
+  evil redirect-limit 18114 || exit 1
+  log=$out/redirect-limit.evil.log
+  client redirect-limit call GET "http://127.0.0.1:18114/infinite-redirect"
+  expect redirect-limit 'call 0 error delivery=response received .*hops=10 .*status=\(some 302\) cause="more than 10 redirects"' \
+    "an eleventh redirect fails the call"
+  n=$(requests "$log" ' req[0-9]+ GET /infinite-redirect')
+  if [ "$n" -eq 11 ]; then
+    result PASS redirect-limit "the server saw the request and the ten redirects followed: $n"
+  else
+    result FAIL redirect-limit "the server saw $n requests, expected 11"
+  fi
+  client redirect-limit-3 call GET "http://127.0.0.1:18114/infinite-redirect" maxredirects=3
+  expect redirect-limit-3 'call 0 error .*hops=3 .*cause="more than 3 redirects"' "with maxRedirects 3, a fourth fails"
+  client redirect-off call GET "http://127.0.0.1:18114/infinite-redirect" follow=0
+  expect redirect-off 'call 0 ok status=302 .*hops=0 ' "with redirects off, the 302 is delivered"
+  conns redirect-limit 3 "one connection per call"
+  trace_ok redirect-limit
+  trace_ok redirect-limit-3
+  trace_ok redirect-off
+fi
+
+if scenario retry-after; then
+  evil retry-after 18115 || exit 1
+  log=$out/retry-after.evil.log
+  client retry-503 call GET "http://127.0.0.1:18115/flaky?key=a&after=1" retry503=1
+  expect retry-503 'call 0 ok status=200 .*retries=1 .*body_start="recovered after 1"' \
+    "a 503 with Retry-After: 1 is retried when asked for"
+  within retry-503 1000 1500 "after the 1 s it asked for"
+  client retry-503-off call GET "http://127.0.0.1:18115/flaky?key=b&after=1"
+  expect retry-503-off 'call 0 ok status=503 .*retries=0 ' "and delivered when not"
+  client retry-429-date call GET "http://127.0.0.1:18115/flaky?key=c&code=429&after=date2" retry429=1
+  expect retry-429-date 'call 0 ok status=200 .*retries=1 ' "a 429 with a Retry-After date is retried"
+  within retry-429-date 1990 2600 "2 s after the response's Date"
+  client retry-503-long call GET "http://127.0.0.1:18115/flaky?key=d&after=120" retry503=1
+  expect retry-503-long 'call 0 ok status=503 .*retries=0 ' "a Retry-After over the 60 s limit is delivered"
+  within retry-503-long 0 500 "at once"
+  client retry-503-backoff call GET "http://127.0.0.1:18115/flaky?key=e&n=2" retry503=1 seed=42
+  expect retry-503-backoff 'call 0 ok status=200 .*retries=2 .*body_start="recovered after 2"' \
+    "without a Retry-After, the backoff"
+  expect retry-503-backoff '^trace call 0 retry delays=\[23, 49\] ' "of seed 42"
+  gaps_within retry-503-backoff 30
+  client retry-503-post call POST "http://127.0.0.1:18115/flaky?key=f&after=1" body=5 retry503=1
+  expect retry-503-post 'call 0 ok status=503 .*retries=0 ' "a POST is not sent again after a 503"
+  n=$(requests "$log" ' POST /flaky\?key=f')
+  [ "$n" -eq 1 ] && result PASS retry-503-post "the server saw the POST once" || result FAIL retry-503-post "the server saw the POST $n times"
+  for s in retry-503 retry-503-off retry-429-date retry-503-long retry-503-backoff retry-503-post; do trace_ok $s; done
+fi
+
+if scenario no-resend; then
+  evil no-resend 18116 || exit 1
+  log=$out/no-resend.evil.log
+  # The server reads the request and resets the connection: it may have acted on it.
+  client no-resend-post call POST "http://127.0.0.1:18116/rst" body=5
+  expect no-resend-post 'call 0 error delivery=maybe delivered .*retries=0 not_retried=LeanHttp.Call.NoRetry.delivered ' \
+    "a POST that may have been delivered is not sent again"
+  n=$(requests "$log" ' POST /rst ')
+  [ "$n" -eq 1 ] && result PASS no-resend-post "the server saw it once" || result FAIL no-resend-post "the server saw it $n times"
+  client no-resend-get call GET "http://127.0.0.1:18116/rst"
+  expect no-resend-get 'call 0 error delivery=maybe delivered .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit ' \
+    "a GET is sent again, twice"
+  n=$(requests "$log" ' GET /rst ')
+  [ "$n" -eq 3 ] && result PASS no-resend-get "the server saw it three times" || result FAIL no-resend-get "the server saw it $n times"
+  trace_ok no-resend-post
+  trace_ok no-resend-get
+fi
+
+if scenario drain-limit; then
+  # A redirect or retried response whose body is longer than the drain limit costs its connection.
+  evil drain-limit 18120 || exit 1
+  client drain-redirect call GET "http://127.0.0.1:18120/redir/302?to=/echo&pad=200000"
+  expect drain-redirect 'call 0 ok status=200 .*hops=1 .*body_start="GET /echo ' "a redirect with a 200 KB body is followed"
+  client drain-retry call GET "http://127.0.0.1:18120/flaky?key=g&after=0&pad=200000" retry503=1
+  expect drain-retry 'call 0 ok status=200 .*retries=1 ' "a 503 with a 200 KB body is retried"
+  conns drain-limit 4 "each call needed a second connection: the long bodies were not drained"
+  trace_ok drain-redirect
+  trace_ok drain-retry
+fi
+
+if scenario redispatch-408; then
+  # A POST answered on its reused connection by a 408 the server sent while it was idle (no idle
+  # check), sent again on a fresh connection, which is refused (the server stopped listening after
+  # the 408): the call's error must not say not sent, since the first request was written.
+  evil redispatch-408 18119 || exit 1
+  client redispatch-408 call POST "http://127.0.0.1:18119/idle-408?ms=100&linger=5000&unlisten=1" body=5 repeat=2 pause=400 idlecheck=off retries=0
+  expect redispatch-408 'call 1 error delivery=maybe delivered .*redispatched=true .*could not connect' \
+    "the re-dispatched POST is refused, and the error says maybe delivered"
+  logged redispatch-408 'stopped listening' "the server stopped listening after its 408"
+  trace_ok redispatch-408
+fi
+
+# --- Streaming (`Client.withResponse`).  Ports 18117-18118.
+
+# rss_kb <scenario>: the peak resident memory net-client reported, in kB.
+rss_kb() {
+  sed --quiet 's/^rss_peak_kb=\([0-9]*\) .*/\1/p' "$out/$1.txt"
+}
+
+if scenario stream-big; then
+  evil stream-big 18117 || exit 1
+  client stream-big stream GET "http://127.0.0.1:18117/bigbody?n=200000000" pull=4096
+  expect stream-big 'stream 0 ok status=200 read=200000000 .* max_pull=4096 ' "a 200 MB body read in pulls of 4 KiB"
+  rss=$(rss_kb stream-big)
+  if [ -n "$rss" ] && [ "$rss" -lt 102400 ]; then
+    result PASS stream-big "peak resident memory ${rss} kB, under 100 MB"
+  else
+    result FAIL stream-big "peak resident memory ${rss:-?} kB, expected under 100 MB"
+  fi
+  # The control: the same body read whole is held in memory, which the measurement must see.
+  client stream-big-whole stream GET "http://127.0.0.1:18117/bigbody?n=200000000" whole=1 maxbody=300000000
+  expect stream-big-whole 'call 0 ok status=200 bytes=200000000 ' "the control reads the body whole"
+  rss=$(rss_kb stream-big-whole)
+  if [ -n "$rss" ] && [ "$rss" -gt 200000 ]; then
+    result PASS stream-big-whole "control: read whole, peak resident memory ${rss} kB"
+  else
+    result FAIL stream-big-whole "control: peak resident memory ${rss:-?} kB; the measurement cannot see the body"
+  fi
+  trace_ok stream-big
+fi
+
+if scenario stream-abandon; then
+  evil stream-abandon 18118 || exit 1
+  # Leaving the callback after the first read of a 10 MB body: too much to drain, so the connection
+  # is closed, and the next call opens another.
+  client stream-abandon stream GET "http://127.0.0.1:18118/bigbody?n=10000000" stop=1 repeat=2
+  expect stream-abandon 'stream 0 ok status=200 read=[0-9]+ .*conn=\(some 0\) reused=false ' "the first call reads one piece and leaves"
+  expect stream-abandon '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  expect stream-abandon 'stream 1 ok status=200 .*conn=\(some 1\) reused=false ' "the next call opens a new one"
+  logged stream-abandon 'conn1 (bigbody send failed|EOF from client)' "the server sees the first connection closed"
+  # A body of 10 bytes whose last 7 come 30 ms after the first 3: leaving after the first read, the
+  # rest is drained within the 100 ms drain limit, and the connection reused.
+  client stream-drain stream GET "http://127.0.0.1:18118/stall-body?ms=30" stop=1 repeat=2
+  expect stream-drain 'stream 0 ok status=200 read=3 ' "the first call reads the first 3 bytes and leaves"
+  expect stream-drain '^after stream 0: pool idle=1 checked_out=0 allocated=1$' "the rest is drained and the connection kept"
+  expect stream-drain 'stream 1 ok status=200 read=3 .*conn=\(some 0\) reused=true ' "and reused"
+  # When the rest comes 400 ms later, past the drain limit, the connection is closed.
+  client stream-drain-late stream GET "http://127.0.0.1:18118/stall-body?ms=400" stop=1 repeat=2
+  expect stream-drain-late '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "a rest that comes too late: the connection is closed"
+  expect stream-drain-late 'stream 1 ok status=200 read=3 .*conn=\(some 1\) reused=false ' "and the next call opens another"
+  within stream-drain-late 0 300 "leaving waited no more than the drain limit"
+  # A body that arrived in full with the head, longer than the drain limit, left without a read:
+  # nothing remains on the connection, which is kept.
+  client stream-unread-big stream GET "http://127.0.0.1:18118/unread-body?n=30000" stop=0 drainbytes=1000 repeat=2
+  expect stream-unread-big 'stream 1 ok status=200 read=0 .*conn=\(some 0\) reused=true ' "a body that has arrived in full keeps the connection, whatever the drain limit"
+  # A body already read in full but left unread by the caller keeps the connection.
+  client stream-unread stream GET "http://127.0.0.1:18118/unread-body?n=20000" stop=1 pull=1000 repeat=2
+  expect stream-unread 'stream 1 ok status=200 read=1000 .*conn=\(some 0\) reused=true ' "a body read in full and left unread keeps the connection"
+  # An exception inside the callback releases the connection the same way, and goes on.
+  client stream-throw stream GET "http://127.0.0.1:18118/stall-body?ms=30" stop=1 throw=1
+  expect stream-throw 'stream 0 threw "thrown inside the callback"' "the callback's exception reaches the caller"
+  expect stream-throw '^after stream 0: pool idle=1 checked_out=0 allocated=1$' "after the connection was drained and kept"
+  client stream-throw-big stream GET "http://127.0.0.1:18118/bigbody?n=10000000" stop=1 throw=1
+  expect stream-throw-big '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "or closed"
+  # The stream refuses to be used after the callback.
+  client stream-escape stream GET "http://127.0.0.1:18118/ok" stop=0 escape=1
+  expect stream-escape 'after the callback: read raised ".*used after the callback of Client.withResponse ended"' \
+    "a read after the callback raises an error"
+  # An error while the body is read is the call's error.
+  client stream-error stream GET "http://127.0.0.1:18118/cl-mismatch"
+  expect stream-error 'stream call 0 error delivery=response received .*status=\(some 200\) cause="the connection closed before a complete response"' \
+    "a body cut short is the call's error, with the status"
+  # Body bytes that arrive with the head, before a malformed chunk in the same read, are read first.
+  client stream-badchunk stream GET "http://127.0.0.1:18118/badchunk"
+  expect stream-badchunk 'stream call 0 error delivery=response received .*status=\(some 200\) cause="invalid response: Bad message" .* read_before=5$' \
+    "the five bytes before the malformed chunk are read, then the error"
+  # Redirects are followed before the callback: it sees only the final response.
+  client stream-redirect stream GET "http://127.0.0.1:18118/chain/2"
+  expect stream-redirect 'stream 0 ok status=200 read=[0-9]+ .*hops=2 ' "the callback gets the response after two redirects"
+  # A read in progress in another task when the callback ends: its receive is cancelled, the
+  # callback's end waits for it, and the connection is released before withResponse returns.
+  client stream-race stream GET "http://127.0.0.1:18118/trickle?ms=500" race=100 pull=1
+  expect stream-race 'stream 0 ok status=200 read=0 ' "the callback leaves while the other task reads"
+  expect stream-race '^when withResponse returned: pool checked_out=0$' "the connection was released first"
+  expect stream-race 'the racing reader raised ".*used after the callback of Client.withResponse ended"' \
+    "and the other task's read fails"
+  within stream-race 90 400 "without waiting for the next byte of the body"
+  # The call's deadline covers reading the body.
+  client stream-deadline stream GET "http://127.0.0.1:18118/trickle?ms=100" deadline=1000 pull=1
+  expect stream-deadline 'stream call 0 error delivery=response received .*status=\(some 200\) cause="deadline timeout"' \
+    "a body still coming at the deadline fails the call"
+  within stream-deadline 990 1400 "at the 1 s deadline"
+  for s in stream-abandon stream-drain stream-drain-late stream-unread-big stream-unread stream-throw stream-throw-big stream-escape stream-error stream-badchunk stream-redirect stream-race stream-deadline; do trace_ok $s; done
+fi
+
 # Last, because it points the resolver at a name server that never answers.
 if scenario dns-timeout; then
   cp /etc/resolv.conf /tmp/resolv.conf.saved 2>/dev/null || : > /tmp/resolv.conf.saved
@@ -558,6 +854,13 @@ if scenario dns-timeout; then
 fi
 
 cleanup
+# Every call of every scenario had its steps checked against the planner.
+bad=$(grep --files-with-matches 'trace call .* FAIL' "$out"/*.txt 2>/dev/null | xargs --no-run-if-empty --max-args=1 basename | tr '\n' ' ')
+if [ -n "$bad" ]; then
+  result FAIL traces "calls whose steps the planner does not replay, in: $bad"
+else
+  result PASS traces "every call's steps replay through the planner ($(cat "$out"/*.txt | grep --count 'trace call .* ok') calls)"
+fi
 # A name that matches no scenario, or a run with no checks at all, must not pass silently.
 for s in "${selected[@]}"; do
   case " ${matched[*]} " in *" $s "*) ;; *) echo "FAIL $s: no such scenario" | tee --append "$out/summary.txt"; fails=$((fails + 1)) ;; esac

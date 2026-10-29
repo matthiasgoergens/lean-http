@@ -14,9 +14,23 @@ net-client call <METHOD> <URL> [key=value ...]
   pause=MS       wait between calls (default 0)
   concurrent=N   make N calls at once through the one client, repeat times (default 1)
   close=1        close the client after the calls
-  deadline=MS gap=MS connect=MS stagger=MS retries=N maxbody=N interim=N seed=N nodelay=0|1
-  pool=0|1 idlecheck=MS|off maxidle=N idletimeout=MS maxactive=N
+  deadline=MS gap=MS connect=MS stagger=MS retries=N budget=N base=MS cap=MS maxbody=N interim=N
+  seed=N nodelay=0|1 pool=0|1 idlecheck=MS|off maxidle=N idletimeout=MS maxactive=N
+  follow=0|1 maxredirects=N retry429=0|1 retry503=0|1 maxretryafter=MS drainbytes=N drainms=MS
+  auth=VALUE cookie=VALUE   send an Authorization or Cookie field
+  trace=0        do not check each call's steps against the planner (default: check, `Call.validate`)
+  showtrace=1    print each call's steps
   linger=MS      after the calls, wait and count open descriptors again
+net-client stream <METHOD> <URL> [key=value ...]
+  Calls `Client.withResponse` and reads the body in pulls; the options of `call`, and
+  pull=N          bytes asked for in each read (default 65536)
+  stop=N          leave the callback once N bytes were read (default: read to the end)
+  throw=1         raise an exception inside the callback, after reading
+  escape=1        keep the stream, and read from it after the callback ended
+  race=MS         start a task that reads the stream, and leave the callback MS ms later while
+                  that read is in progress
+  whole=1         a control: `Client.request`, which reads the whole body into memory
+  Prints the peak resident memory of the process at the end.
 net-client idlecheck <PORT> [key=value ...]
   Measures `Client.idleClean` on fresh connections to tests/net/idle.py, after it sent bytes, closed
   or reset the connection, or did nothing (scenario=data|fin|rst|none).
@@ -61,7 +75,7 @@ def configOf (kv : List (String × String)) : Config :=
     readGapMs := getNat kv "gap" d.readGapMs
     connectTimeoutMs := getNat kv "connect" d.connectTimeoutMs
     connectStaggerMs := getNat kv "stagger" d.connectStaggerMs
-    maxConnectRetries := getNat kv "retries" d.maxConnectRetries
+    maxRetriesPerHop := getNat kv "retries" d.maxRetriesPerHop
     maxBodyBytes := getNat kv "maxbody" d.maxBodyBytes
     maxInterimResponses := getNat kv "interim" d.maxInterimResponses
     backoffSeed := (kv.lookup "seed" >>= String.toNat?).map (·.toUInt64)
@@ -71,7 +85,53 @@ def configOf (kv : List (String × String)) : Config :=
     idleCheckMs := getNat kv "idlecheck" d.idleCheckMs
     maxIdlePerOrigin := getNat kv "maxidle" d.maxIdlePerOrigin
     idleTimeoutMs := getNat kv "idletimeout" d.idleTimeoutMs
-    maxActivePerOrigin := kv.lookup "maxactive" >>= String.toNat? }
+    maxActivePerOrigin := kv.lookup "maxactive" >>= String.toNat?
+    retryBudget := getNat kv "budget" d.retryBudget
+    backoffBaseMs := getNat kv "base" d.backoffBaseMs
+    backoffCapMs := getNat kv "cap" d.backoffCapMs
+    followRedirects := getNat kv "follow" 1 == 1
+    maxRedirects := getNat kv "maxredirects" d.maxRedirects
+    retry429 := getNat kv "retry429" 0 == 1
+    retry503 := getNat kv "retry503" 0 == 1
+    maxRetryAfterMs := getNat kv "maxretryafter" d.maxRetryAfterMs
+    drainBytes := getNat kv "drainbytes" d.drainBytes
+    drainMs := getNat kv "drainms" d.drainMs }
+
+/-- The steps of every call, by call number, as `Config.observe` reports them. -/
+abbrev Traces := IO.Ref (Std.HashMap Nat (Array Call.Event))
+
+/-- `config` with an observer that records every call's steps in `traces`, unless `trace=0`. -/
+def withTraces (config : Config) (kv : List (String × String)) (traces : Traces) : Config :=
+  if getNat kv "trace" 1 == 0 then config
+  else { config with observe := some fun n e => traces.modify fun m => m.insert n ((m.getD n #[]).push e) }
+
+/--
+Checks every recorded call against the planner (`Call.validate`) and prints the result, the
+delays of its retries as the planner gave them and the gaps the client left before sending again.
+-/
+def reportTraces (kv : List (String × String)) (traces : Traces) : IO Unit := do
+  let m ← traces.get
+  for n in (m.toList.map (·.1)).mergeSort do
+    let events := m.getD n #[]
+    if getNat kv "showtrace" 0 == 1 then
+      for e in events do IO.println s!"trace call {n}: {e.describe}"
+    match Call.validate events with
+    | .ok steps => IO.println s!"trace call {n} ok steps={steps}"
+    | .error msg => IO.println s!"trace call {n} FAIL {msg}"
+    -- Each retry decision with the time the next request went out.
+    let mut delays := #[]
+    let mut gaps := #[]
+    for h : i in [0:events.size] do
+      if let .decide clock _ (.retry delay _) := events[i] then
+        -- The retry's request is the next send, after the wait.
+        let next := (events.extract (i + 1) events.size).findSome? fun
+          | .send _ _ _ _ time => some time
+          | _ => none
+        if let some time := next then
+          delays := delays.push delay
+          gaps := gaps.push (time - clock.now)
+    if !delays.isEmpty then
+      IO.println s!"trace call {n} retry delays={delays.toList} gaps={gaps.toList}"
 
 def attemptsText (attempts : Array ConnectAttempt) : String :=
   let parts := attempts.toList.map fun a =>
@@ -102,7 +162,8 @@ def describeCall (i : Nat) (ns : Nat) (result : Except Error (Response ByteArray
       | some i =>
         s!"rounds={i.connectRounds} address={i.address} seed={i.seed} " ++
           s!"failed_attempts={attemptsText i.failedAttempts} conn={i.connection} reused={i.reused} " ++
-          s!"discarded={i.discarded} check_us={i.idleCheckUs} redispatched={i.redispatched}"
+          s!"discarded={i.discarded} check_us={i.idleCheckUs} redispatched={i.redispatched} " ++
+          s!"hops={i.hops} retries={i.retries} uri={i.uri}"
       | none => "no CallInfo"
     let preview := (String.fromUTF8? (resp.body.extract 0 40)).getD "<binary>"
     s!"call {i} ok status={resp.line.status.toCode} bytes={resp.body.size} ms={fmtMs ns} " ++
@@ -113,26 +174,38 @@ def describeCall (i : Nat) (ns : Nat) (result : Except Error (Response ByteArray
       | _ => ""
     s!"call {i} error delivery={err.delivery.name} ms={fmtMs ns} rounds={err.connectRounds} " ++
       s!"seed={err.seed} reused={err.reused} redispatched={err.redispatched} " ++
+      s!"hops={err.hops} retries={err.retries} not_retried={(err.notRetried.map reprStr).getD "none"} " ++
       s!"status={err.status.map Status.toCode} cause={repr err.cause.describe} " ++
       s!"detail={repr err.detail}{attempts}"
+
+/-- The request a `call` or `stream` command describes: method, URL, body and fields. -/
+def requestOf (methodName url : String) (kv : List (String × String)) : IO (Request ByteArray) := do
+  let some method := parseMethod methodName
+    | throw (.userError s!"unknown method {methodName}")
+  let some uri := URI.parse? url
+    | throw (.userError s!"cannot parse {url}")
+  let body := ByteArray.mk (Array.replicate (getNat kv "body" 0) 'x'.toUInt8)
+  let field (name : Header.Name) (key : String) (headers : Headers) : IO Headers :=
+    match kv.lookup key with
+    | none => pure headers
+    | some v => match Header.Value.ofString? v with
+      | some value => pure (headers.insert name value)
+      | none => throw (.userError s!"not a field value: {v}")
+  let headers ← field Header.Name.authorization "auth" .empty >>= field Header.Name.cookie "cookie"
+  return { line := { method, version := .v11, uri := .absoluteForm uri, headers }, body }
 
 def runCalls (args : List String) : IO Unit := do
   let (methodName, url, rest) ← match args with
     | m :: u :: rest => pure (m, u, rest)
     | _ => throw (.userError "usage: net-client call <METHOD> <URL> [key=value ...]")
-  let some method := parseMethod methodName
-    | throw (.userError s!"unknown method {methodName}")
-  let some uri := URI.parse? url
-    | throw (.userError s!"cannot parse {url}")
   let kv := parseKV rest
-  let config := configOf kv
-  let body := ByteArray.mk (Array.replicate (getNat kv "body" 0) 'x'.toUInt8)
+  let req ← requestOf methodName url kv
+  let traces : Traces ← IO.mkRef {}
+  let config := withTraces (configOf kv) kv traces
   let client ← Client.new config
   let n := getNat kv "repeat" 1
   let pause := getNat kv "pause" 0
   let concurrent := getNat kv "concurrent" 1
-  let req : Request ByteArray :=
-    { line := { method, version := .v11, uri := .absoluteForm uri }, body }
   let mut times := #[]
   let mut checks := #[]
   let mut oks := 0
@@ -178,6 +251,7 @@ def runCalls (args : List String) : IO Unit := do
     IO.println (summary "idle checks of reused connections" checks)
   let stats ← client.stats
   IO.println s!"pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
+  reportTraces kv traces
   if getNat kv "close" 0 == 1 then
     client.close
     let stats ← client.stats
@@ -191,6 +265,100 @@ def runCalls (args : List String) : IO Unit := do
   if linger > 0 then
     IO.sleep linger.toUInt32
     IO.println s!"fds_after_linger_{linger}ms={← openFds}"
+
+/-- A field of `/proc/self/status`, in kB, or 0. -/
+def procStatusKb (field : String) : IO Nat := do
+  let text ← IO.FS.readFile "/proc/self/status"
+  let line := (text.splitOn "\n").find? (·.startsWith s!"{field}:")
+  return (line.bind fun l => ((l.drop (field.length + 1)).trimAscii.toString.splitOn " ").head?.bind
+    String.toNat?).getD 0
+
+/-- What the callback of one streamed call saw. -/
+structure Streamed where
+  status : Status
+  read : Nat
+  pulls : Nat
+  maxPull : Nat
+  info : Option CallInfo
+
+/--
+Reads `body` in pulls of `pull` bytes until its end or until `stop` bytes were read, counting the
+bytes read in `count` too, so that they are known if a read raises.
+-/
+partial def pullLoop (body : BodyStream) (pull : Nat) (stop : Option Nat) (count : IO.Ref Nat)
+    (read pulls maxPull : Nat) : Async (Nat × Nat × Nat) := do
+  if stop.any (read ≥ ·) then return (read, pulls, maxPull)
+  match ← body.read pull with
+  | none => return (read, pulls, maxPull)
+  | some bytes =>
+    count.set (read + bytes.size)
+    pullLoop body pull stop count (read + bytes.size) (pulls + 1) (max maxPull bytes.size)
+
+def runStream (args : List String) : IO Unit := do
+  let (methodName, url, rest) ← match args with
+    | m :: u :: rest => pure (m, u, rest)
+    | _ => throw (.userError "usage: net-client stream <METHOD> <URL> [key=value ...]")
+  let kv := parseKV rest
+  let req ← requestOf methodName url kv
+  let traces : Traces ← IO.mkRef {}
+  let client ← Client.new (withTraces (configOf kv) kv traces)
+  let pull := getNat kv "pull" 65536
+  let stop := kv.lookup "stop" >>= String.toNat?
+  let throwIt := getNat kv "throw" 0 == 1
+  let escape := getNat kv "escape" 0 == 1
+  for i in [0:getNat kv "repeat" 1] do
+    if i > 0 then IO.sleep (getNat kv "pause" 0).toUInt32
+    let t0 ← IO.monoNanosNow
+    if getNat kv "whole" 0 == 1 then
+      let result ← (client.request req).block
+      IO.println (describeCall i ((← IO.monoNanosNow) - t0) result)
+      continue
+    let kept : IO.Ref (Option BodyStream) ← IO.mkRef none
+    let count : IO.Ref Nat ← IO.mkRef 0
+    let racer : IO.Ref (Option (AsyncTask (Nat × Nat × Nat))) ← IO.mkRef none
+    let result ← try
+        pure (some (← (client.withResponse req fun resp => do
+          if let some ms := kv.lookup "race" >>= String.toNat? then
+            racer.set (some (← start (pullLoop resp.body pull none (← IO.mkRef 0) 0 0 0)))
+            Std.Async.sleep (.ofNat ms)
+            return ({
+              status := resp.line.status, read := 0, pulls := 0, maxPull := 0,
+              info := resp.extensions.get CallInfo } : Streamed)
+          let (read, pulls, maxPull) ← pullLoop resp.body pull stop count 0 0 0
+          if escape then kept.set (some resp.body)
+          if throwIt then throw (IO.userError "thrown inside the callback")
+          return ({
+            status := resp.line.status, read, pulls, maxPull,
+            info := resp.extensions.get CallInfo } : Streamed)).block))
+      catch e =>
+        IO.println s!"stream {i} threw {repr (toString e)} ms={fmtMs ((← IO.monoNanosNow) - t0)}"
+        pure none
+    let ns := (← IO.monoNanosNow) - t0
+    match result with
+    | some (.ok r) =>
+      let infoText := match r.info with
+        | some info => s!"conn={info.connection} reused={info.reused} hops={info.hops} " ++
+            s!"retries={info.retries} uri={info.uri}"
+        | none => "no CallInfo"
+      IO.println s!"stream {i} ok status={r.status.toCode} read={r.read} pulls={r.pulls} max_pull={r.maxPull} ms={fmtMs ns} {infoText}"
+    | some (.error err) =>
+      IO.println s!"stream {describeCall i ns (.error err)} read_before={← count.get}"
+    | none => pure ()
+    if let some task ← racer.get then
+      let stats ← client.stats
+      IO.println s!"when withResponse returned: pool checked_out={stats.checkedOut}"
+      match ← IO.wait task with
+      | .ok (read, _, _) => IO.println s!"the racing reader ended after {read} bytes"
+      | .error e => IO.println s!"the racing reader raised {repr (toString e)}"
+    if let some body ← kept.get then
+      try
+        let r ← (body.read pull).block
+        IO.println s!"after the callback: read returned {(r.map (·.size))}"
+      catch e => IO.println s!"after the callback: read raised {repr (toString e)}"
+    let stats ← client.stats
+    IO.println s!"after stream {i}: pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
+  reportTraces kv traces
+  IO.println s!"rss_peak_kb={← procStatusKb "VmHWM"} rss_kb={← procStatusKb "VmRSS"}"
 
 /--
 Measures the idle check on `n` fresh connections to `tests/net/idle.py`: each sends `ping`, reads
@@ -269,16 +437,17 @@ def main (args : List String) : IO UInt32 := do
   let start ← IO.monoNanosNow
   match args with
   | "call" :: rest => runCalls rest
+  | "stream" :: rest => runStream rest
   | "rawpost" :: port :: rest => rawPost port.toNat!.toUInt16 (parseKV rest)
   | "idlecheck" :: port :: rest => idleCheck port.toNat!.toUInt16 (parseKV rest)
   | "backoff" :: seed :: rest =>
     let kv := parseKV rest
     let d : Config := {}
     let s := Backoff.schedule (getNat kv "base" d.backoffBaseMs) (getNat kv "cap" d.backoffCapMs)
-      seed.toNat!.toUInt64 (getNat kv "n" d.maxConnectRetries)
+      seed.toNat!.toUInt64 (getNat kv "n" d.maxRetriesPerHop)
     IO.println s!"backoff seed={seed} schedule={s}"
   | _ =>
-    IO.eprintln "usage: net-client call|rawpost|idlecheck|backoff ..."
+    IO.eprintln "usage: net-client call|stream|rawpost|idlecheck|backoff ..."
     return 2
   let now ← IO.monoNanosNow
   IO.println s!"main returning at ms={fmtMs (now - start)}"

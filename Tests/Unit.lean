@@ -5,7 +5,9 @@ import Tests.Support.Drive
 # Unit tests
 
 Pure parts of the client: the backoff schedule, address ordering and de-duplication, request
-planning, error classification, the pool's settings and when a call is sent again.  Prints one line per check and exits with status 1 if any
+planning, error classification, the pool's settings, when an exchange is sent again, the check of
+a call's steps against the planner (with mutated traces as positive controls) and how the body
+stream hands out what it holds.  Prints one line per check and exits with status 1 if any
 failed.
 -/
 
@@ -204,7 +206,7 @@ def poolChecks : Checks Unit := do
   check "a cap of one is accepted" (Client.checkConfig { d with maxActivePerOrigin := some 1 } matches .ok ())
   let head (status : Status) : Response.Head := { status }
   let response (status : Status) (interim : Nat := 0) : Client.Ended :=
-    .response (head status) .empty false interim
+    .response (head status) interim
   let failure (cause : Cause) (delivery : Delivery) (received : Bool := false) : Client.Ended :=
     .failure { cause, delivery, written := 0 } received
   let r := fun (m : Method) (e : Client.Ended) => Client.redispatch? m e
@@ -228,9 +230,176 @@ def poolChecks : Checks Unit := do
     none
   checkEq "an invalid response is not" (r .get (failure (.protocol "x") .maybeDelivered)) none
 
+/-! ## Checking what the client did against the planner -/
+
+/-- Whether `validate` rejects a trace. -/
+def rejects (events : Array Call.Event) : Bool :=
+  Call.validate events matches .error _
+
+def traceChecks : Checks Unit := do
+  let uriA := (URI.parse? "http://127.0.0.1:1/a").get!
+  let headA : Request.Head := { method := .get, version := .v11, uri := .absoluteForm uriA }
+  let policy : Call.Policy := {}
+  let seed : UInt64 := 42
+  let deadline := 10000
+  let some st0 := (Call.start policy headA .none seed deadline).toOption
+    | check "the planner starts a GET" false
+  let redirect : Response.Head :=
+    { status := .found, headers := Headers.empty.insert Header.Name.location (.mk "/b") }
+  let ok : Response.Head := { status := .ok }
+  let refused : Failure := { cause := .connect #[], delivery := .notSent, written := 0 }
+  -- What the client writes for a hop's request: the origin and the encoded head.
+  let send (hop : Call.Hop) (time : Nat) : Call.Event :=
+    match Call.expectedWire hop 0 true with
+    | .ok (target, wire) => .send hop.head target wire 0 time
+    | .error _ => .send hop.head "" .empty 0 time
+  -- A call that is refused once, retried, redirected, and answered.
+  let c1 : Call.Clock := { now := 100, wallSec := 1700000000 }
+  let (st1, s1) := Call.plan st0 c1 (.failure refused)
+  let delay := match s1 with
+    | .retry d _ => d
+    | _ => 0
+  check "the planner retries a refused connect" (s1 matches .retry _ .backoff)
+  let c2 : Call.Clock := { now := 100 + delay + 5, wallSec := 1700000000 }
+  let (st2, s2) := Call.plan st1 c2 (.response redirect)
+  check "and follows the redirect" (s2 matches .follow _)
+  let c3 : Call.Clock := { now := c2.now + 10, wallSec := 1700000000 }
+  let (_, s3) := Call.plan st2 c3 (.response ok)
+  check "and delivers the answer" (s3 matches .deliver)
+  let good : Array Call.Event := #[
+    .start policy headA .none 0 seed deadline true, send st0.current 10,
+    .decide c1 (.failure refused) s1, .wait (100 + delay), send st1.current (100 + delay),
+    .decide c2 (.response redirect) s2, send st2.current (c2.now + 1), .decide c3 (.response ok) s3,
+    .deliver]
+  checkEq "a faithful trace replays, three steps" (Call.validate good).toOption (some 3)
+  check "the retry delay of seed 42 is positive, so sending early can be seen" (delay > 0)
+  check "a retry sent before its delay is caught" (rejects (good.set! 4 (send st1.current (100 + delay - 1))))
+  check "a wait shorter than the delay is caught" (rejects (good.set! 3 (.wait (100 + delay - 1))))
+  check "a retry without its wait is caught" (rejects (good.eraseIdx! 3))
+  check "the old request sent after a redirect is caught" (rejects (good.set! 6 (send st0.current (c2.now + 1))))
+  check "a request sent with a body the hop does not carry is caught"
+    (rejects (good.set! 6 (.send st2.current.head "127.0.0.1:1" .empty 7 (c2.now + 1))))
+  let wrongWire := match good[6]! with
+    | .send h t w n time => Call.Event.send h t (w.push 32) n time
+    | e => e
+  check "a head written differently from the request's is caught" (rejects (good.set! 6 wrongWire))
+  let wrongTarget := match good[6]! with
+    | .send h _ w n time => Call.Event.send h "127.0.0.1:2" w n time
+    | e => e
+  check "a connection to another origin is caught" (rejects (good.set! 6 wrongTarget))
+  check "a step the planner did not take is caught" (rejects (good.set! 7 (.decide c3 (.response ok) s2)))
+  check "a decision that misreports the outcome is caught"
+    (rejects (good.set! 7 (.decide c3 (.failure refused) s3)))
+  check "a decision before the request went out is caught"
+    (rejects (good.set! 7 (.decide { c3 with now := c2.now } (.response ok) s3)))
+  check "a trace that stops before the delivery is caught" (rejects good.pop)
+  check "anything after the delivery is caught" (rejects (good.push .deliver))
+  check "a trace without its start is caught" (rejects (good.extract 1 good.size))
+  -- Re-dispatch: an exchange on a reused connection sent again on a fresh one.
+  let closedFirst : Client.Ended :=
+    .failure { cause := .peerClosed, delivery := .maybeDelivered, written := 30 } false
+  let withRedispatch := (good.extract 0 7).push (.redispatch true closedFirst .closedBeforeResponse)
+    |>.append (good.extract 7 good.size)
+  checkEq "a re-dispatch redispatch? allows replays" (Call.validate withRedispatch).toOption (some 3)
+  check "a re-dispatch of an exchange on a fresh connection is caught"
+    (rejects ((good.extract 0 7).push (.redispatch false closedFirst .closedBeforeResponse)
+      |>.append (good.extract 7 good.size)))
+  let postHead : Request.Head := { headA with method := .post }
+  let some sPost := (Call.start policy postHead .bytes seed deadline).toOption
+    | check "the planner starts a POST" false
+  let (_, sp) := Call.plan sPost c3 (.response ok)
+  let postSend := match Call.expectedWire sPost.current 5 true with
+    | .ok (target, wire) => Call.Event.send postHead target wire 5 10
+    | .error _ => Call.Event.deliver
+  let postTrace : Array Call.Event := #[
+    .start policy postHead .bytes 5 seed deadline true, postSend,
+    .redispatch true closedFirst .closedBeforeResponse, .decide c3 (.response ok) sp, .deliver]
+  check "a POST sent again after it may have been delivered is caught" (rejects postTrace)
+  check "two re-dispatches of one request are caught"
+    (rejects ((withRedispatch.extract 0 8).push (.redispatch true closedFirst .closedBeforeResponse)
+      |>.append (withRedispatch.extract 8 withRedispatch.size)))
+  -- A call that fails: no retries allowed.
+  let strict : Call.Policy := { maxRetriesPerHop := 0 }
+  let some sStrict := (Call.start strict headA .none seed deadline).toOption
+    | check "the planner starts a GET with no retries" false
+  let (_, sf) := Call.plan sStrict c1 (.failure refused)
+  let failed : Error := { cause := .connect #[], delivery := .notSent, notRetried := some .hopLimit }
+  let failing : Array Call.Event := #[
+    .start strict headA .none 0 seed deadline true, send sStrict.current 10,
+    .decide c1 (.failure refused) sf, .fail failed]
+  checkEq "a failed call replays" (Call.validate failing).toOption (some 1)
+  check "an error that gives the wrong reason for not retrying is caught"
+    (rejects (failing.set! 3 (.fail { failed with notRetried := some .budget })))
+  check "an error with another cause is caught"
+    (rejects (failing.set! 3 (.fail { failed with cause := .peerClosed })))
+  check "an error with the wrong retry count is caught"
+    (rejects (failing.set! 3 (.fail { failed with retries := 1 })))
+  check "an error with the wrong hop count is caught"
+    (rejects (failing.set! 3 (.fail { failed with hops := 1 })))
+  check "a delivery instead of the failure is caught" (rejects (failing.set! 3 .deliver))
+  -- A call whose first attempt was answered (a 503, retried) and whose retries then failed to
+  -- connect: its error must not say not sent.
+  let lenient : Call.Policy := { retry503 := true, maxRetriesPerHop := 1 }
+  let some sL := (Call.start lenient headA .none seed deadline).toOption
+    | check "the planner starts a GET that retries 503" false
+  let busy : Response.Head := { status := .serviceUnavailable }
+  let (sL1, l1) := Call.plan sL c1 (.response busy)
+  let delay503 := match l1 with
+    | .retry d _ => d
+    | _ => 0
+  check "the planner retries the 503" (l1 matches .retry _ .backoff)
+  let cL : Call.Clock := { now := 100 + delay503 + 5, wallSec := 1700000000 }
+  let (_, l2) := Call.plan sL1 cL (.failure refused)
+  check "and fails the refused retry" (l2 matches .fail (.failure _ .hopLimit))
+  let answered : Error := {
+    cause := .connect #[], delivery := .responseReceived, retries := 1, notRetried := some .hopLimit }
+  let answeredTrace : Array Call.Event := #[
+    .start lenient headA .none 0 seed deadline true, send sL.current 10, .decide c1 (.response busy) l1,
+    .wait (100 + delay503), send sL1.current (100 + delay503), .decide cL (.failure refused) l2,
+    .fail answered]
+  checkEq "a call answered once, then refused, replays" (Call.validate answeredTrace).toOption (some 2)
+  check "its error saying not sent is caught"
+    (rejects (answeredTrace.set! 6 (.fail { answered with delivery := .notSent })))
+  -- After a re-dispatch of a request that may have reached the server, the error must not say
+  -- not sent.
+  let failingAfter := (failing.extract 0 2).push (.redispatch true closedFirst .closedBeforeResponse)
+    |>.append (failing.extract 2 failing.size)
+  check "a failure reported as not sent after a re-dispatch is caught" (rejects failingAfter)
+  -- The client may fail a call when it cannot send the planner's next request (https).
+  let httpsRedirect : Response.Head := {
+    status := .found,
+    headers := Headers.empty.insert Header.Name.location (.mk "https://127.0.0.1:1/b") }
+  let (stH, sH) := Call.plan st1 c2 (.response httpsRedirect)
+  let refusedHop : Error := {
+    cause := .invalidRequest "https", delivery := .responseReceived, hops := stH.hops,
+    retries := stH.retries }
+  let httpsTrace := (good.extract 0 5).push (.decide c2 (.response httpsRedirect) sH)
+  check "after a redirect to https, the client may refuse to send it"
+    ((Call.validate (httpsTrace.push (.fail refusedHop))).toOption.isSome)
+  check "but not with another cause"
+    (rejects (httpsTrace.push (.fail { refusedHop with cause := .peerClosed })))
+  check "nor with a delivery short of the response received"
+    (rejects (httpsTrace.push (.fail { refusedHop with delivery := .notSent })))
+  check "and an http redirect may not be refused"
+    (rejects ((good.extract 0 6).push (.fail { refusedHop with hops := 1 })))
+
+/-! ## The body stream's pieces -/
+
+def streamChecks : Checks Unit := do
+  let piece := ByteArray.mk #[1, 2, 3, 4, 5]
+  let other := ByteArray.mk #[6, 7]
+  let view (r : Option (ByteArray × List ByteArray × Nat)) : Option (List UInt8 × Nat × Nat) :=
+    r.map fun (b, rest, off) => (b.toList, rest.length, off)
+  checkEq "nothing pending, nothing taken" (view (BodyStream.take [] 0 4)) none
+  checkEq "a piece that fits is taken whole" (view (BodyStream.take [piece, other] 0 8)) (some ([1, 2, 3, 4, 5], 1, 0))
+  checkEq "a larger piece is split at the limit" (view (BodyStream.take [piece, other] 0 2)) (some ([1, 2], 2, 2))
+  checkEq "and continued from the offset" (view (BodyStream.take [piece, other] 2 2)) (some ([3, 4], 2, 4))
+  checkEq "to its end" (view (BodyStream.take [piece, other] 4 2)) (some ([5], 1, 0))
+
 def main : IO UInt32 := do
   let ((), results) ←
-    (do backoffChecks; addressChecks; planChecks; errorChecks; poolChecks : Checks Unit).run #[]
+    (do backoffChecks; addressChecks; planChecks; errorChecks; poolChecks; traceChecks; streamChecks
+      : Checks Unit).run #[]
   let failed := results.filter (!·.2)
   IO.println s!"{results.size} checks, {failed.size} failing"
   return if failed.isEmpty then 0 else 1
