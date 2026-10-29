@@ -123,9 +123,9 @@ theorem mem_methodStep {mc : Bool} {fs : Fields} {e : Header.Name × Header.Valu
   · exact ⟨(mem_dropNames.1 h).1, fun _ => (mem_dropNames.1 h).2⟩
   · exact ⟨h, by simp_all⟩
 
-theorem mem_credentialStep {toO fo : Bool} {given fs : Fields} {e : Header.Name × Header.Value}
-    (h : e ∈ credentialStep toO fo given fs) :
-    (e ∈ fs ∧ (toO = false → e.1 ∉ credentialNames)) ∨ (toO = true ∧ e ∈ given) := by
+theorem mem_credentialStep {toO fo : Bool} {firstCredentials fs : Fields} {e : Header.Name × Header.Value}
+    (h : e ∈ credentialStep toO fo firstCredentials fs) :
+    (e ∈ fs ∧ (toO = false → e.1 ∉ credentialNames)) ∨ (toO = true ∧ e ∈ firstCredentials) := by
   unfold credentialStep at h
   split at h
   · split at h
@@ -157,12 +157,12 @@ theorem mem_hostStep {co : Bool} {host : Option Header.Value} {fs : Fields}
 What a field of the next request can be: a field of the current request that survived every step,
 a credential field given back, or the rewritten `Host`.
 -/
-theorem mem_nextFields {fields : Fields} {co mc toO fo : Bool} {given : Fields}
+theorem mem_nextFields {fields : Fields} {co mc toO fo : Bool} {firstCredentials : Fields}
     {host : Option Header.Value} {e : Header.Name × Header.Value}
-    (h : e ∈ nextFields fields co mc toO fo given host) :
+    (h : e ∈ nextFields fields co mc toO fo firstCredentials host) :
     (e ∈ fields ∧ (co = true → e.1 ∉ Header.Name.referer :: validatorNames ∧ e.1 ≠ Header.Name.host) ∧
         (mc = true → e.1 ∉ contentNames ++ validatorNames) ∧ (toO = false → e.1 ∉ credentialNames)) ∨
-      (toO = true ∧ e ∈ given ∧ (co = true → e.1 ≠ Header.Name.host)) ∨
+      (toO = true ∧ e ∈ firstCredentials ∧ (co = true → e.1 ≠ Header.Name.host)) ∨
       (co = true ∧ e.1 = Header.Name.host ∧ host = some e.2) := by
   unfold nextFields at h
   rcases mem_hostStep h with ⟨h, hh⟩ | h
@@ -176,9 +176,9 @@ theorem mem_nextFields {fields : Fields} {co mc toO fo : Bool} {given : Fields}
 /--
 Credential fields are dropped from the next request unless it goes to the original origin.
 -/
-theorem nextFields_credentials {fields : Fields} {co mc fo : Bool} {given : Fields}
+theorem nextFields_credentials {fields : Fields} {co mc fo : Bool} {firstCredentials : Fields}
     {host : Option Header.Value} :
-    ∀ e ∈ nextFields fields co mc false fo given host, e.1 ∉ credentialNames := by
+    ∀ e ∈ nextFields fields co mc false fo firstCredentials host, e.1 ∉ credentialNames := by
   intro e he
   rcases mem_nextFields he with ⟨_, _, _, hc⟩ | ⟨h, _⟩ | ⟨_, hh, _⟩
   · exact hc rfl
@@ -189,9 +189,9 @@ theorem nextFields_credentials {fields : Fields} {co mc fo : Bool} {given : Fiel
 When the method changes, the next request has no content field, provided the credentials given
 back are credential fields.
 -/
-theorem nextFields_content {fields : Fields} {co toO fo : Bool} {given : Fields}
-    {host : Option Header.Value} (hg : ∀ e ∈ given, e.1 ∈ credentialNames) :
-    ∀ e ∈ nextFields fields co true toO fo given host, e.1 ∉ contentNames := by
+theorem nextFields_content {fields : Fields} {co toO fo : Bool} {firstCredentials : Fields}
+    {host : Option Header.Value} (hg : ∀ e ∈ firstCredentials, e.1 ∈ credentialNames) :
+    ∀ e ∈ nextFields fields co true toO fo firstCredentials host, e.1 ∉ contentNames := by
   intro e he
   rcases mem_nextFields he with ⟨_, _, hm, _⟩ | ⟨_, h, _⟩ | ⟨_, hh, _⟩
   · exact fun hn => hm rfl (List.mem_append_left _ hn)
@@ -201,9 +201,9 @@ theorem nextFields_content {fields : Fields} {co toO fo : Bool} {given : Fields}
 /--
 On a hop to another origin, every `Host` field of the next request is the rewritten one.
 -/
-theorem nextFields_host {fields : Fields} {mc toO fo : Bool} {given : Fields}
+theorem nextFields_host {fields : Fields} {mc toO fo : Bool} {firstCredentials : Fields}
     {host : Option Header.Value} :
-    ∀ e ∈ nextFields fields true mc toO fo given host, e.1 = Header.Name.host → host = some e.2 := by
+    ∀ e ∈ nextFields fields true mc toO fo firstCredentials host, e.1 = Header.Name.host → host = some e.2 := by
   intro e he hn
   rcases mem_nextFields he with ⟨_, hx, _, _⟩ | ⟨_, _, hx⟩ | ⟨_, _, hh⟩
   · exact absurd hn (hx rfl).2
@@ -216,9 +216,9 @@ theorem nextFields_host {fields : Fields} {mc toO fo : Bool} {given : Fields}
 The shape of a followed redirect: the code is one the client follows, the method is
 `redirectMethod`'s, the body goes only with an unchanged method, and the fields are `nextFields`'.
 -/
-theorem decideRedirect_follow {kind : BodyKind} {orig : URI.Origin} {given : Fields} {cur : Hop}
+theorem decideRedirect_follow {kind : BodyKind} {orig : URI.Origin} {firstCredentials : Fields} {cur : Hop}
     {resp : Response.Head} {next : Hop}
-    (h : decideRedirect kind orig given cur resp = .follow next) :
+    (h : decideRedirect kind orig firstCredentials cur resp = .follow next) :
     resp.status.toCode.toNat ∈ followedCodes ∧
     next.head.method = redirectMethod cur.head.method resp.status.toCode.toNat ∧
     next.body = (if redirectMethod cur.head.method resp.status.toCode.toNat ≠ cur.head.method
@@ -227,7 +227,7 @@ theorem decideRedirect_follow {kind : BodyKind} {orig : URI.Origin} {given : Fie
       (decide (originKey next.origin ≠ originKey cur.origin))
       (decide (redirectMethod cur.head.method resp.status.toCode.toNat ≠ cur.head.method))
       (decide (originKey next.origin = originKey orig))
-      (decide (originKey cur.origin = originKey orig)) given
+      (decide (originKey cur.origin = originKey orig)) firstCredentials
       (Header.Value.ofString? next.origin.hostHeader) := by
   unfold decideRedirect at h
   dsimp only at h
@@ -256,9 +256,9 @@ theorem redirectMethod_changed {m : Method} {code : Nat} (h : redirectMethod m c
 A followed redirect's request can be sent again: it carries no body, or the original body when
 that is replayable.
 -/
-theorem decideRedirect_follow_replayable {kind : BodyKind} {orig : URI.Origin} {given : Fields}
+theorem decideRedirect_follow_replayable {kind : BodyKind} {orig : URI.Origin} {firstCredentials : Fields}
     {cur : Hop} {resp : Response.Head} {next : Hop}
-    (h : decideRedirect kind orig given cur resp = .follow next) : next.replayable kind = true := by
+    (h : decideRedirect kind orig firstCredentials cur resp = .follow next) : next.replayable kind = true := by
   unfold decideRedirect at h
   dsimp only at h
   split at h
@@ -277,9 +277,9 @@ theorem decideRedirect_follow_replayable {kind : BodyKind} {orig : URI.Origin} {
 /--
 A followed redirect's target is the absolute URI of its origin and a resolved path and query.
 -/
-theorem decideRedirect_follow_target {kind : BodyKind} {orig : URI.Origin} {given : Fields}
+theorem decideRedirect_follow_target {kind : BodyKind} {orig : URI.Origin} {firstCredentials : Fields}
     {cur : Hop} {resp : Response.Head} {next : Hop}
-    (h : decideRedirect kind orig given cur resp = .follow next) :
+    (h : decideRedirect kind orig firstCredentials cur resp = .follow next) :
     ∃ path query, next.head.uri = .absoluteForm (targetUri next.origin path query) := by
   unfold decideRedirect at h
   dsimp only at h
@@ -299,9 +299,9 @@ theorem decideRedirect_follow_target {kind : BodyKind} {orig : URI.Origin} {give
 /--
 A followed redirect goes to an http or https origin.
 -/
-theorem decideRedirect_follow_scheme {kind : BodyKind} {orig : URI.Origin} {given : Fields}
+theorem decideRedirect_follow_scheme {kind : BodyKind} {orig : URI.Origin} {firstCredentials : Fields}
     {cur : Hop} {resp : Response.Head} {next : Hop}
-    (h : decideRedirect kind orig given cur resp = .follow next) :
+    (h : decideRedirect kind orig firstCredentials cur resp = .follow next) :
     next.origin.scheme.val = "http" ∨ next.origin.scheme.val = "https" := by
   unfold decideRedirect at h
   dsimp only at h
@@ -323,9 +323,9 @@ theorem decideRedirect_follow_scheme {kind : BodyKind} {orig : URI.Origin} {give
 /--
 A redirect the planner refuses has a code it follows.
 -/
-theorem decideRedirect_refuse_code {kind : BodyKind} {orig : URI.Origin} {given : Fields}
+theorem decideRedirect_refuse_code {kind : BodyKind} {orig : URI.Origin} {firstCredentials : Fields}
     {cur : Hop} {resp : Response.Head} {why : Refusal}
-    (h : decideRedirect kind orig given cur resp = .refuse why) :
+    (h : decideRedirect kind orig firstCredentials cur resp = .refuse why) :
     resp.status.toCode.toNat ∈ followedCodes := by
   unfold decideRedirect at h
   dsimp only at h
@@ -369,7 +369,7 @@ What a `follow` step requires and does.
 theorem plan_follow {st st' : State} {clock : Clock} {outcome : Outcome} {next : Hop}
     (h : plan st clock outcome = (st', .follow next)) :
     ∃ head, outcome = .response head ∧
-      decideRedirect st.bodyKind st.originalOrigin st.given st.current head = .follow next ∧
+      decideRedirect st.bodyKind st.originalOrigin st.firstCredentials st.current head = .follow next ∧
       st.hops < st.policy.maxRedirects ∧ clock.now < st.deadline ∧
       st' = { st with current := next, hops := st.hops + 1, attempts := 0 } := by
   unfold plan at h
@@ -548,7 +548,7 @@ What `plan` never changes.
 theorem plan_frame (st : State) (clock : Clock) (outcome : Outcome) :
     (plan st clock outcome).1.policy = st.policy ∧
       (plan st clock outcome).1.originalOrigin = st.originalOrigin ∧
-      (plan st clock outcome).1.given = st.given ∧
+      (plan st clock outcome).1.firstCredentials = st.firstCredentials ∧
       (plan st clock outcome).1.bodyKind = st.bodyKind := by
   unfold plan
   repeat' split
@@ -672,7 +672,7 @@ the last 3xx is not delivered as if it were the answer.
 -/
 theorem plan_hop_limit {st : State} {clock : Clock} {head : Response.Head} {next : Hop}
     (hf : st.policy.followRedirects = true)
-    (hd : decideRedirect st.bodyKind st.originalOrigin st.given st.current head = .follow next)
+    (hd : decideRedirect st.bodyKind st.originalOrigin st.firstCredentials st.current head = .follow next)
     (hmax : st.policy.maxRedirects ≤ st.hops) :
     plan st clock (.response head) = (st, .fail (.tooManyRedirects st.policy.maxRedirects)) := by
   have hr := retryStatus_of_followed (st := st) (clock := clock) (decideRedirect_follow hd).1
@@ -754,7 +754,8 @@ theorem plan_follow_303 {st st' : State} {clock : Clock} {head : Response.Head} 
 /--
 The fields a reachable call keeps to give back at its original origin are credential fields.
 -/
-theorem Reachable.given {st : State} (h : Reachable st) : ∀ e ∈ st.given, e.1 ∈ credentialNames := by
+theorem Reachable.firstCredentials {st : State} (h : Reachable st) :
+    ∀ e ∈ st.firstCredentials, e.1 ∈ credentialNames := by
   induction h with
   | start hs =>
     unfold Call.start at hs
@@ -790,7 +791,7 @@ theorem plan_follow_method_change {st st' : State} {clock : Clock} {outcome : Ou
   refine ⟨hmeth ▸ redirectMethod_changed hm, by simp [hbody, hm], ?_⟩
   rw [hf, show decide (redirectMethod st.current.head.method head.status.toCode.toNat ≠
     st.current.head.method) = true by simp [hm]]
-  exact nextFields_content hst.given
+  exact nextFields_content hst.firstCredentials
 
 /--
 **`Host` follows the origin.**  When a followed redirect changes the origin, every `Host` field the
@@ -960,7 +961,7 @@ theorem Reachable.emptyBody {st : State} (h : Reachable st) (he : st.current.bod
         rw [hfields] at hmem
         rcases mem_nextFields hmem with ⟨hin, -⟩ | ⟨-, hg, -⟩ | ⟨-, hh, -⟩
         · exact ih he e hin
-        · exact credential_not_content _ (hst.given e hg)
+        · exact credential_not_content _ (hst.firstCredentials e hg)
         · rw [hh]; exact host_not_content
       · exact (plan_follow_method_change hst hp hm).2.2
 
@@ -983,7 +984,7 @@ theorem plan_follow_keeps_empty {st st' : State} {clock : Clock} {outcome : Outc
 refuses (no `Location`, one it cannot use, or a body it cannot send again) is delivered to the caller.
 -/
 theorem plan_refused_delivered {st : State} {clock : Clock} {head : Response.Head} {why : Refusal}
-    (hd : decideRedirect st.bodyKind st.originalOrigin st.given st.current head = .refuse why) :
+    (hd : decideRedirect st.bodyKind st.originalOrigin st.firstCredentials st.current head = .refuse why) :
     plan st clock (.response head) = (st, .deliver) := by
   have hr := retryStatus_of_followed (st := st) (clock := clock) (decideRedirect_refuse_code hd)
   unfold plan
@@ -1032,7 +1033,7 @@ theorem plan_follow_cross_origin {st st' : State} {clock : Clock} {outcome : Out
   intro e he hn
   rcases mem_nextFields he with ⟨-, hx, -⟩ | ⟨-, hg, -⟩ | ⟨-, hh, -⟩
   · exact (hx rfl).1 hn
-  · exact crossOrigin_not_credential _ hn (hst.given e hg)
+  · exact crossOrigin_not_credential _ hn (hst.firstCredentials e hg)
   · rw [hh] at hn; exact host_not_crossOrigin hn
 
 /--

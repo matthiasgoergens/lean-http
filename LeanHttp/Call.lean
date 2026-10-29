@@ -114,7 +114,7 @@ structure State where
   /--
   The credential fields of the call's first request.
   -/
-  given : Fields
+  firstCredentials : Fields
 
   /--
   The kind of the call's body.
@@ -289,7 +289,8 @@ def start (policy : Policy) (head : Request.Head) (kind : BodyKind) (seed : UInt
       else
         .ok {
           policy, originalOrigin := origin,
-          given := credentials (dropNames (nominatedNames head.headers.toList) head.headers.toList),
+          firstCredentials :=
+            credentials (dropNames (nominatedNames head.headers.toList) head.headers.toList),
           bodyKind := kind, current := { origin, head, body := .original }, seed, deadline }
   | _ => .error .notAbsolute
 
@@ -413,7 +414,7 @@ def plan (st : State) (clock : Clock) (outcome : Outcome) : State × Step :=
     | some (delay, kind) => (st.retried, .retry delay kind)
     | none =>
       if !st.policy.followRedirects then (st, .deliver) else
-      match decideRedirect st.bodyKind st.originalOrigin st.given st.current head with
+      match decideRedirect st.bodyKind st.originalOrigin st.firstCredentials st.current head with
       | .follow next =>
         if st.hops ≥ st.policy.maxRedirects then (st, .fail (.tooManyRedirects st.policy.maxRedirects))
         else if clock.now ≥ st.deadline then (st, .fail .deadline)

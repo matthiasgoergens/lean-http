@@ -102,7 +102,7 @@ def startChecks : Checks Unit := do
   check "the first hop is the request as given"
     (fieldStrings st.current.head.headers == fieldStrings head.headers &&
       targetString st.current.head.uri == targetString head.uri && st.current.body == .original)
-  checkEq "the credentials given are recorded" (fieldStrings (Headers.ofList st.given))
+  checkEq "the credentials given are recorded" (fieldStrings (Headers.ofList st.firstCredentials))
     [("authorization", "a")]
 
 /-! ## Unit tests: redirects -/
@@ -434,7 +434,7 @@ def mutatedPlan (m : Mutation) (st : State) (clock : Clock) (outcome : Outcome) 
     { hop with head := { hop.head with headers := .ofList (hop.head.headers.toList ++ extra) } }
   match m, step, outcome with
   | .leakCredentials, .follow next, _ =>
-    let next := withFields next (st.given.filter fun e => !(next.head.headers.toList.contains e))
+    let next := withFields next (st.firstCredentials.filter fun e => !(next.head.headers.toList.contains e))
     ({ st' with current := next }, .follow next)
   | .resendDelivered, .fail (.failure _ .delivered), _ => (st.retried, .retry 0 .backoff)
   | .retryLocalClose, .fail (.failure f .cause), _ =>
