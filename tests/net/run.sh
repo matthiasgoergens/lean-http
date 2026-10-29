@@ -9,14 +9,25 @@
 # The sysctl makes the kernel give up on an unanswered SYN after about 7 s instead of about 127 s,
 # so that the descriptor check of the blackhole scenario finishes quickly.
 #
+# It also runs outside that container (scripts/ci.sh, on a CI runner), with $PY or python3.  What
+# the environment cannot support is skipped, with a SKIP line saying why: the scenarios that need
+# the names of tests/net/hosts when /etc/hosts lacks them and cannot be written, those that need
+# IPv6 loopback when ::1 is not usable, the descriptor check of blackhole-timeout when
+# tcp_syn_retries is above 2, and dns-timeout when not run as root (it rewrites /etc/resolv.conf and
+# listens on port 53).
+#
 # Writes one file per scenario to out/net/<name>.txt, each starting with the client's command and
 # ending with its exit status, wall time and how long the process took to exit after `main`
-# returned, plus the logs of the servers it used; prints PASS or FAIL per check and a summary.
+# returned, plus the logs of the servers it used; prints PASS, FAIL, KNOWN or SKIP per check and a
+# summary.
 
-PY=${PY:-/py/bin/python3}
-BIN=/w/.lake/build/bin/net-client
-here=/w/tests/net
-out=/w/out/net
+root=$(cd "$(dirname "$0")/../.." && pwd) || exit 1
+if [ -z "${PY:-}" ]; then
+  if [ -x /py/bin/python3 ]; then PY=/py/bin/python3; else PY=python3; fi
+fi
+BIN=$root/.lake/build/bin/net-client
+here=$root/tests/net
+out=$root/out/net
 mkdir --parents "$out" || exit 1
 
 pids=()
@@ -30,11 +41,13 @@ trap cleanup EXIT
 passes=0
 fails=0
 knowns=0
-result() { # result <PASS|FAIL|KNOWN> <scenario> <description>
+skips=0
+result() { # result <PASS|FAIL|KNOWN|SKIP> <scenario> <description>
   echo "$1 $2: $3" | tee --append "$out/summary.txt"
   case $1 in
     PASS) passes=$((passes + 1)) ;;
     KNOWN) knowns=$((knowns + 1)) ;;
+    SKIP) skips=$((skips + 1)) ;;
     *) fails=$((fails + 1)) ;;
   esac
 }
@@ -162,25 +175,52 @@ EARLY=18089     # early.py: answers 413 after the head, then reads no more
 # 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
 # 18110-18120: the planner's and the streaming scenarios
 
-# Names for the resolver tests.  getaddrinfo without a socket type returns each of these addresses
-# once per socket type, three times in all.
-grep --quiet 'dual\.test' /etc/hosts || {
-  printf '127.0.0.1 dup.test\n::1 dual.test\n127.0.0.1 dual.test\n' >> /etc/hosts || exit 1
-}
+# Scenarios the environment cannot run, with the reason.
+declare -A unavailable=()
+
+# Names for the resolver tests (tests/net/hosts).  getaddrinfo without a socket type returns each of
+# these addresses once per socket type, three times in all.
+if ! grep --quiet 'dual\.test' /etc/hosts; then
+  if [ -w /etc/hosts ]; then
+    cat "$here/hosts" >> /etc/hosts || exit 1
+  else
+    for s in dns-dup dns-dual blackhole-first; do
+      unavailable[$s]="/etc/hosts lacks the names of tests/net/hosts and cannot be written"
+    done
+  fi
+fi
+if ! "$PY" -I -c 'import socket; s = socket.socket(socket.AF_INET6); s.bind(("::1", 0))' 2>/dev/null; then
+  for s in ipv6-literal dns-dual blackhole-first blackhole-timeout connect-deadline; do
+    unavailable[$s]="IPv6 loopback (::1) is not usable"
+  done
+fi
+if [ "$(id --user)" -ne 0 ]; then
+  unavailable[dns-timeout]="needs root, to rewrite /etc/resolv.conf and listen on port 53"
+fi
+syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)
 
 servers() {
   start shared evil "listening" "$PY" -I "$here/evil.py" --port $EVIL || return 1
 }
 
-scenario() { # scenario <name>: true if the scenario was asked for (or none were)
-  [ ${#selected[@]} -eq 0 ] && return 0
-  local s; for s in "${selected[@]}"; do [ "$s" = "$1" ] && { matched+=("$1"); return 0; }; done
-  return 1
+scenario() { # scenario <name>: true if the scenario was asked for (or none were) and can run here
+  local s asked=0
+  if [ ${#selected[@]} -eq 0 ]; then
+    asked=1
+  else
+    for s in "${selected[@]}"; do [ "$s" = "$1" ] && { matched+=("$1"); asked=1; }; done
+  fi
+  [ $asked -eq 1 ] || return 1
+  if [ -n "${unavailable[$1]:-}" ]; then
+    result SKIP "$1" "${unavailable[$1]}"
+    return 1
+  fi
+  return 0
 }
 matched=()
 selected=("$@")
 rm --force "$out"/*.txt "$out"/*.log
-echo "### $(date --utc +%FT%TZ) $(uname -r); syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)" \
+echo "### $(date --utc +%FT%TZ) $(uname -r); syn_retries=$syn_retries; uid=$(id --user)" \
   | tee "$out/summary.txt"
 
 servers || exit 1
@@ -272,7 +312,9 @@ if scenario blackhole-timeout; then
   within blackhole-timeout 2000 2400 "two 1 s attempts and one backoff"
   calls=$(sed --quiet 's/^fds_after_calls=//p' "$out/blackhole-timeout.txt")
   later=$(sed --quiet 's/^fds_after_linger_9000ms=//p' "$out/blackhole-timeout.txt")
-  if [ -n "$calls" ] && [ -n "$later" ] && [ "$later" -le $((calls - 2)) ]; then
+  if [ "$syn_retries" -gt 2 ]; then
+    result SKIP blackhole-timeout "the release of the abandoned attempts' sockets: with tcp_syn_retries=$syn_retries the kernel gives up on a SYN after the 9 s this waits"
+  elif [ -n "$calls" ] && [ -n "$later" ] && [ "$later" -le $((calls - 2)) ]; then
     result PASS blackhole-timeout "the abandoned attempts' sockets are released later ($calls, then $later descriptors)"
   else
     result FAIL blackhole-timeout "descriptors after the call: ${calls:-?}, 9 s later: ${later:-?}"
@@ -868,5 +910,5 @@ done
 if [ $((passes + fails + knowns)) -eq 0 ]; then
   echo "FAIL run: no checks ran" | tee --append "$out/summary.txt"; fails=1
 fi
-echo "### $passes passed, $fails failed, $knowns known limitations" | tee --append "$out/summary.txt"
+echo "### $passes passed, $fails failed, $knowns known limitations, $skips skipped" | tee --append "$out/summary.txt"
 [ "$fails" -eq 0 ]
