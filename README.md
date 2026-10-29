@@ -170,3 +170,7 @@ The pieces, from the repository root:
 - `lake build unit-tests && .lake/build/bin/unit-tests`, and likewise `pool-tests` and `call-tests`; after `scripts/ci.sh vendor`, also `codec-tests`, `response-codec-tests`, `core-tests`, `codec-diff` and `call-diff`.  Each documents its arguments at the top of its file in `Tests/`.
 - `lake build net-client && bash tests/net/run.sh` runs the real-socket suite.  It skips, and says so, what the machine cannot run: some scenarios want IPv6 on loopback, names added to `/etc/hosts` (`tests/net/hosts`), `net.ipv4.tcp_syn_retries` at 2, or root.
 - `examples/run.sh` builds the examples and runs them against `examples/server.py`.
+
+## Licence
+
+Apache License 2.0; see `LICENSE`.
