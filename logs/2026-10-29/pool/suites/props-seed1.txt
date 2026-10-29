@@ -1,0 +1,20 @@
+$ .lake/build/bin/core-tests props 200000 1
+PASS 200000 runs from seed 1: 1393614 steps checked
+  runs with bytes sent when no response could be due: 40950
+  runs with a final head before the request was written in full: 1015
+  runs that drained an abandoned body: 444
+  ended fail: invalid response [maybe delivered]: 34110
+  ended fail: the connection closed before a complete response [maybe delivered]: 33381
+  ended fail: write timeout [maybe delivered]: 28238
+  ended fail: deadline timeout [maybe delivered]: 24743
+  ended finish reusable=false: 23591
+  ended fail: read timeout [maybe delivered]: 14424
+  ended finish reusable=true: 12668
+  ended fail: the client closed the connection [maybe delivered]: 12377
+  ended fail: body size limit exceeded [response received]: 10095
+  ended fail: interim responses limit exceeded [maybe delivered]: 2288
+  ended fail: deadline timeout [response received]: 2140
+  ended fail: the connection closed before a complete response [response received]: 1402
+  ended fail: read timeout [response received]: 543
+  runs per script: [101 without upgrade=10553, 204 with Content-Length=10444, 300-byte body=10617, HEAD, Content-Length=10524, HEAD, chunked=10660, HEAD, then stray bytes=10449, HTTP/1.0=10401, chunked=10623, chunked, extensions and trailers=10414, close-delimited=10452, conflicting Content-Length=10651, content-length=10535, content-length, Connection: close=10573, early 413=10473, early 413, then close=10392, interim responses, then the final one=10396, not HTTP=10668, truncated body=10682, two responses=10493]
+exit status 0, wall 5128 ms

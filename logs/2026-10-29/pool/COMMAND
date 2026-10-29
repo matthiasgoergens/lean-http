@@ -1,0 +1,46 @@
+Runs for the connection pool (branch pool, on main a1e5e26 with the per-call planner), 2026-10-29, on
+the build host: Lean v4.34.1 in localhost/b8perf-lean, uv's CPython 3.14.8 for the servers, all
+through LEAN_HTTP_REMOTE_DIR=lean-http-pool.  The host was shared and loaded (load average about
+50-160 on 128 CPUs while these ran).
+
+Everything but net/ ran at commit 16e5c51 (before the history was tidied); its code is that of the
+final tree, which differs only in tests/net/run.sh (below), so net/ was run again on the final tree.
+
+$ bash logs/2026-10-29/pool/run-final.sh          (from the laptop; the script says what it runs)
+$ rsync --archive buildhost:lean-http-pool/out/final/ logs/2026-10-29/pool/
+
+suites/       run-suites.sh, from a build with .lake/build removed first: build and build-tests (no
+              warnings); the axioms of the exchange (proof-axioms), codec (codec-axioms), pool
+              (pool-axioms) and planner (call-axioms) theorems, each on propext, Classical.choice and
+              Quot.sound at most, no sorryAx; unit (77 checks), codec (50 cases: request encodings,
+              one more than before, and the response shapes), response-codec, traces (48),
+              props-seed{1,2} and explore-10 of the exchange core, diff-seed{1..4} (codec-diff: the
+              same classes of disagreement with the same counts as logs/2026-10-28/integrate/, and
+              every generated request encoded the same as the machine's but for the keep-alive
+              field), diff-control, compare-seed{1,2} (every disagreement with the former core
+              attributed), pool-traces (12), pool-props-seed{1,2} (200,000 random runs each),
+              pool-explore-8, pool-control (five planted bugs, each caught by the random runs and
+              the exploration, with the model and with the properties alone), and the planner's
+              call-tests and call-diff as its own runs had them.  Every file ends with exit status 0.
+net/          $ CTR_EXTRA='--sysctl net.ipv4.tcp_syn_retries=2' scripts/remote.sh bash tests/net/run.sh
+              on the final tree: 139 passed, 0 failed, 1 known limitation (dns-timeout's exit, as in
+              NOTES.md).  run.log is the console.  The run at 16e5c51 failed four checks
+              (blackhole-first, blackhole-stagger50, nodelay, nodelay-off): net-client now prints a
+              summary of the later calls too, and the harness read both summaries' medians as one;
+              it now reads only the summary of all calls.
+strace-nodelay.txt
+              $ ssh buildhost 'cd ~/lean-http-pool && bash tests/net/strace-nodelay.sh'
+              TCP_NODELAY set once, not set with nodelay=0, and the 191-byte request in one write.
+idlecheck/    idlecheck.sh and idlecheck0.sh (here): net-client idlecheck against tests/net/idle.py,
+              fresh connections, the check about 50 ms after the server sent bytes, closed or reset
+              the connection, or did nothing.  windows-200.txt: windows of 0, 1, 2 and 5 ms, 200
+              connections per scenario; zero-1000.txt: 0 ms, 1,000 per scenario.  Every connection
+              with bytes, a FIN or a reset was found unclean, and every idle one clean.
+bench/        bench-idlecheck.sh (here): reused calls with the check off and with windows of 0, 1
+              and 5 ms, 20 randomised blocks (order drawn per block, seed 1), server pinned to CPU
+              100 and client to CPU 101, each cell the median of 50 reused calls; the binary's
+              SHA-256 is in the file.  paired.txt: $ logs/2026-10-29/pool/paired.py
+              bench/bench-idlecheck-20.txt (paired differences from no check, with distribution-free
+              95% intervals): +0.13 ms for 0 ms, +1.3 ms for 1 ms, +5.4 ms for 5 ms.
+reviews/      the independent reviews (a fresh Claude and Gemini, then Gemini again), their prompts,
+              and README: what came of each finding.

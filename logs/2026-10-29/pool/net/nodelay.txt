@@ -1,0 +1,11 @@
+$ net-client call POST http://127.0.0.1:18082/ body=100 repeat=300
+call 0 ok status=200 bytes=12 ms=1.068 rounds=1 address=127.0.0.1:18082 seed=11140641471761693274 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false body_start="{\"ok\": true}"
+call 1 ok status=200 bytes=12 ms=0.481 rounds=0 address=127.0.0.1:18082 seed=6141958185685022434 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=75 redispatched=false body_start="{\"ok\": true}"
+call 2 ok status=200 bytes=12 ms=0.265 rounds=0 address=127.0.0.1:18082 seed=7173294517374577803 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=51 redispatched=false body_start="{\"ok\": true}"
+summary calls n=300 min=0.098 p50=0.137 p90=0.194 max=1.068 ms ok=300
+summary later calls n=299 min=0.098 p50=0.137 p90=0.193 max=0.481 ms
+summary idle checks of reused connections n=299 min=0.021 p50=0.032 p90=0.044 max=0.075 ms
+pool idle=1 checked_out=0 allocated=1
+fds_after_calls=11
+main returning at ms=45.908
+exit status=0 wall_ms=51 exit_after_main_ms=6

@@ -1,0 +1,18 @@
+### 2026-10-29T04:18:09Z load: 71.14 77.20 81.23 73/13167 3325
+$ net-client idlecheck 18103 scenario=data ms=0 n=1000
+idlecheck scenario=data ms=0 n=1000 clean=0 detected=1000
+summary idlecheck scenario=data ms=0 n=1000 min=0.187 p50=0.346 p90=2.490 max=7.034 ms
+main returning at ms=102489.555
+$ net-client idlecheck 18103 scenario=fin ms=0 n=1000
+idlecheck scenario=fin ms=0 n=1000 clean=0 detected=1000
+summary idlecheck scenario=fin ms=0 n=1000 min=0.201 p50=0.322 p90=1.415 max=12.581 ms
+main returning at ms=101862.093
+$ net-client idlecheck 18103 scenario=rst ms=0 n=1000
+idlecheck scenario=rst ms=0 n=1000 clean=0 detected=1000
+summary idlecheck scenario=rst ms=0 n=1000 min=0.133 p50=0.230 p90=0.644 max=6.927 ms
+main returning at ms=101208.019
+$ net-client idlecheck 18103 scenario=none ms=0 n=1000
+idlecheck scenario=none ms=0 n=1000 clean=1000 detected=0
+summary idlecheck scenario=none ms=0 n=1000 min=0.152 p50=0.244 p90=0.305 max=4.156 ms
+main returning at ms=100886.598
+### load after: 52.81 67.05 76.30 78/12246 7354

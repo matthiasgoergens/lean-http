@@ -1,0 +1,14 @@
+$ .lake/build/bin/core-tests explore 10
+PASS GET, content-length, keepAlive=true: 6640 states, 17430 steps checked, 4051 terminal (219 reusable); new states per depth #[1, 5, 18, 42, 82, 139, 222, 322, 446, 583, 729]
+PASS GET, content-length, keepAlive=false: 6089 states, 15893 steps checked, 3747 terminal (0 reusable); new states per depth #[1, 5, 18, 42, 81, 134, 206, 292, 399, 517, 647]
+PASS GET, two responses, keepAlive=true: 6848 states, 17546 steps checked, 4241 terminal (171 reusable); new states per depth #[1, 5, 18, 42, 83, 142, 227, 327, 449, 584, 729]
+PASS GET, interim responses, then the final one, keepAlive=true: 6434 states, 16953 steps checked, 3926 terminal (114 reusable); new states per depth #[1, 5, 18, 42, 82, 137, 216, 311, 431, 561, 704]
+PASS GET, chunked, keepAlive=true: 9734 states, 23949 steps checked, 5978 terminal (281 reusable); new states per depth #[1, 5, 18, 43, 88, 159, 271, 434, 648, 906, 1183]
+PASS GET, close-delimited, keepAlive=true: 6732 states, 16937 steps checked, 4128 terminal (0 reusable); new states per depth #[1, 5, 18, 43, 88, 147, 230, 330, 447, 577, 718]
+PASS GET, not HTTP, keepAlive=true: 4768 states, 11913 steps checked, 3015 terminal (0 reusable); new states per depth #[1, 5, 16, 35, 64, 101, 152, 214, 293, 384, 488]
+PASS GET, truncated body, keepAlive=true: 8727 states, 22121 steps checked, 5181 terminal (0 reusable); new states per depth #[1, 5, 18, 45, 98, 182, 306, 453, 627, 808, 1003]
+PASS GET, content-length, Connection: close, keepAlive=true: 5408 states, 14163 steps checked, 3330 terminal (0 reusable); new states per depth #[1, 5, 18, 41, 77, 122, 184, 257, 350, 453, 570]
+PASS HEAD, then stray bytes, keepAlive=true: 5519 states, 14114 steps checked, 3450 terminal (106 reusable); new states per depth #[1, 5, 17, 39, 75, 121, 183, 256, 349, 453, 570]
+PASS POST of 20 bytes in 32-byte writes, early 413, keepAlive=true: 17981 states, 45518 steps checked, 10469 terminal (63 reusable); new states per depth #[1, 5, 18, 46, 104, 213, 407, 720, 1208, 1912, 2878]
+11 searches to depth 10: 84880 states, 216537 steps checked, 0 failing
+exit status 0, wall 4641 ms

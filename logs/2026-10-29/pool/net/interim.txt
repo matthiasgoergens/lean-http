@@ -1,0 +1,6 @@
+$ net-client call GET http://127.0.0.1:18080/early-hints
+call 0 ok status=200 bytes=8 ms=0.976 rounds=1 address=127.0.0.1:18080 seed=16677425366044639066 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false body_start="after103"
+pool idle=1 checked_out=0 allocated=1
+fds_after_calls=11
+main returning at ms=1.140
+exit status=0 wall_ms=6 exit_after_main_ms=5
