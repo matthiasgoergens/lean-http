@@ -1,0 +1,6 @@
+$ net-client call GET https://127.0.0.1:18113/echo
+call 0 error delivery=not sent ms=0.905 rounds=0 seed=10460484184172760920 reused=false redispatched=false hops=0 retries=0 not_retried=none status=none cause="invalid request: unsupported scheme https: this client speaks plain HTTP only (no TLS yet)" detail=""
+pool idle=0 checked_out=0 allocated=0
+fds_after_calls=10
+main returning at ms=1.210
+exit status=0 wall_ms=15 exit_after_main_ms=14

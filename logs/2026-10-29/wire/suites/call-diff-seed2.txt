@@ -1,0 +1,266 @@
+$ .lake/build/bin/call-diff 6 2 100000
+== upstream PR head (vendored): 127512 decisions, 33264 followed by the planner, 96867 agree, 30645 disagree
+  30645 explained, by 16 combinations of these differences:
+  - undefined 3xx code: the oracles follow any 3xx with a Location (but 300, 304, 305 and 306), the planner only 301, 302, 303, 307 and 308
+      in 3456 disagreements, alone in 3456
+      e.g. 399 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Type, text/plain), (Content-Language, en), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Origin, http://a.test)]
+        planner: not followed
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from]
+  - HTTP/1.0 response: the oracles follow only 301 and 302, and keep POST; the planner treats every version alike
+      in 14904 disagreements, alone in 7591
+      e.g. 301 HTTP/1.0 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Referer, http://a.test/from), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  POST http://a.test:80/new body none [authorization: Bearer t0k; content-type: text/plain; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+  - 301 or 302 with a method other than GET, HEAD and POST: the oracles refuse it, the planner keeps the method, as for 307
+      in 6912 disagreements, alone in 3056
+      e.g. 301 HTTP/1.1 PUT body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Accept, */*), (Digest, sha-256=abc), (Host, a.test)]
+        planner: PUT http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; content-type: text/plain; digest: sha-256=abc; host: a.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; last-modified: Sun, 06 Nov 1994 08:49:37 GMT]
+        oracle:  not followed
+  - GET or HEAD with a body, on a redirect that keeps the method: the oracles drop the body, the planner sends it again (or refuses a stream)
+      in 7344 disagreements, alone in 5301
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.bytes Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-None-Match, "e1"), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked)]
+        planner: GET http://a.test:80/new body sent again [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+  - back at the original origin: the planner gives the credentials back
+      in 4421 disagreements, alone in 1277
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Length, 5), (Content-Language, en), (Accept, */*), (Origin, http://a.test), (Host, b.test)]
+        planner: GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; cookie: sid=1; host: a.test; origin: http://a.test]
+        oracle:  GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; host: a.test; origin: http://a.test]
+  - Digest dropped with a method change: the planner drops the digest fields, the oracles keep them
+      in 3005 disagreements, alone in 1330
+      e.g. 301 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Digest, sha-256=abc), (Origin, http://a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; origin: http://a.test]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; digest: sha-256=abc; origin: http://a.test]
+  0 unexplained
+== v4.34.1 toolchain, onlySafeRedirects false: 127512 decisions, 33264 followed by the planner, 96214 agree, 31298 disagree
+  31298 explained, by 32 combinations of these differences:
+  - undefined 3xx code: the oracles follow any 3xx with a Location (but 300, 304, 305 and 306), the planner only 301, 302, 303, 307 and 308
+      in 3456 disagreements, alone in 3456
+      e.g. 399 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Type, text/plain), (Content-Language, en), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Origin, http://a.test)]
+        planner: not followed
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from]
+  - HTTP/1.0 response: the oracles follow only 301 and 302, and keep POST; the planner treats every version alike
+      in 14904 disagreements, alone in 7072
+      e.g. 301 HTTP/1.0 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Referer, http://a.test/from), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  POST http://a.test:80/new body none [authorization: Bearer t0k; content-type: text/plain; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+  - 301 or 302 with a method other than GET, HEAD and POST: the oracles refuse it, the planner keeps the method, as for 307
+      in 6912 disagreements, alone in 2828
+      e.g. 301 HTTP/1.1 PUT body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Accept, */*), (Digest, sha-256=abc), (Host, a.test)]
+        planner: PUT http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; content-type: text/plain; digest: sha-256=abc; host: a.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; last-modified: Sun, 06 Nov 1994 08:49:37 GMT]
+        oracle:  not followed
+  - GET or HEAD with a body, on a redirect that keeps the method: the oracles drop the body, the planner sends it again (or refuses a stream)
+      in 7344 disagreements, alone in 4928
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.bytes Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-None-Match, "e1"), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked)]
+        planner: GET http://a.test:80/new body sent again [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+  - back at the original origin: the planner gives the credentials back
+      in 4421 disagreements, alone in 775
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Length, 5), (Content-Language, en), (Accept, */*), (Origin, http://a.test), (Host, b.test)]
+        planner: GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; cookie: sid=1; host: a.test; origin: http://a.test]
+        oracle:  GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; host: a.test; origin: http://a.test]
+  - Digest dropped with a method change: the planner drops the digest fields, the oracles keep them
+      in 3005 disagreements, alone in 1240
+      e.g. 301 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Digest, sha-256=abc), (Origin, http://a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; origin: http://a.test]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; digest: sha-256=abc; origin: http://a.test]
+  - dot segments and empty path of an absolute Location (v4.34.1 only): left as they are; the planner and the PR head resolve them
+      in 4032 disagreements, alone in 653
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some http://a.test/x/../y/./z) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Content-Language, en), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Digest, sha-256=abc)]
+        planner: GET http://a.test:80/y/z body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; digest: sha-256=abc; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-hop: 1]
+        oracle:  GET http://a.test:80/x/../y/./z body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; digest: sha-256=abc; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-hop: 1]
+  0 unexplained
+== v4.34.1 toolchain, onlySafeRedirects true: 127512 decisions, 33264 followed by the planner, 93014 agree, 34498 disagree
+  34498 explained, by 56 combinations of these differences:
+  - undefined 3xx code: the oracles follow any 3xx with a Location (but 300, 304, 305 and 306), the planner only 301, 302, 303, 307 and 308
+      in 1728 disagreements, alone in 1728
+      e.g. 399 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Type, text/plain), (Content-Language, en), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Origin, http://a.test)]
+        planner: not followed
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from]
+  - HTTP/1.0 response: the oracles follow only 301 and 302, and keep POST; the planner treats every version alike
+      in 14904 disagreements, alone in 2092
+      e.g. 303 HTTP/1.0 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Content-Type, text/plain), (Content-Encoding, gzip), (If-None-Match, "e1"), (X-Hop, 1)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; content-encoding: gzip; content-type: text/plain; if-none-match: "e1"; proxy-authorization: Basic eA==; x-hop: 1]
+        oracle:  not followed
+  - 301 or 302 with a method other than GET, HEAD and POST: the oracles refuse it, the planner keeps the method, as for 307
+      in 6912 disagreements, alone in 710
+      e.g. 301 HTTP/1.1 OPTIONS body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (Content-Language, en), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (X-Hop, 1), (Transfer-Encoding, chunked), (Digest, sha-256=abc), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: OPTIONS http://a.test:80/new body none [content-language: en; digest: sha-256=abc; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; proxy-authorization: Basic eA==; referer: http://a.test/from; x-custom: v; x-hop: 1]
+        oracle:  not followed
+  - GET or HEAD with a body, on a redirect that keeps the method: the oracles drop the body, the planner sends it again (or refuses a stream)
+      in 7344 disagreements, alone in 4928
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.bytes Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-None-Match, "e1"), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked)]
+        planner: GET http://a.test:80/new body sent again [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+  - back at the original origin: the planner gives the credentials back
+      in 4421 disagreements, alone in 313
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Length, 5), (Content-Language, en), (Accept, */*), (Origin, http://a.test), (Host, b.test)]
+        planner: GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; cookie: sid=1; host: a.test; origin: http://a.test]
+        oracle:  GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; host: a.test; origin: http://a.test]
+  - Digest dropped with a method change: the planner drops the digest fields, the oracles keep them
+      in 3005 disagreements, alone in 183
+      e.g. 303 HTTP/1.1 OPTIONS body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Content-Encoding, gzip), (Content-Language, en), (Transfer-Encoding, chunked), (Digest, sha-256=abc), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; cookie: sid=1; host: a.test]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; cookie: sid=1; digest: sha-256=abc; host: a.test]
+  - onlySafeRedirects (v4.34.1 only): refuses every method that is not safe; the planner has no such option
+      in 19872 disagreements, alone in 4928
+      e.g. 301 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Content-Language, en), (If-None-Match, "e1"), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (Origin, http://a.test), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; host: a.test; origin: http://a.test; proxy-authorization: Basic eA==]
+        oracle:  not followed
+  - dot segments and empty path of an absolute Location (v4.34.1 only): left as they are; the planner and the PR head resolve them
+      in 4032 disagreements, alone in 271
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some http://a.test/x/../y/./z) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Content-Language, en), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Digest, sha-256=abc)]
+        planner: GET http://a.test:80/y/z body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; digest: sha-256=abc; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-hop: 1]
+        oracle:  GET http://a.test:80/x/../y/./z body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; digest: sha-256=abc; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-hop: 1]
+  0 unexplained
+== chains against the upstream client's loop: 100000 chains, 11847 agree (longest 7 steps), 88153 differ
+  37276 explained by: hop limit: the upstream loop delivers the last 3xx when its budget is spent, the planner fails with tooManyRedirects
+  50877 explained by: no cycle detection: the upstream loop delivers a 3xx whose target (origin, path and query, not method) was visited, the planner follows it
+  0 unexplained
+== control: upstream PR head, planner with Plant.leakCredentials planted: 127512 decisions, 33264 followed by the planner, 91868 agree, 35644 disagree
+  18038 explained, by 16 combinations of these differences:
+  - undefined 3xx code: the oracles follow any 3xx with a Location (but 300, 304, 305 and 306), the planner only 301, 302, 303, 307 and 308
+      in 3456 disagreements, alone in 3456
+      e.g. 399 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Type, text/plain), (Content-Language, en), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Origin, http://a.test)]
+        planner: not followed
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from]
+  - HTTP/1.0 response: the oracles follow only 301 and 302, and keep POST; the planner treats every version alike
+      in 7641 disagreements, alone in 3393
+      e.g. 301 HTTP/1.0 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Referer, http://a.test/from), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  POST http://a.test:80/new body none [authorization: Bearer t0k; content-type: text/plain; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+  - 301 or 302 with a method other than GET, HEAD and POST: the oracles refuse it, the planner keeps the method, as for 307
+      in 3539 disagreements, alone in 1381
+      e.g. 301 HTTP/1.1 PUT body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Accept, */*), (Digest, sha-256=abc), (Host, a.test)]
+        planner: PUT http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; content-type: text/plain; digest: sha-256=abc; host: a.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; last-modified: Sun, 06 Nov 1994 08:49:37 GMT]
+        oracle:  not followed
+  - GET or HEAD with a body, on a redirect that keeps the method: the oracles drop the body, the planner sends it again (or refuses a stream)
+      in 3770 disagreements, alone in 2370
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.bytes Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-None-Match, "e1"), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked)]
+        planner: GET http://a.test:80/new body sent again [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+  - back at the original origin: the planner gives the credentials back
+      in 4421 disagreements, alone in 1277
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Length, 5), (Content-Language, en), (Accept, */*), (Origin, http://a.test), (Host, b.test)]
+        planner: GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; cookie: sid=1; host: a.test; origin: http://a.test]
+        oracle:  GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; host: a.test; origin: http://a.test]
+  - Digest dropped with a method change: the planner drops the digest fields, the oracles keep them
+      in 1543 disagreements, alone in 592
+      e.g. 301 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Digest, sha-256=abc), (Origin, http://a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; origin: http://a.test]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; digest: sha-256=abc; origin: http://a.test]
+  17606 unexplained
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://b.test fields [(Content-Encoding, gzip), (Content-Language, en), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-None-Match, "e1"), (Keep-Alive, timeout=5), (Accept, */*), (Origin, http://a.test), (X-Custom, v)]
+        planner: GET http://b.test:80/new body none [accept: */*; authorization: Bearer t0k; content-encoding: gzip; content-language: en; if-none-match: "e1"; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; x-custom: v]
+        oracle:  GET http://b.test:80/new body none [accept: */*; content-encoding: gzip; content-language: en; if-none-match: "e1"; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; x-custom: v]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://b.test fields [(Content-Type, text/plain), (Content-Length, 5), (If-None-Match, "e1"), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (Origin, http://a.test), (X-Custom, v)]
+        planner: GET http://b.test:80/new body none [content-length: 5; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; if-none-match: "e1"; origin: http://a.test; x-custom: v]
+        oracle:  GET http://b.test:80/new body none [content-length: 5; content-type: text/plain; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; if-none-match: "e1"; origin: http://a.test; x-custom: v]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://b.test fields [(Referer, http://a.test/from), (Content-Type, text/plain), (Content-Length, 5), (Content-Encoding, gzip), (Transfer-Encoding, chunked), (Origin, http://a.test), (X-Custom, v)]
+        planner: GET http://b.test:80/new body none [authorization: Bearer t0k; content-encoding: gzip; content-length: 5; content-type: text/plain; cookie: sid=1; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  GET http://b.test:80/new body none [content-encoding: gzip; content-length: 5; content-type: text/plain; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://b.test fields [(Referer, http://a.test/from), (Content-Type, text/plain), (Content-Length, 5), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Accept, */*), (Origin, http://a.test), (X-Custom, v), (Host, b.test)]
+        planner: GET http://b.test:80/new body none [accept: */*; content-length: 5; content-type: text/plain; cookie: sid=1; host: b.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  GET http://b.test:80/new body none [accept: */*; content-length: 5; content-type: text/plain; host: b.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://b.test fields [(Content-Encoding, gzip), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-None-Match, "e1"), (X-Hop, 1), (X-Custom, v), (Host, b.test)]
+        planner: GET http://b.test:80/new body none [authorization: Bearer t0k; content-encoding: gzip; host: b.test; if-none-match: "e1"; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; proxy-authorization: Basic eA==; x-custom: v; x-hop: 1]
+        oracle:  GET http://b.test:80/new body none [content-encoding: gzip; host: b.test; if-none-match: "e1"; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-custom: v; x-hop: 1]
+== control: upstream PR head, planner with Plant.keepPostOn303 planted: 127512 decisions, 33264 followed by the planner, 96467 agree, 31045 disagree
+  29749 explained, by 16 combinations of these differences:
+  - undefined 3xx code: the oracles follow any 3xx with a Location (but 300, 304, 305 and 306), the planner only 301, 302, 303, 307 and 308
+      in 3456 disagreements, alone in 3456
+      e.g. 399 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Type, text/plain), (Content-Language, en), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Origin, http://a.test)]
+        planner: not followed
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from]
+  - HTTP/1.0 response: the oracles follow only 301 and 302, and keep POST; the planner treats every version alike
+      in 14256 disagreements, alone in 7206
+      e.g. 301 HTTP/1.0 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Referer, http://a.test/from), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  POST http://a.test:80/new body none [authorization: Bearer t0k; content-type: text/plain; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+  - 301 or 302 with a method other than GET, HEAD and POST: the oracles refuse it, the planner keeps the method, as for 307
+      in 6912 disagreements, alone in 3056
+      e.g. 301 HTTP/1.1 PUT body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Accept, */*), (Digest, sha-256=abc), (Host, a.test)]
+        planner: PUT http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; content-type: text/plain; digest: sha-256=abc; host: a.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; last-modified: Sun, 06 Nov 1994 08:49:37 GMT]
+        oracle:  not followed
+  - GET or HEAD with a body, on a redirect that keeps the method: the oracles drop the body, the planner sends it again (or refuses a stream)
+      in 7344 disagreements, alone in 5301
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.bytes Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-None-Match, "e1"), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked)]
+        planner: GET http://a.test:80/new body sent again [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+  - back at the original origin: the planner gives the credentials back
+      in 4270 disagreements, alone in 1225
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Length, 5), (Content-Language, en), (Accept, */*), (Origin, http://a.test), (Host, b.test)]
+        planner: GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; cookie: sid=1; host: a.test; origin: http://a.test]
+        oracle:  GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; host: a.test; origin: http://a.test]
+  - Digest dropped with a method change: the planner drops the digest fields, the oracles keep them
+      in 2603 disagreements, alone in 1154
+      e.g. 301 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Digest, sha-256=abc), (Origin, http://a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; origin: http://a.test]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; digest: sha-256=abc; origin: http://a.test]
+  1296 unexplained
+      303 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (Content-Encoding, gzip), (Accept, */*), (Origin, http://a.test)]
+        planner: POST http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; cookie: sid=1; origin: http://a.test; proxy-authorization: Basic eA==; referer: http://a.test/from]
+        oracle:  GET http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; cookie: sid=1; origin: http://a.test; proxy-authorization: Basic eA==; referer: http://a.test/from]
+      303 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Proxy-Authorization, Basic eA==), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5)]
+        planner: POST http://a.test:80/new body none [authorization: Bearer t0k; cookie: sid=1; proxy-authorization: Basic eA==]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; cookie: sid=1; proxy-authorization: Basic eA==]
+      303 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Length, 5), (Transfer-Encoding, chunked), (Accept, */*), (Digest, sha-256=abc), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: POST http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; cookie: sid=1; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  GET http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; cookie: sid=1; digest: sha-256=abc; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+      303 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Content-Length, 5), (Content-Language, en), (Connection, x-hop), (Accept, */*), (Digest, sha-256=abc), (Host, a.test)]
+        planner: POST http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; cookie: sid=1; host: a.test]
+        oracle:  GET http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; cookie: sid=1; digest: sha-256=abc; host: a.test]
+      303 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Cookie, sid=1), (Proxy-Authorization, Basic eA==), (Content-Type, text/plain), (Content-Length, 5), (Content-Encoding, gzip), (If-None-Match, "e1"), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (Origin, http://a.test), (Host, a.test)]
+        planner: POST http://a.test:80/new body none [cookie: sid=1; host: a.test; origin: http://a.test; proxy-authorization: Basic eA==]
+        oracle:  GET http://a.test:80/new body none [cookie: sid=1; host: a.test; origin: http://a.test; proxy-authorization: Basic eA==]
+== control: upstream PR head, planner with Plant.keepHost planted: 127512 decisions, 33264 followed by the planner, 95387 agree, 32125 disagree
+  24376 explained, by 16 combinations of these differences:
+  - undefined 3xx code: the oracles follow any 3xx with a Location (but 300, 304, 305 and 306), the planner only 301, 302, 303, 307 and 308
+      in 3456 disagreements, alone in 3456
+      e.g. 399 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Referer, http://a.test/from), (Content-Type, text/plain), (Content-Language, en), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Origin, http://a.test)]
+        planner: not followed
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; content-language: en; content-type: text/plain; cookie: sid=1; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from]
+  - HTTP/1.0 response: the oracles follow only 301 and 302, and keep POST; the planner treats every version alike
+      in 11671 disagreements, alone in 6280
+      e.g. 301 HTTP/1.0 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Referer, http://a.test/from), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; host: a.test; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+        oracle:  POST http://a.test:80/new body none [authorization: Bearer t0k; content-type: text/plain; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; referer: http://a.test/from; x-custom: v]
+  - 301 or 302 with a method other than GET, HEAD and POST: the oracles refuse it, the planner keeps the method, as for 307
+      in 5428 disagreements, alone in 2525
+      e.g. 301 HTTP/1.1 PUT body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Content-Type, text/plain), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Connection, x-hop), (X-Hop, 1), (Keep-Alive, timeout=5), (Accept, */*), (Digest, sha-256=abc), (Host, a.test)]
+        planner: PUT http://a.test:80/new body none [accept: */*; authorization: Bearer t0k; content-type: text/plain; digest: sha-256=abc; host: a.test; if-modified-since: Sun, 06 Nov 1994 08:49:37 GMT; last-modified: Sun, 06 Nov 1994 08:49:37 GMT]
+        oracle:  not followed
+  - GET or HEAD with a body, on a redirect that keeps the method: the oracles drop the body, the planner sends it again (or refuses a stream)
+      in 5754 disagreements, alone in 4371
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.bytes Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-None-Match, "e1"), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked)]
+        planner: GET http://a.test:80/new body sent again [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; if-none-match: "e1"; proxy-authorization: Basic eA==; referer: http://a.test/from; x-hop: 1]
+  - back at the original origin: the planner gives the credentials back
+      in 2122 disagreements, alone in 607
+      e.g. 301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Type, text/plain), (Content-Encoding, gzip), (If-None-Match, "e1"), (Connection, x-hop), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (Digest, sha-256=abc)]
+        planner: GET http://a.test:80/p body none [content-encoding: gzip; content-type: text/plain; cookie: sid=1; digest: sha-256=abc; proxy-authorization: Basic eA==]
+        oracle:  GET http://a.test:80/p body none [content-encoding: gzip; content-type: text/plain; digest: sha-256=abc]
+  - Digest dropped with a method change: the planner drops the digest fields, the oracles keep them
+      in 2358 disagreements, alone in 1101
+      e.g. 301 HTTP/1.1 POST body LeanHttp.Call.BodyKind.none Location (some /new) from http://a.test fields [(Authorization, Bearer t0k), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Digest, sha-256=abc), (Origin, http://a.test)]
+        planner: GET http://a.test:80/new body none [authorization: Bearer t0k; origin: http://a.test]
+        oracle:  GET http://a.test:80/new body none [authorization: Bearer t0k; digest: sha-256=abc; origin: http://a.test]
+  7749 unexplained
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //b.test/p) from http://a.test fields [(Referer, http://a.test/from), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (Keep-Alive, timeout=5), (Digest, sha-256=abc), (Host, a.test)]
+        planner: GET http://b.test:80/p body none [digest: sha-256=abc; host: a.test]
+        oracle:  GET http://b.test:80/p body none [digest: sha-256=abc; host: b.test]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //b.test/p) from http://a.test fields [(Authorization, Bearer t0k), (Proxy-Authorization, Basic eA==), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (X-Hop, 1), (Origin, http://a.test), (X-Custom, v), (Host, a.test)]
+        planner: GET http://b.test:80/p body none [host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; x-custom: v; x-hop: 1]
+        oracle:  GET http://b.test:80/p body none [host: b.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; origin: http://a.test; x-custom: v; x-hop: 1]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //b.test/p) from http://a.test fields [(Cookie, sid=1), (Last-Modified, Sun, 06 Nov 1994 08:49:37 GMT), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (X-Hop, 1), (Accept, */*), (X-Custom, v), (Host, a.test)]
+        planner: GET http://b.test:80/p body none [accept: */*; host: a.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-custom: v; x-hop: 1]
+        oracle:  GET http://b.test:80/p body none [accept: */*; host: b.test; last-modified: Sun, 06 Nov 1994 08:49:37 GMT; x-custom: v; x-hop: 1]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //b.test/p) from http://a.test fields [(Authorization, Bearer t0k), (Cookie, sid=1), (Proxy-Authorization, Basic eA==), (Referer, http://a.test/from), (If-Modified-Since, Sun, 06 Nov 1994 08:49:37 GMT), (X-Hop, 1), (Keep-Alive, timeout=5), (Transfer-Encoding, chunked), (X-Custom, v), (Host, a.test)]
+        planner: GET http://b.test:80/p body none [host: a.test; x-custom: v; x-hop: 1]
+        oracle:  GET http://b.test:80/p body none [host: b.test; x-custom: v; x-hop: 1]
+      301 HTTP/1.1 GET body LeanHttp.Call.BodyKind.none Location (some //a.test/p) from http://b.test fields [(Content-Length, 5), (Content-Language, en), (Accept, */*), (Origin, http://a.test), (Host, b.test)]
+        planner: GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; cookie: sid=1; host: b.test; origin: http://a.test]
+        oracle:  GET http://a.test:80/p body none [accept: */*; content-language: en; content-length: 5; host: a.test; origin: http://a.test]
+every planted bug found
+every disagreement explained
+exit status 0, wall 64137 ms

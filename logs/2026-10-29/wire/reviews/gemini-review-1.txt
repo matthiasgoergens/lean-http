@@ -1,0 +1,161 @@
+Here is the review of the change, ordered by confidence and severity.
+
+---
+
+### High Confidence Defects
+
+#### 1. `BodyStream.advance` and `BodyStream.readAll` grant `max` credit (`65536` / `2^62`) instead of `1`, leaving `socket.recv?` and `readBy` armed while outside `read`
+- **Location:** [`BodyStream.advance`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L317-L321), [`BodyStream.readAll`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L388-L390) (interacting with [`Exchange.releaseList`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Exchange.lean#L607-L612) and [`Exchange.schedule`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Exchange.lean#L856-L860))
+- **Confidence:** **High**
+- **Breaks:** Guarantee 5 (*"each `read` gives the exchange core credit; what the shell holds never exceeds one read"*), [`DESIGN.md:59`](file:///tmp/lean-http-wire-review/tree/DESIGN.md#L59) (*"Holding a body open inside the callback while doing other slow work keeps one connection busy, and nothing else"*), and [`BodyStream`'s docstring](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L244-L246).
+- **Mechanism:**
+  [`Exchange.releaseList`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Exchange.lean#L607-L612) already delivers **all** held body slices whenever `ex.credit > 0`, and subtracts `min ex.credit deliveredSize` from `ex.credit`.
+  When [`BodyStream.advance`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L321) calls `live.stepNow (.wantBody max)` with the default `max = 65536` (or `1 <<< 62` in [`BodyStream.readAll`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L388)), any delivery smaller than `max` leaves residual `ex.credit > 0` inside `live.ex`. In the same step that delivers those body bytes, [`Exchange.schedule`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Exchange.lean#L856-L860) sees `!ex.readInFlight && ex.wantsInput` (`ex.credit > 0 && ex.held.isEmpty`), emits a new `.read 65536` alongside `.deliverBody`, and sets `ex.readBy := some (ex.now + ex.config.gapMs)`. [`Live.until`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L186-L188) executes `live.perform` (starting `socket.recv?` in `live.reading`) and then returns because `!out.bodies.isEmpty`.
+- **Concrete Scenarios:**
+  1. **Spurious `.timeout .read` while the callback processes a chunk:** Inside [`Client.withResponse`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L971-L977), the callback calls `resp.body.read` (default `max = 65536`) and receives a 4 KiB chunk. Residual `ex.credit` is `61440`, so `socket.recv?` is immediately started in the background and `ex.readBy` is armed for `now + readGapMs`. The callback spends `> readGapMs` processing the 4 KiB chunk (while the server is also waiting or pauses `> readGapMs`). When the callback calls `resp.body.read` a second time, [`Live.wait`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L166-L170) sees `waitMs == 0`, ticks the exchange, and fails with `Cause.timeout .read` even though 0 ms elapsed since the second `read` call.
+  2. **Holding more than one read in the shell:** `live.ex.held` has 1,000 body bytes that arrived with the response head. The callback calls `resp.body.read 2000`, which returns the 1,000 bytes, leaves `ex.credit = 1000`, and starts a 64 KiB `socket.recv?` in flight. The callback next calls `resp.body.read 10`. When that `recv?` completes with 500 bytes, `BodyStream` returns 10 bytes, stores 490 bytes in `pending`, and—because `ex.credit = 500 > 0`—starts *another* 64 KiB `socket.recv?` while `pending` is still non-empty.
+  - Passing `.wantBody 1` in `BodyStream.advance` still releases all currently decoded bytes via `releaseList`, while ensuring `ex.credit` drops back to `0` on the very first delivery.
+
+---
+
+#### 2. A concurrent `BodyStream.read` in another task lets a pending `recv?` and a checked-out connection outlive `withResponse`
+- **Location:** [`BodyStream.release`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L398-L401), [`BodyStream.finishRead`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L341-L348), [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L870)
+- **Confidence:** **High**
+- **Breaks:** Guarantee 3 (*connection given back or dropped before call finishes*), Guarantee 4 (*no pending `recv?` outlives the callback of `withResponse`*), and [`Client.lean:52-53`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L52-L53) (*"Wait for every spawned task or selector registration before returning from `request` or `withResponse`"*).
+- **Mechanism:**
+  While a task is blocked inside [`BodyStream.advance`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L317-L330) waiting on `live.reading` (`socket.recv?`), `s.state` is `.busy` (which carries no reference to `live` or `held.socket`). When the `withResponse` callback returns or throws, [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L870) runs `stream.release`. [`BodyStream.release`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L398-L401) executes:
+  ```lean
+  match ← s.state.swap .released with
+  | .open (some live) .. => s.settle (← live.abandon)
+  | _ => pure ()
+  ```
+  Because the previous state was `.busy`, `stream.release` does nothing and returns immediately, and `withResponse` returns to its caller.
+- **Concrete Scenario:**
+  Inside `withResponse`, the callback spawns a child task that calls `resp.body.read` against a slow server (or races `resp.body.read` against a short timer) and exits the callback when the timer fires. `stream.release` swaps `.busy` to `.released` and returns immediately; `withResponse` finishes while `socket.recv?` is still registered in the child task and the connection remains checked out of the pool (until `readGapMs` / `deadline` expires, plus up to `drainMs` inside `finishRead`). If `main` exits right after `withResponse` returns, the live `recvSelector` registration triggers the Lean v4.34.1 runtime shutdown hang described in [`NOTES.md:89`](file:///tmp/lean-http-wire-review/tree/NOTES.md#L89).
+
+---
+
+#### 3. Exchanges that fail in the same step that delivers the response head are treated as `Began.head` / `Outcome.response head` instead of `Failure`
+- **Location:** [`Live.begin`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L197-L202), [`BodyStream.new`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L283-L289), [`Attempt.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L715-L722), [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L842-L879)
+- **Confidence:** **High**
+- **Breaks:** Guarantee 1 (*report how each exchange ended truthfully; `Call.validate` trace faithfulness*) and Guarantee 5 (*streaming body delivery and error reporting*).
+- **Mechanism:**
+  A single [`Exchange.step`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Exchange.lean#L685-L688) can emit **both** `.deliverHead head` and `.fail failure` (setting `ex.phase := .failed failure` and `live.verdict := some false`):
+  - [`Codec.Parser.startBody`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Codec/Response.lean#L117-L128) emits `#[.head h, .error .bodyTooLarge]` when `Content-Length > maxBody`, or `#[.head h, .error .unsupportedCoding]` when `Transfer-Encoding` is e.g. `gzip, chunked`.
+  - When a single `socket.recv?` returns both the response header and body bytes that fail parsing (e.g. a malformed chunk size `ZZ\r\n`, a chunk header exceeding `maxBody`, or an `untilClose` body exceeding `maxBody`), [`Parser.feed`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Codec/Response.lean#L254-L282) returns `#[.head h, ..., .error e]` in one array.
+  [`Live.begin`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L198) stops at `out.head.isSome || live.verdict.isSome` and returns `(live, out.head)`, and [`Attempt.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L716) matches `.ok (live, some head)` without checking `live.failure?`. This causes four distinct bugs:
+- **Concrete Scenarios:**
+  1. **Protocol-invalid 3xx / 429 / 503 responses are followed or retried instead of failing:**
+     A server replies with `HTTP/1.1 302 Found\r\nLocation: /b\r\nTransfer-Encoding: gzip, chunked\r\n\r\n` (or a `302` / `503` whose first TCP packet also contains a corrupt chunk header `ZZ\r\n`). `Exchange` fails immediately with `Cause.protocol` (which the planner never retries or follows), yet `CallSpec.loop` reports `Outcome.response head` to [`Call.plan`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call.lean#L276), which decides `.follow` or `.retry`. [`discardBody`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L814-L819) then drops the failed connection and the client silently follows the redirect or retries.
+  2. **`withResponse` returns `.ok` on a failed exchange if the callback does not read the body:**
+     A server replies `HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n` (or `Content-Length: 99999999` exceeding `maxBodyBytes`). [`BodyStream.new`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L287-L289) sees `live.verdict == some false`, settles the connection, and parks the error inside `State.open none (some err) [] 0`. If the callback inspects `resp.line.status` and returns without calling `resp.body.read` (e.g. [`Tests/Net.lean:283`](file:///tmp/lean-http-wire-review/tree/Tests/Net.lean#L283) when `stop == 0`), `withResponse` returns `.ok` instead of `.error`.
+  3. **Decoded body bytes preceding a parse error in the first packet are silently discarded (breaks split-invariance):**
+     A server sends `HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\nZZ\r\n` in a single TCP segment. During `Live.begin`, `ex.credit == 0`, so `"hello"` is placed in `live.ex.held` and `live.ex.phase` transitions to `.failed` on `ZZ\r\n`. Then [`BodyStream.new`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L287-L289) sees `live.verdict == some false` and constructs `State.open none (some err) [] 0`, throwing away `live.ex.held`. The caller's first `resp.body.read` immediately fails with `err`, whereas if `ZZ\r\n` had arrived in the next TCP packet, the first `resp.body.read` would return `some "hello"` and the second would raise `err`.
+  4. **The trace observer records `Event.deliver` (and never `Event.fail`) when a call fails in `startBody` or during body reading:**
+     In [`CallSpec.loop:858-878`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L858-L878), `Event.decide ... .deliver` and `Event.deliver` are emitted *before* `k resp` runs, and if `k resp` fails with a stream error (such as `body-limit`, `cut-body`, `deadline-trickle`, or `stream-error`), `CallSpec.loop` returns `.error err` without emitting `Event.fail`. [`Call.validate`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L165-L166) accepts the trace only because the trace falsely claims the call succeeded with `.deliver`.
+
+---
+
+#### 4. `Client.request` enforces `Config.maxBodyBytes` on intermediate redirect and retried 429/503 bodies, dropping connections instead of draining
+- **Location:** [`Client.request`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L995), [`Client.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L924), [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L839)
+- **Confidence:** **High**
+- **Breaks:** Guarantee 2 (*"A response that is followed or retried has its body drained within the drain limit (connection kept) or its connection dropped, before the next request"*).
+- **Mechanism:**
+  [`Client.request`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L995) passes `client.config.maxBodyBytes` as `maxBody` to [`Client.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L924), which sets `xcfg.maxBody := maxBody` for every exchange in `CallSpec.loop`—including intermediate redirects and retried 429/503 responses. [`Codec.Parser`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Codec/Response.lean#L121-L122) enforces `maxBody` on `Content-Length`, `chunked`, and `untilClose` bodies even when `Exchange` is in `.draining` ([`Exchange.lean:678`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Exchange.lean#L678)).
+- **Concrete Scenario:**
+  A caller configures `maxBodyBytes := 1024` (expecting a tiny JSON response on the final hop) while leaving `drainBytes := 65536` at its default. Hop 0 returns `302 Found` (or a retried `503`) with a 2,048-byte HTML body (`Content-Length: 2048` or chunked). Even though `Client.request` never buffers the redirect body and 2,048 bytes is well within the 64 KiB `drainBytes` budget, `Codec.Parser` immediately fails the exchange with `.bodyTooLarge`, so [`discardBody`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L814-L819) drops the connection instead of draining and reusing it.
+
+---
+
+### Medium Confidence Defects
+
+#### 5. `Call.validate` can be fooled by multiple classes of shell bugs
+- **Location:** [`Call.validate`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L136-L168), [`causeMatches`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L96-L100), [`errorMatches`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L105-L110)
+- **Confidence:** **Medium** (the validation gaps are certain; impact is that `Call.validate` accepts buggy shell traces)
+- **Breaks:** Guarantee 1 (*"`Call.validate` should reject any trace where it does not; can it be fooled (a shell bug it would accept)?"*) and Guarantee 6.
+- **Concrete Scenarios that `Call.validate` accepts:**
+  1. **`Error.delivery` is never checked anywhere in [`Trace.lean`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L105-L110):**
+     If the shell produces `Error.delivery = .notSent` after following a redirect, after a retry whose previous attempt sent bytes (`st.sent = true`), or on a failure with `f.delivery = .maybeDelivered`, `errorMatches` ignores `e.delivery` and `Call.validate` returns `true`.
+  2. **Spurious `.invalidRequest` after `.follow` is accepted regardless of the redirect target ([`Trace.lean:145-149`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L145-L149)):**
+     After any `.follow next` decision, `expect` is `.send clock.now true`. If the shell immediately emits `.fail { kind := .invalidRequest "anything", delivery := .notSent, ... }` instead of sending `next.current` (even when `next.current` is a valid `http://` request—as in [`Tests/Unit.lean:294-301`](file:///tmp/lean-http-wire-review/tree/Tests/Unit.lean#L294-L301) where `Location: /b` resolves to `http://127.0.0.1:1/b`), `Call.validate` accepts the trace without checking that `next.current` actually fails `Client.plan`.
+  3. **`causeMatches` only checks that `all` is a suffix of `last`, and accepts empty `all` ([`Trace.lean:96-100`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L96-L100)):**
+     `causeMatches` checks `all.size ≤ last.size && reprStr (all.extract (all.size - last.size) all.size) == reprStr last`. Because `all` is the accumulated `Error.attempts` (`progress.attempts`) while `last` is the single round's `f.cause` (`attempts`), `all.size ≤ last.size` is backwards whenever there were multiple connect rounds—except that when `last` is empty (`#[]`, as in [`Attempt.connect:631`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L631)) or if a buggy shell resets `progress.attempts` on each round instead of appending, `causeMatches` returns `true`; conversely, on a multi-round connect failure where `all.size > last.size` and `f.cause` is non-empty (e.g., exhausting retries on `Cause.connect`), `all.size ≤ last.size` evaluates to `false` and **rejects a valid multi-round trace**!
+     - Specifically: on a 2-round connect failure where round 1 had 1 failed attempt (`progress.attempts.size = 1`) and round 2 had 1 failed attempt (`last.size = 1`, `all.size = 2`), if the call then fails with `.exhausted` (not `.deadline`), `errorMatches` calls `causeMatches e.cause f.cause` (`all.size = 2`, `last.size = 1`), and `all.size ≤ last.size` (`2 ≤ 1`) is **`false`**. (In `Tests/Net.lean`, multi-round connect tests only passed because `maxRetries` was large enough that they hit `.deadline` at [`Client.lean:631`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L631) where `last = #[]`, or `e.kind == .deadline` skipped `causeMatches`!)
+  4. **No check that `send` timestamps respect `deadline` or that metadata fields match `st`:**
+     [`Trace.lean:141`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Call/Trace.lean#L141) checks `time < notBefore`, but never checks `time ≤ deadline` when `st.current` is sent, nor does `errorMatches` verify `e.hops == st.hops`, `e.retries == st.retries`, `e.status`, or `e.notRetried`.
+
+---
+
+#### 6. Race window in `BodyStream.read` where `.busy` is released before the recursive `s.read max` re-acquires it
+- **Location:** [`BodyStream.read`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L377-L379), [`BodyStream.finishRead`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L341-L348)
+- **Confidence:** **Medium**
+- **Breaks:** Guarantee 5 (thread-safe state transitions on `BodyStream`).
+- **Mechanism:**
+  When `pending` is empty, `BodyStream.read` swaps `s.state` from `.open` to `.busy`, runs `let next ← s.advance live max`, calls `s.finishRead next` (which transitions `s.state` from `.busy` back to `.open`), and then calls `s.read max` (which transitions `s.state` from `.open` to `.busy` again to pop the newly read chunk).
+- **Concrete Scenario:**
+  Task A is in `s.read` waiting on the socket; Task B concurrently calls `s.read` (or `s.release` runs as the callback exits). If Task B hits `s.state.modifyGet` during the window between `s.finishRead next` ([`Body.lean:378`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L378)) and the recursive `s.read max` ([`Body.lean:379`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Body.lean#L379)), Task B steals the `.open` state and the newly read chunk, while Task A (which actually performed the read) fails with `"BodyStream.read: another read of this stream is in progress"`.
+
+---
+
+#### 7. DNS resolution timeout in `Attempt.connect` increments `connectRounds` and produces `"could not connect: "`
+- **Location:** [`Attempt.connect`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L626-L628), [`Connect.resolve`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Connect.lean#L222)
+- **Confidence:** **Medium**
+- **Mechanism:**
+  When DNS resolution hits the deadline before any connect round begins, [`Connect.resolve`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Connect.lean#L222) returns `.error (.deadline #[] 0)`. Before this change (`wire.diff`), `Client.lean` added the `rounds` field (`0`) from `.deadline attempts rounds` and checked `if attempts.isEmpty`. Now [`Attempt.connect`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L626-L628) ignores the `rounds` field (`| .deadline attempts _ =>`) and unconditionally sets `rounds := progress.rounds + 1` and `detail := (Cause.connect attempts).describe`.
+- **Concrete Scenario:**
+  A call whose DNS lookup times out (`dns-timeout` in [`tests/net/run.sh:215`](file:///tmp/lean-http-wire-review/tree/tests/net/run.sh#L215)) reports `err.connectRounds == 1` even though zero connect rounds were started, and sets `err.detail` to `"could not connect: "` with an empty address list.
+
+---
+
+#### 8. Returning a connection to the pool as `reusable = true` when `Exchange.begin` fails with `.timeout .deadline` resets its idle timestamp
+- **Location:** [`Attempt.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L748-L749), [`Pool.checkin`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Pool.lean#L321)
+- **Confidence:** **Medium**
+- **Breaks:** Guarantee 5 / [`DESIGN.md:83`](file:///tmp/lean-http-wire-review/tree/DESIGN.md#L83) (*"never pooled unless the core says it is reusable"*) and `Config.idleTimeoutMs`.
+- **Mechanism:**
+  When `Exchange.begin` fails immediately with `.timeout .deadline` (`f.delivery == .notSent`), `live.verdict` is `some false`. However, [`Attempt.run:748-749`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L748-L749) overrides `live.verdict` with `f.delivery == .notSent && (f.cause matches .timeout _)` and calls `giveBack a.client id held.socket held.address true`. [`Pool.checkin`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Pool.lean#L321) inserts the connection into `idle` with `since := now` (the current timestamp, not its original idle timestamp).
+- **Concrete Scenario:**
+  A connection becomes idle at `t = 0` (`idleTimeoutMs = 4000`). At `t = 3999`, a call with `deadline = 4000` checks it out; the 1 ms `alive?` probe finishes at `t = 4000`, so `Exchange.begin` fails with `.timeout .deadline` (`notSent`). `Attempt.run` checks the connection back into the pool with `since := 4000`, allowing it to sit idle until `t = 8000` (twice `idleTimeoutMs`).
+
+---
+
+### Low Confidence / Minor Defects & Code Hygiene
+
+#### 9. 408 re-dispatch drains the response body for up to `drainMs` before unconditionally dropping the connection
+- **Location:** [`Attempt.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L738-L741)
+- **Confidence:** **High** (low severity: unnecessary latency up to `drainMs`)
+- **Concrete Scenario:**
+  A reused connection receives `HTTP/1.1 408 Request Timeout\r\nContent-Length: 32\r\n\r\n` without `Connection: close`, and the peer delays sending the 32-byte body. [`Attempt.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L738-L741) calls `let _ ← live.abandon` (which enters `.draining` and reads from the socket for up to `drainMs = 100` ms) and then immediately calls `settleHeld a.client held false` (which always closes and drops the connection). Only `live.cancelRead` is needed before dropping `held`.
+
+#### 10. Redirect to an unsupported scheme (`https://`) after a hop reports `target := ""` and stale `reused` / `redispatched` flags from the previous hop
+- **Location:** [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L831-L835)
+- **Confidence:** **High** (minor metadata inaccuracy)
+- **Concrete Scenario:**
+  Hop 0 reuses a pooled connection (`progress.reused = true`) and receives `302 Found` with `Location: https://example.com:8443/login`. On Hop 1, `Client.plan hop.head` fails with `.invalidRequest "unsupported scheme 'https'..."` before `attempt.run` resets `progress.reused` / `progress.redispatched`, and [`CallSpec.loop:834`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L834) passes `target := ""` instead of `s!"{hop.origin.host}:{hop.origin.port}"`, producing an `Error` with `target = ""` and Hop 0's `reused = true`.
+
+#### 11. `.tooManyRedirects` and redirect-at-deadline errors hardcode `written := 0`
+- **Location:** [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L897-L901)
+- **Confidence:** **High** (minor metadata inaccuracy)
+- **Concrete Scenario:**
+  A call writes `N > 0` request bytes and receives an 11th `302 Found` redirect (or receives a `302 Found` right as `clock.now ≥ deadline`). [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L897-L901) constructs `Failure` with `written := 0` instead of `live.ex.written`, so `Error.written` is reported as `0`.
+
+#### 12. Uncaught `IO` exceptions in `wallSec` and `osSeed`
+- **Location:** [`CallSpec.loop`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L849), [`Client.run`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L917), [`Client.request`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L995-L999)
+- **Confidence:** **Low** (requires OS clock / CSPRNG failure, though `wallSec` is explicitly typed `IO` rather than `BaseIO`)
+- **Concrete Scenarios:**
+  1. In [`CallSpec.loop:849`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L849), `let nowWall ← wallSec` runs *after* `attempt.run` returns `Began.head live head held` and *before* `discardBody` or `BodyStream.new`. If `wallSec` throws an `IO.Error`, `held` is never returned/dropped to the pool (leaking a pool slot) and `live.cancelRead` is never called.
+  2. In [`Client.run:917`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L917), `let seed ← osSeed` (`IO.getRandomBytes 8`) runs before `CallSpec.loop`. If it throws, `Client.withResponse` throws an unhandled `IO.Error` (violating its docstring at [`Client.lean:967`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L967)), while [`Client.request:998`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L998) catches it and returns `delivery := .maybeDelivered` even though no request was sent (Guarantee 6).
+
+#### 13. Early timer wakeup (up to 1 ms before `IO.monoMsNow` reaches `deadline`) in `Connect.round` and `Attempt.acquire`
+- **Location:** [`Connect.round`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Connect.lean#L177-L189), [`Attempt.acquire`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L652-L655)
+- **Confidence:** **Low**
+- **Concrete Scenarios:**
+  1. As noted in [`sleepUntil`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L761-L764), libuv timers can fire 1 ms before `IO.monoMsNow` reaches `deadline`. In [`Connect.round:177-189`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Connect.lean#L177-L189), on the last address (`isLast = true`), `awaitFirst tasks waitMs` waits `left` ms. If the timer fires 1 ms early, `awaitFirst` returns `none`, `if (← remainingMs deadline) == 0` is `false`, the `for` loop exits, and `Connect.round` returns the initial `result = .deadline` 1 ms early (and if `i < addrs.size - 1` with `left < connectStaggerMs`, an early wakeup treats the deadline timer as the stagger timer and starts the next address).
+  2. In [`Attempt.acquire:652`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L652), `some <$> awaitFirst #[freed.result?] left` wraps the `Option (Option Unit)` result of `awaitFirst` in `some`, so a timeout (`none`) becomes `some none`, matching `| some _ => a.acquire reuse progress` (making [`line 654`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L654) `| none =>` dead unless `awaitFirst` throws, and replacing the specific `"waiting for a connection: the origin is at maxActivePerOrigin"` detail at [`line 650`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L650) with the generic `"the deadline passed while taking a connection from the pool"` at [`line 644`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L644)).
+
+#### 14. Dead code and stale docstrings
+- **Location & Details:**
+  - [`Client.lean:752`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L752): `| .response _ _, none => return (.failure (notSent .peerClosed), progress)` is unreachable (`Ended.response` is only constructed at [`line 716`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L716) alongside `some live`).
+  - [`Connect.lean:51-59`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Connect.lean#L51-L59) & [`Connect.lean:70-79`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Connect.lean#L70-L79): `Connected.rounds` and the `rounds : Nat` payloads of `ConnectError.exhausted` and `ConnectError.deadline` are never read by `Client.lean`, and their docstrings still say *"in every round"* / *"of every round"* from before `Connect.run` was reduced to a single round.
+  - [`Error.lean:201-204`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Error.lean#L201-L204) & [`Error.lean:310-314`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Error.lean#L310-L314): `NoRetry.responseReceived` is never produced by the client (once a head is received, failures happen during body streaming after `.deliver`, where `notRetried` is `none`), and `Error.notRetried`'s docstring states `none` only occurs for *"an error found before any exchange (an invalid request) or one the planner does not judge (too many redirects)"*, omitting redirect-at-deadline ([`Client.lean:901`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L901)) and mid-body stream failures ([`Client.lean:865`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Client.lean#L865)).
+  - [`Config.lean:141-143`](file:///tmp/lean-http-wire-review/tree/LeanHttp/Config.lean#L141-L143): Docstring for `Config.pool` says *"With `pool := false`, every call opens a connection of its own and closes it when done"*; with the pool disabled, every *exchange* (hop/retry) within a call opens and closes its own connection.
+exit 0

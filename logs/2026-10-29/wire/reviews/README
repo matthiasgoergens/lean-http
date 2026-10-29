@@ -1,0 +1,34 @@
+Independent reviews of the client shell (the planner's driver, the body stream, the trace check),
+2026-10-29.  Each reviewer read a snapshot of the working tree (/tmp/lean-http-wire-review and
+-review2, not kept) with the diff against main fbd2e6f.
+
+Round 1: prompt-1.txt.
+  claude-review-1.txt   a fresh Claude (subagent, fresh context); its report, condensed to the
+                        findings and what it found to hold
+  gemini-review-1.txt   Gemini through ~/.local/bin/agy-readonly (gemini-4-argon, medium)
+
+Round 2: prompt-2.txt, which says what became of every round-1 finding (fixed, or refuted with the
+reason) and asks the reviewers to break the fixes.
+  claude-review-2.txt   the fresh Claude again (a new context)
+  gemini-review-2.txt   Gemini again
+
+What came of each finding is in prompt-2.txt for round 1, and below for round 2.
+
+Round 2, the fresh Claude (claude-review-2.txt): every finding fixed; the file says how.
+
+Round 2, Gemini (gemini-review-2.txt; its answer follows a long stream of its reasoning, from the
+line "Here is the second-round review"):
+1. A body that arrived in full with the head, left without a read, was abandoned, and what the core
+   held counted against the drain limit, so with drainBytes below a read the clean connection was
+   dropped.  Fixed: Live.abandon gives the core credit instead when the response has ended (net
+   scenario stream-unread-big, which fails without the fix: checked).
+2. validate: (a) no upper bound on when a retry went out: kept; the record says when the client
+   meant to wake, and an upper bound on the real time needs a tolerance.  (b) delivery checked with
+   at least, not equal: deliberate; over-reporting is safe.  (c) the connect attempts of earlier
+   rounds are not checked: they cannot be, since attempts that lost in a round that connected are
+   not in the record.  (d) notRetried not checked for too many redirects and the deadline: fixed.
+3. After an early response head, the write in flight stays in the race until the upload stops: kept;
+   until then the upload is still going and its completion matters, and the write gap bounds it.
+4. NOTES sections not updated, home-directory paths: the first was already fixed after the
+   snapshot; the paths are from before this change.
+It confirmed every round-1 fix and refutation.

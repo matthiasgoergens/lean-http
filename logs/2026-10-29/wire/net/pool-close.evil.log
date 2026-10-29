@@ -1,0 +1,10 @@
+      20.8 listening on 127.0.0.1:18099
+      44.0 conn1 accepted from ('127.0.0.1', 36736)
+      45.7 conn1 req1 GET /ok {'host': ['127.0.0.1:18099'], 'connection': ['keep-alive']} body=0B
+      47.9 conn1 req2 GET /ok {'host': ['127.0.0.1:18099'], 'connection': ['keep-alive']} body=0B
+      48.6 conn1 EOF from client after 2 requests
+      48.7 conn1 closed by server
+      93.0 conn2 accepted from ('127.0.0.1', 36744)
+      94.5 conn2 req1 GET /ok {'host': ['127.0.0.1:18099'], 'connection': ['close']} body=0B
+      95.6 conn2 EOF from client after 1 requests
+      95.7 conn2 closed by server

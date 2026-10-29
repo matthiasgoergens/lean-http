@@ -1,0 +1,26 @@
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:39820/echo body=100 nodelay=1
+call 0 ok status=200 bytes=165 ms=57.900 rounds=1 address=127.0.0.1:39820 seed=8558513985302715180 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:39820/echo body_start="POST /echo auth=None cookie=None host=['"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=13
+main returning at ms=83.010
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+3960161 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 12
+3960161 connect(12, {sa_family=AF_INET, sin_port=htons(39820), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+3960161 setsockopt(12, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+3960161 write(12, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 191) = 191
+PASS nodelay=1: TCP_NODELAY set once on the connected socket (fd 12)
+PASS nodelay=1: the 191-byte request went out in one write (1 writes on the socket)
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:39820/echo body=100 nodelay=0
+call 0 ok status=200 bytes=165 ms=18.278 rounds=1 address=127.0.0.1:39820 seed=4527521499358486440 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:39820/echo body_start="POST /echo auth=None cookie=None host=['"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=13
+main returning at ms=20.979
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+3960206 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 12
+3960206 connect(12, {sa_family=AF_INET, sin_port=htons(39820), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+3960206 write(12, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 191) = 191
+PASS nodelay=0 (control): TCP_NODELAY not set (fd 12)
+PASS nodelay=0: the 191-byte request went out in one write (1 writes on the socket)
+### 0 failed

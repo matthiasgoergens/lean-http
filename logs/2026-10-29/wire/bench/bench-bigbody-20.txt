@@ -1,0 +1,63 @@
+ac2775cc5eb95095da9564611baf4232724287756f4e6f19fb9bef225737ea0b  /main/net-client
+3456f1a94157fe792d21a473f9363ec663c337a9c9ab0fd3726b582e26fcf4b3  /w/.lake/build/bin/net-client
+block=1 cell=main summary calls n=5 min=118.024 p50=142.985 p90=172.414 max=172.414 ms ok=5
+block=1 cell=stream 111.761
+block=1 cell=wire summary calls n=5 min=98.427 p50=114.521 p90=148.093 max=148.093 ms ok=5
+block=2 cell=stream 161.922
+block=2 cell=wire summary calls n=5 min=134.976 p50=137.117 p90=158.339 max=158.339 ms ok=5
+block=2 cell=main summary calls n=5 min=108.986 p50=127.783 p90=163.658 max=163.658 ms ok=5
+block=3 cell=wire summary calls n=5 min=100.783 p50=103.491 p90=107.703 max=107.703 ms ok=5
+block=3 cell=stream 129.407
+block=3 cell=main summary calls n=5 min=91.596 p50=92.644 p90=101.766 max=101.766 ms ok=5
+block=4 cell=main summary calls n=5 min=83.784 p50=96.537 p90=147.193 max=147.193 ms ok=5
+block=4 cell=stream 136.701
+block=4 cell=wire summary calls n=5 min=106.688 p50=107.915 p90=117.069 max=117.069 ms ok=5
+block=5 cell=stream 131.030
+block=5 cell=wire summary calls n=5 min=113.118 p50=117.154 p90=117.710 max=117.710 ms ok=5
+block=5 cell=main summary calls n=5 min=118.702 p50=124.900 p90=132.872 max=132.872 ms ok=5
+block=6 cell=stream 120.594
+block=6 cell=wire summary calls n=5 min=91.768 p50=95.257 p90=102.714 max=102.714 ms ok=5
+block=6 cell=main summary calls n=5 min=98.202 p50=102.926 p90=158.078 max=158.078 ms ok=5
+block=7 cell=wire summary calls n=5 min=97.799 p50=103.990 p90=159.267 max=159.267 ms ok=5
+block=7 cell=main summary calls n=5 min=138.249 p50=152.169 p90=177.800 max=177.800 ms ok=5
+block=7 cell=stream 167.955
+block=8 cell=wire summary calls n=5 min=99.878 p50=147.272 p90=159.462 max=159.462 ms ok=5
+block=8 cell=main summary calls n=5 min=80.823 p50=118.587 p90=140.331 max=140.331 ms ok=5
+block=8 cell=stream 145.970
+block=9 cell=stream 157.541
+block=9 cell=wire summary calls n=5 min=132.615 p50=147.874 p90=154.479 max=154.479 ms ok=5
+block=9 cell=main summary calls n=5 min=125.642 p50=133.910 p90=190.587 max=190.587 ms ok=5
+block=10 cell=stream 119.469
+block=10 cell=main summary calls n=5 min=99.617 p50=125.429 p90=128.834 max=128.834 ms ok=5
+block=10 cell=wire summary calls n=5 min=120.548 p50=126.312 p90=141.583 max=141.583 ms ok=5
+block=11 cell=main summary calls n=5 min=92.501 p50=109.510 p90=144.014 max=144.014 ms ok=5
+block=11 cell=wire summary calls n=5 min=101.576 p50=107.040 p90=138.128 max=138.128 ms ok=5
+block=11 cell=stream 133.062
+block=12 cell=stream 121.326
+block=12 cell=wire summary calls n=5 min=119.025 p50=126.863 p90=152.271 max=152.271 ms ok=5
+block=12 cell=main summary calls n=5 min=124.667 p50=143.298 p90=158.446 max=158.446 ms ok=5
+block=13 cell=stream 155.844
+block=13 cell=wire summary calls n=5 min=125.681 p50=135.670 p90=158.856 max=158.856 ms ok=5
+block=13 cell=main summary calls n=5 min=135.953 p50=159.916 p90=174.741 max=174.741 ms ok=5
+block=14 cell=main summary calls n=5 min=89.610 p50=110.325 p90=135.741 max=135.741 ms ok=5
+block=14 cell=stream 166.303
+block=14 cell=wire summary calls n=5 min=100.303 p50=120.845 p90=125.086 max=125.086 ms ok=5
+block=15 cell=stream 120.968
+block=15 cell=wire summary calls n=5 min=92.310 p50=100.464 p90=121.699 max=121.699 ms ok=5
+block=15 cell=main summary calls n=5 min=125.330 p50=137.523 p90=148.512 max=148.512 ms ok=5
+block=16 cell=main summary calls n=5 min=128.345 p50=134.609 p90=156.911 max=156.911 ms ok=5
+block=16 cell=wire summary calls n=5 min=147.244 p50=154.055 p90=158.481 max=158.481 ms ok=5
+block=16 cell=stream 159.860
+block=17 cell=wire summary calls n=5 min=86.602 p50=95.608 p90=103.681 max=103.681 ms ok=5
+block=17 cell=main summary calls n=5 min=116.441 p50=122.271 p90=126.348 max=126.348 ms ok=5
+block=17 cell=stream 147.899
+block=18 cell=stream 173.415
+block=18 cell=main summary calls n=5 min=108.729 p50=141.300 p90=147.625 max=147.625 ms ok=5
+block=18 cell=wire summary calls n=5 min=100.699 p50=139.984 p90=168.513 max=168.513 ms ok=5
+block=19 cell=main summary calls n=5 min=137.869 p50=147.591 p90=150.484 max=150.484 ms ok=5
+block=19 cell=stream 131.730
+block=19 cell=wire summary calls n=5 min=93.988 p50=102.971 p90=147.263 max=147.263 ms ok=5
+block=20 cell=stream 88.448
+block=20 cell=main summary calls n=5 min=87.929 p50=106.238 p90=120.572 max=120.572 ms ok=5
+block=20 cell=wire summary calls n=5 min=114.404 p50=116.665 p90=150.377 max=150.377 ms ok=5
+done
