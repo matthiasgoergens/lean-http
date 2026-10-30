@@ -1,0 +1,27 @@
+diff --git a/home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean b/LeanHttp/Client.lean
+index c60f0c9..948211a 100644
+--- a/home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean
++++ b/LeanHttp/Client.lean
+@@ -435,7 +435,7 @@ a `close_notify`, a failure) is given back as not reusable, whatever the verdict
+ -/
+ private def giveBack (client : Client) (id : ConnId) (transport : Transport)
+     (address : SocketAddress) (reusable : Bool) : BaseIO Unit := do
+-  let reusable := reusable && (← transport.clean)
++  -- CONTROL: the session's clean check removed
+   let gone ← client.withState fun s => do
+     -- The time is read under the mutex, so that the pool sees times in the order of its operations.
+     let now ← IO.monoMsNow
+diff --git a/home/matthias/prog/lean-http-wt-tls/native/tls.c b/native/tls.c
+index c524fef..1b887f2 100644
+--- a/home/matthias/prog/lean-http-wt-tls/native/tls.c
++++ b/native/tls.c
+@@ -281,8 +281,7 @@ LEAN_EXPORT lean_obj_res lean_http_tls_session_new(b_lean_obj_arg ctx_obj, b_lea
+     if (is_ip) {
+         ok = X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), host) == 1;
+     } else {
+-        ok = SSL_ctrl(ssl, LH_SSL_CTRL_SET_TLSEXT_HOSTNAME, LH_TLSEXT_NAMETYPE_host_name, (void *)host) == 1
+-            && SSL_set1_host(ssl, host) == 1;
++        ok = SSL_set1_host(ssl, host) == 1; /* CONTROL: no SNI */
+     }
+     if (!ok) {
+         char reason[256];

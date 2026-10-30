@@ -1,0 +1,9 @@
+Build completed successfully (55 jobs).
+### 2026-10-30T11:29:56Z 7.0.0-38-generic; syn_retries=2; uid=0
+PASS tls-latched: process exited 42 ms after main returned
+PASS tls-latched: a response followed by close_notify in the same read
+FAIL tls-latched: the connection was not pooled: the next call opened its own, and nothing was sent again (no match for: call 1 ok status=200 bytes=4 .*conn=\(some 1\) reused=false discarded=0 .*redispatched=false )
+PASS tls-latched: two connections: 2
+PASS tls-latched: every call's steps replay through the planner
+PASS traces: every call's steps replay through the planner (2 calls)
+### 5 passed, 1 failed, 0 known limitations, 0 skipped

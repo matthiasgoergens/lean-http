@@ -1,0 +1,17 @@
+      75.0 listening tls=18130 plain=18131 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+     990.1 conn1 accepted from ('127.0.0.1', 34780)
+    1058.2 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1058.5 conn1 GET /hello {'host': '127.0.0.1:18130', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1062.9 conn1 GET /hello {'host': '127.0.0.1:18130', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1064.2 conn1 GET /hello {'host': '127.0.0.1:18130', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1066.8 conn1 EOF from client
+    1099.9 conn2 accepted from ('127.0.0.1', 34784)
+    1105.4 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1106.1 conn2 GET /hello {'host': 'localhost:18130', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1155.3 conn2 EOF from client
+    1190.5 conn3 accepted from ('127.0.0.1', 34788)
+    1197.2 conn3 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1198.3 conn3 POST /echo {'host': '127.0.0.1:18130', 'connection': 'keep-alive', 'content-length': '100000'} body=100000B version=TLSv1.3
+    1202.9 conn3 EOF from client
+    1289.4 conn4 accepted from ('127.0.0.1', 34798)
+    1294.6 conn4 handshake failed: SSLError(1, '[SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:1082)')

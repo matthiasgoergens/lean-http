@@ -1,0 +1,7 @@
+$ net-client call GET http://nonexistent.invalid/
+call 0 error delivery=not sent ms=1.276 rounds=0 seed=6937822005138138080 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="could not resolve nonexistent.invalid: temporary failure (error code: 3001)" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=10
+main returning at ms=1.751
+exit status=0 wall_ms=156 exit_after_main_ms=155

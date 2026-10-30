@@ -1,0 +1,13 @@
+$ net-client call GET http://127.0.0.1:18092/close-after-idle?ms=200 repeat=3 pause=500
+call 0 ok status=200 bytes=2 ms=47.251 rounds=1 address=127.0.0.1:18092 seed=17059518486620137336 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18092/close-after-idle?ms=200 tls=none body_start="ok"
+call 1 ok status=200 bytes=2 ms=9.983 rounds=1 address=127.0.0.1:18092 seed=18247894570122664399 failed_attempts=[] conn=(some 1) reused=false discarded=1 check_us=6057 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18092/close-after-idle?ms=200 tls=none body_start="ok"
+call 2 ok status=200 bytes=2 ms=2.613 rounds=1 address=127.0.0.1:18092 seed=9976553179514913318 failed_attempts=[] conn=(some 2) reused=false discarded=1 check_us=281 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18092/close-after-idle?ms=200 tls=none body_start="ok"
+summary calls n=3 min=2.613 p50=9.983 p90=47.251 max=47.251 ms ok=3
+summary later calls n=2 min=2.613 p50=9.983 p90=9.983 max=9.983 ms
+pool idle=1 checked_out=0 allocated=3
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+fds_after_calls=11
+main returning at ms=1060.845
+exit status=0 wall_ms=1070 exit_after_main_ms=10

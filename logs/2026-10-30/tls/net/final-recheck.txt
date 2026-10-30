@@ -1,0 +1,12 @@
+Build completed successfully (60 jobs).
+159 checks, 0 failing
+### 2026-10-30T11:29:06Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 66 passed, 0 failed, 0 known limitations, 0 skipped
+### 2026-10-30T11:29:19Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 66 passed, 0 failed, 0 known limitations, 0 skipped
+### 2026-10-30T11:29:30Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 66 passed, 0 failed, 0 known limitations, 0 skipped
+      84.0 conn1 sending close_notify, corked with the response
+     284.7 conn1 unwrap: TimeoutError('The read operation timed out')
+     328.4 conn2 sending close_notify, corked with the response
+     528.7 conn2 unwrap: TimeoutError('The read operation timed out')

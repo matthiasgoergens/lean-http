@@ -1,0 +1,7 @@
+$ net-client stream GET http://127.0.0.1:18118/cl-mismatch
+stream call 0 error delivery=response received ms=106.040 rounds=1 seed=6561032162769708491 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the connection closed before a complete response" detail="" read_before=5
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=16508 rss_kb=16508
+main returning at ms=106.680
+exit status=0 wall_ms=347 exit_after_main_ms=241

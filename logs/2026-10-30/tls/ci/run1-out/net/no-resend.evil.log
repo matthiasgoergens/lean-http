@@ -1,0 +1,13 @@
+      17.1 listening on 127.0.0.1:18116
+     101.5 conn1 accepted from ('127.0.0.1', 54782)
+     102.1 conn1 req1 POST /rst {'host': ['127.0.0.1:18116'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+     102.2 conn1 closed by server
+     123.0 conn2 accepted from ('127.0.0.1', 54784)
+     123.8 conn2 req1 GET /rst {'host': ['127.0.0.1:18116'], 'connection': ['keep-alive']} body=0B
+     124.0 conn2 closed by server
+     220.8 conn3 accepted from ('127.0.0.1', 54794)
+     221.7 conn3 req1 GET /rst {'host': ['127.0.0.1:18116'], 'connection': ['keep-alive']} body=0B
+     221.7 conn3 closed by server
+     318.8 conn4 accepted from ('127.0.0.1', 54796)
+     319.1 conn4 req1 GET /rst {'host': ['127.0.0.1:18116'], 'connection': ['keep-alive']} body=0B
+     319.1 conn4 closed by server
