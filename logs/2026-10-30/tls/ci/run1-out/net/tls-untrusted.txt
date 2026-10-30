@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18136/hello ca=/w/out/net/tls-certs/ca.pem
+call 0 error delivery=not sent ms=12.504 rounds=1 seed=11469184088329927807 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS certificate verification failed: unable to get local issuer certificate" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=13.136
+exit status=0 wall_ms=25 exit_after_main_ms=12

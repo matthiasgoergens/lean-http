@@ -127,6 +127,42 @@ instance : Repr ConnectAttempt where
   reprPrec a _ := s!"\{ round := {a.round}, address := {a.address}, outcome := {repr a.outcome} }"
 
 /--
+What failed when a TLS connection was being set up, before any request byte was written.
+-/
+inductive TlsFailure where
+  /--
+  TLS could not be set up locally: no trust store was found, the CA file or a CA directory could
+  not be loaded, the OpenSSL linked in is not version 3, or the server's name cannot be checked.
+  Never retried.
+  -/
+  | setup (detail : String)
+
+  /--
+  The server's certificate was refused: its chain does not lead to a trusted certificate, it has
+  expired, or it does not carry the server's name.  `detail` is OpenSSL's reason.  Never retried.
+  -/
+  | verify (detail : String)
+
+  /--
+  The handshake failed: the server sent an alert or broke the protocol, or the two sides have no
+  protocol version or cipher in common, or the server chose an ALPN protocol other than
+  `http/1.1`.  Never retried.
+  -/
+  | handshake (detail : String)
+
+  /--
+  The connection closed, or was reset, during the handshake.  Retried like a failed connect.
+  -/
+  | closed (detail : String)
+
+  /--
+  The handshake did not finish within `Config.tlsHandshakeTimeoutMs`.  Retried like a failed
+  connect.  (The call's deadline passing during the handshake is `Cause.timeout .deadline`.)
+  -/
+  | timeout
+deriving Repr, Inhabited
+
+/--
 What went wrong.
 -/
 inductive Cause where
@@ -170,7 +206,7 @@ inductive Cause where
   /--
   A request was refused before it was sent: the call's own (an unsupported scheme, a URI without a
   host, a setting no call can meet), or the request of a redirect to a target the client cannot
-  reach (an `https` URI, until the client has TLS).
+  reach.
   -/
   | invalidRequest (detail : String)
 
@@ -179,6 +215,13 @@ inductive Cause where
   redirect's status is the error's `status`.
   -/
   | tooManyRedirects (limit : Nat)
+
+  /--
+  A TLS connection could not be set up for an `https` target; nothing of the request was sent.  A
+  failure of TLS after the handshake (a truncated connection, an alert) is a failed read instead,
+  reported as `peerClosed` with a detail that says so.
+  -/
+  | tls (failure : TlsFailure)
 
   /--
   A streamed request body could not be sent as declared: its producer raised an error, or gave more
@@ -195,7 +238,8 @@ Why a failed exchange is not retried.
 inductive NoRetry where
   /--
   The cause is never retried: the client closed the connection itself, the call's deadline passed,
-  the name did not resolve, the request was invalid, or the response was malformed or too large.
+  the name did not resolve, the request was invalid, the response was malformed or too large, or TLS
+  failed in a way another attempt would repeat (setup, the certificate, the handshake).
   -/
   | cause
 
@@ -266,7 +310,7 @@ structure Error where
   written : Nat := 0
 
   /--
-  The origin the call was for, as `host:port`.
+  The origin the call was for, as `scheme://host:port`.
   -/
   target : String := ""
 
@@ -402,6 +446,11 @@ def describe : Cause → String
   | .resolve host detail => s!"could not resolve {host}: {detail}"
   | .invalidRequest detail => s!"invalid request: {detail}"
   | .tooManyRedirects n => s!"more than {n} redirects"
+  | .tls (.setup detail) => s!"TLS setup failed: {detail}"
+  | .tls (.verify detail) => s!"TLS certificate verification failed: {detail}"
+  | .tls (.handshake detail) => s!"TLS handshake failed: {detail}"
+  | .tls (.closed detail) => s!"the connection closed during the TLS handshake: {detail}"
+  | .tls .timeout => "TLS handshake timeout"
   | .requestBody detail => s!"request body: {detail}"
 
 end Cause

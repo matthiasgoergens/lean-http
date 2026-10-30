@@ -4,6 +4,7 @@ public import Std.Async.TCP
 public import Std.Http.Data
 public import LeanHttp.Error
 public import LeanHttp.Exchange
+public import LeanHttp.Transport
 public import LeanHttp.Wait
 
 public section
@@ -11,15 +12,17 @@ public section
 /-!
 # Driving an exchange, and the body stream
 
-`Live` is an exchange in progress on a socket: the exchange core and the socket operations the shell
-started for it.  The shell drives it in pieces: until the final response head (the client then asks
-the per-call planner what to do with it), and afterwards one pull of body bytes at a time,
-for the caller, or until the end, to discard a body nobody reads.  At most one write and one read
-are in flight, and for a streamed request body one call of its producer, the core decides
-everything, and the shell waits for the first operation to complete or the core's next deadline,
-whichever comes first.  A streamed request body goes on being pulled and written while the response
-is read, as long as the exchange goes on; a producer still running when the exchange ends is left to
-finish, and what it returns is dropped.
+`Live` is an exchange in progress on a connection (a `Transport`: TCP, or TLS over TCP): the exchange
+core and the socket operations the shell started for it.  The shell drives it in pieces: until the
+final response head (the client then asks the per-call planner what to do with it), and afterwards
+one pull of body bytes at a time, for the caller, or until the end, to discard a body nobody reads.
+At most one write and one read are in flight, and for a streamed request body one call of its
+producer; the core decides everything, and the shell waits for the first operation to complete or
+the core's next deadline, whichever comes first.  Over TLS the driver also does the TLS work, in its
+own steps: a TCP receive whose ciphertext yields no plaintext yet is followed by the next receive,
+registered as a step that reports nothing to the core.  A streamed request body goes on being pulled
+and written while the response is read, as long as the exchange goes on; a producer still running
+when the exchange ends is left to finish, and what it returns is dropped.
 
 A `BodyStream` is a response body the caller pulls.  A `read` that finds nothing held gives the
 core credit for one more read from the socket, so the core reads only as fast as the caller does:
@@ -42,9 +45,10 @@ A socket operation the shell started for the exchange core, once it has complete
 -/
 inductive Completion where
   /--
-  A read ended: bytes, end of input, or an error.
+  A read ended: plaintext, end of input, or an error; or, over TLS, ciphertext still to be fed to
+  the session.
   -/
-  | read (result : Except IO.Error (Option ByteArray))
+  | read (arrival : Transport.Arrival)
 
   /--
   A write of `length` bytes ended.
@@ -80,13 +84,13 @@ def Mailbox.new : BaseIO Mailbox := do
   return { inbox := ← IO.mkRef #[], bell := ← IO.mkRef (← IO.Promise.new) }
 
 /--
-An exchange in progress on a socket.
+An exchange in progress on a connection.
 -/
 structure Live where
   /--
-  The socket.
+  The connection.
   -/
-  socket : TCP.Socket.Client
+  transport : Transport
 
   /--
   The exchange core.
@@ -114,9 +118,14 @@ structure Live where
   writing : Option Nat := none
 
   /--
-  Whether any read returned bytes.
+  Whether any read returned bytes (plaintext, over TLS).
   -/
   received : Bool := false
+
+  /--
+  The size the read in flight asked for, which a TLS read needs again to decrypt what arrives.
+  -/
+  readMax : Nat := 0
 
   /--
   The producer of a streamed request body, called for each pull.
@@ -166,7 +175,7 @@ registration outlives the exchange.
 -/
 def Live.cancelRead (live : Live) : BaseIO Live := do
   if live.reading.isSome then
-    live.socket.native.cancelRecv.catchExceptions fun _ => pure ()
+    live.transport.cancelRecv true
   return { live with reading := none }
 
 /--
@@ -180,6 +189,14 @@ def Mailbox.watch {α : Type} (m : Mailbox) (n : Nat) (task : Task α) (f : α �
     (← m.bell.get).resolve ()
 
 /--
+Starts a read of up to `max` bytes, which reports to the mailbox.
+-/
+def Live.startRead (live : Live) (max : Nat) : BaseIO Live := do
+  let n := live.nextOp
+  live.mailbox.watch n (← live.transport.startRead max) Completion.read
+  return { live with reading := some n, nextOp := n + 1, readMax := max }
+
+/--
 Performs the core's actions: starts its write, its pull and its read, and collects what it
 delivered.  Once the exchange has ended, a receive still pending is cancelled.
 -/
@@ -191,12 +208,9 @@ delivered.  Once the exchange has ended, a receive still pending is cancelled.
     match action with
     | .write bytes =>
       let n := live.nextOp
-      live.mailbox.watch n (← start (live.socket.send bytes)) (Completion.wrote bytes.size)
+      live.mailbox.watch n (← live.transport.startSend bytes) (Completion.wrote bytes.size)
       live := { live with writing := some n, nextOp := n + 1 }
-    | .read max =>
-      let n := live.nextOp
-      live.mailbox.watch n (← start (live.socket.recv? max.toUInt64)) Completion.read
-      live := { live with reading := some n, nextOp := n + 1 }
+    | .read max => live ← live.startRead max
     | .pull =>
       let n := live.nextOp
       live.mailbox.watch n (← start live.produce) Completion.pulled
@@ -233,6 +247,39 @@ def Live.takeCompletion (live : Live) : BaseIO (Option Completion) :=
     | none => (none, inbox)
 
 /--
+The event a completed operation reports to the core, and the exchange without that operation in
+flight.  Ciphertext has been decrypted before this (`Live.next`).
+-/
+def Live.report (live : Live) : Completion → ExchangeEvent × Live
+  | .read (.cipher _) =>
+    -- `Live.next` turns every ciphertext arrival into a result first.
+    (ExchangeEvent.readFailed "TLS: ciphertext was not decrypted", { live with reading := none })
+  | .read (.plain result) =>
+    -- An empty read, which a receive of a positive size should not return, is reported as a
+    -- failed read: to the core an empty read is no completion, and it would wait for a read the
+    -- shell no longer has in flight.
+    let event := match result with
+      | .ok (some bytes) =>
+        if bytes.isEmpty then ExchangeEvent.readFailed "a receive returned no bytes"
+        else .received bytes
+      | .ok none => .endOfInput
+      | .error err => .readFailed (toString err)
+    let got := match result with
+      | .ok (some bytes) => !bytes.isEmpty
+      | _ => false
+    (event, { live with reading := none, received := live.received || got })
+  | .wrote length result =>
+    let event := match result with
+      | .ok () => ExchangeEvent.written length
+      | .error err => .writeFailed (toString err)
+    (event, { live with writing := none })
+  | .pulled result =>
+    let event := match result with
+      | .ok chunk => ExchangeEvent.pulled chunk
+      | .error err => .pullFailed (toString err)
+    (event, { live with pulling := none })
+
+/--
 Waits for the first operation in flight to complete, or for the core's next deadline, and reports
 what happened to the core.  Returns the core's actions.
 -/
@@ -249,32 +296,28 @@ what happened to the core.  Returns the core's actions.
       match ← awaitFirst #[bell.result?] wait with
       | none => pure none
       | some _ => live.takeCompletion
-  let (event, live) ← match completion with
-    | none => pure (ExchangeEvent.tick, live)
-    | some (.read result) =>
-      -- An empty read, which a receive of a positive size should not return, is reported as a
-      -- failed read: to the core an empty read is no completion, and it would wait for a read the
-      -- shell no longer has in flight.
-      let event := match result with
-        | .ok (some bytes) =>
-          if bytes.isEmpty then ExchangeEvent.readFailed "a receive returned no bytes"
-          else .received bytes
-        | .ok none => .endOfInput
-        | .error err => .readFailed (toString err)
-      let got := match result with
-        | .ok (some bytes) => !bytes.isEmpty
-        | _ => false
-      pure (event, { live with reading := none, received := live.received || got })
-    | some (.wrote length result) =>
-      let event := match result with
-        | .ok () => ExchangeEvent.written length
-        | .error err => .writeFailed (toString err)
-      pure (event, { live with writing := none })
-    | some (.pulled result) =>
-      let event := match result with
-        | .ok chunk => ExchangeEvent.pulled chunk
-        | .error err => .pullFailed (toString err)
-      pure (event, { live with pulling := none })
+  -- Ciphertext is fed to the session first; if it yields nothing yet, the next receive starts and
+  -- nothing is reported to the core.
+  let completion ← match completion with
+    | some (.read (.cipher raw)) =>
+      match ← live.transport.absorb live.readMax raw with
+      | some result => pure (Sum.inl (some (Completion.read (.plain result))))
+      | none => pure (Sum.inr ())
+    | other => pure (Sum.inl other)
+  let completion ← match completion with
+    | .inl c => pure c
+    | .inr () =>
+      -- The core still has its read in flight, and hears of no progress (bytes that make no
+      -- plaintext do not reset the read gap), but it is told the time, so that its deadlines fire
+      -- even while a peer keeps the socket busy with them.  The next receive starts only if the
+      -- exchange goes on.
+      let (ex, actions) := live.ex.step (← IO.monoMsNow) .tick
+      let live := { live with ex, reading := none }
+      if ex.terminal then return (live, actions)
+      return (← live.startRead live.readMax, actions)
+  let (event, live) := match completion with
+    | none => (ExchangeEvent.tick, live)
+    | some c => live.report c
   let (ex, actions) := live.ex.step (← IO.monoMsNow) event
   return ({ live with ex }, actions)
 
@@ -302,14 +345,14 @@ partial def Live.until (live : Live) (actions : Array ExchangeAction) (stop : De
   live.until actions stop out
 
 /--
-Starts `prepared` on `socket` with `deadline` for the whole call, and drives it until the final
-response head arrives or the exchange ends first.  `produce` gives the chunks of a streamed body.  The core holds whatever body bytes come with the
-head until the caller asks for them.
+Starts `prepared` on `transport` with `deadline` for the whole call, and drives it until the final
+response head arrives or the exchange ends first.  `produce` gives the chunks of a streamed body.
+The core holds whatever body bytes come with the head until the caller asks for them.
 -/
-def Live.begin (socket : TCP.Socket.Client) (prepared : PreparedRequest) (deadline : Nat)
+def Live.begin (transport : Transport) (prepared : PreparedRequest) (deadline : Nat)
     (produce : Async (Option ByteArray) := pure none) : Async (Live × Option Response.Head) := do
   let (ex, actions) := Exchange.begin prepared (← IO.monoMsNow) deadline
-  let (live, out) ← ({ socket, ex, produce, mailbox := ← Mailbox.new } : Live).until actions
+  let (live, out) ← ({ transport, ex, produce, mailbox := ← Mailbox.new } : Live).until actions
     (·.head.isSome)
   return (live, out.head)
 
@@ -335,7 +378,7 @@ def Live.abandon (live : Live) : Async Bool := do
   catch _ =>
     -- The receive pending may belong to a later state of the exchange than `live`: cancel whatever
     -- is pending on the socket.
-    live.socket.native.cancelRecv.catchExceptions fun _ => pure ()
+    live.transport.cancelRecv true
     return false
 
 /--
@@ -350,10 +393,10 @@ inductive BodyStream.State where
   | open (live : Option Live) (failure : Option Error) (pending : List ByteArray) (offset : Nat)
 
   /--
-  A read is in progress, on `socket` if the exchange is still going; `done` is resolved when it has
-  ended.
+  A read is in progress, on `transport` if the exchange is still going; `done` is resolved when it
+  has ended.
   -/
-  | busy (socket : Option TCP.Socket.Client) (done : IO.Promise Unit)
+  | busy (transport : Option Transport) (done : IO.Promise Unit)
 
   /--
   The callback ended; the stream refuses every use.
@@ -475,7 +518,7 @@ private def advance (s : BodyStream) (live : Live) : Async State := do
     | none => return .open (some live) none pending 0
   catch e =>
     -- The receive pending may belong to a later state of the exchange than `live`.
-    live.socket.native.cancelRecv.catchExceptions fun _ => pure ()
+    live.transport.cancelRecv true
     s.settle false
     let failure : Failure := {
       cause := .peerClosed, delivery := .responseReceived, written := live.ex.written,
@@ -493,7 +536,7 @@ private def finishRead (s : BodyStream) (done : IO.Promise Unit) (next : State) 
     | other => (false, other)
   unless stored do
     if let .open (some live) .. := next then
-      live.socket.native.cancelRecv.catchExceptions fun _ => pure ()
+      live.transport.cancelRecv true
       s.settle false
     done.resolve ()
     throw (IO.userError usedAfterMessage)
@@ -509,7 +552,7 @@ partial def read (s : BodyStream) (max : Nat := 64 * 1024) : Async (Option ByteA
   let max := if max == 0 then 1 else max
   let done ← IO.Promise.new
   let state ← s.state.modifyGet fun
-    | st@(.open live ..) => (st, .busy (live.map (·.socket)) done)
+    | st@(.open live ..) => (st, .busy (live.map (·.transport)) done)
     | other => (other, other)
   match state with
   | .busy .. => throw (IO.userError "BodyStream.read: another read of this stream is in progress")
@@ -566,7 +609,7 @@ the whole body every time, since a value carried across a wait is never updated 
 def readAll (s : BodyStream) : Async ByteArray := do
   let done ← IO.Promise.new
   let state ← s.state.modifyGet fun
-    | st@(.open live ..) => (st, .busy (live.map (·.socket)) done)
+    | st@(.open live ..) => (st, .busy (live.map (·.transport)) done)
     | other => (other, other)
   let join (chunks : List ByteArray) (size : Nat) : ByteArray :=
     chunks.reverse.foldl (init := ByteArray.emptyWithCapacity size) (· ++ ·)
@@ -597,7 +640,7 @@ def readAll (s : BodyStream) : Async ByteArray := do
             pure (Sum.inl (live.failure?.map s.errorOf, join chunks size))
           | none => pure (Sum.inr live)
         catch e =>
-          live.socket.native.cancelRecv.catchExceptions fun _ => pure ()
+          live.transport.cancelRecv true
           s.settle false
           let failure : Failure := {
             cause := .peerClosed, delivery := .responseReceived, written := live.ex.written,
@@ -624,13 +667,13 @@ waited for, so that no receive outlives the callback.
 def release (s : BodyStream) : Async Unit := do
   match ← s.state.swap .released with
   | .open (some live) .. => s.settle (← live.abandon)
-  | .busy socket done =>
+  | .busy transport done =>
     -- Whoever takes the settle function owns the connection.  If the reader has already settled,
     -- the connection may be in the pool, or another call's, and its socket must not be touched.
     match ← s.settleOnce.modifyGet fun f => (f, none) with
     | some settle =>
-      if let some socket := socket then
-        socket.native.cancelRecv.catchExceptions fun _ => pure ()
+      if let some transport := transport then
+        transport.cancelRecv true
       discard <| await done.result?
       settle false
     | none => discard <| await done.result?

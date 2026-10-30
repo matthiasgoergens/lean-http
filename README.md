@@ -1,8 +1,8 @@
 # lean-http
 
-An HTTP/1.1 client for Lean 4.  It speaks plain HTTP only for now: there is no TLS, so `https` URLs are refused.
+An HTTP/1.1 client for Lean 4, for `http` and `https` URLs.
 
-It is a Lake package that depends on nothing but the Lean toolchain.  Requests and responses are `Std.Http`'s types (`Request`, `Response`, `Headers`), and the library adds the client: name resolution, connects with a timeout per address, a connection pool, redirects, retries with backoff, deadlines, and streamed request and response bodies.
+It is a Lake package that depends on nothing but the Lean toolchain: for HTTPS it uses the OpenSSL that the toolchain already links into every Lean executable.  Requests and responses are `Std.Http`'s types (`Request`, `Response`, `Headers`), and the library adds the client: name resolution, connects with a timeout per address, TLS with certificate verification, a connection pool, redirects, retries with backoff, deadlines, and streamed request and response bodies.
 
 ## How it is built, and what is proved
 
@@ -13,7 +13,7 @@ Every decision the client makes is taken by one of four pure step functions, whi
 - the **per-call planner** (`LeanHttp.Call`) decides after each exchange whether to deliver the response, follow a redirect, send the request again after a delay, or fail;
 - the **pool core** (`LeanHttp.Pool`) decides which connection each exchange uses.
 
-The shell around them (`LeanHttp.Client`, `LeanHttp.Body`, `LeanHttp.Connect`) performs the socket operations and the timers, reports what happened to the cores and does what they say.  `DESIGN.md` describes the design and `NOTES.md` the decisions and measurements behind it.
+The shell around them (`LeanHttp.Client`, `LeanHttp.Body`, `LeanHttp.Connect`, and for HTTPS `LeanHttp.Transport` over `native/tls.c`) performs the socket operations, the TLS work and the timers, reports what happened to the cores and does what they say.  The cores see plaintext either way.  `DESIGN.md` describes the design and `NOTES.md` the decisions and measurements behind it.
 
 The cores' properties are proved in Lean:
 
@@ -79,7 +79,7 @@ let req := Request.post (.parse! s!"{base}/echo")
   |>.body json.toUTF8
 ```
 
-The target must be an absolute `http` URI.  The client writes the framing and `Connection` fields itself, replacing any the request has: `Content-Length` for the body (none for an empty body when the method does not expect one) and `Connection: keep-alive` (`Connection: close` with pooling off).  It adds `Host` when the request has none.  One `Client` may be shared by any number of tasks; its calls share its connection pool.  `Client.send` is a variant that throws the error as an `IO.Error`.
+The target must be an absolute `http` or `https` URI.  The client writes the framing and `Connection` fields itself, replacing any the request has: `Content-Length` for the body (none for an empty body when the method does not expect one) and `Connection: keep-alive` (`Connection: close` with pooling off).  It adds `Host` when the request has none.  One `Client` may be shared by any number of tasks; its calls share its connection pool.  `Client.send` is a variant that throws the error as an `IO.Error`.
 
 ## Streaming a response body
 
@@ -156,16 +156,41 @@ The main settings, with their defaults (times in milliseconds):
 | `maxIdlePerOrigin`, `idleTimeoutMs` | 4, 4 s | Idle connections kept per origin, and for how long. |
 | `maxActivePerOrigin` | none | A cap on connections in use per origin; calls at the cap wait, within their deadline. |
 | `idleCheck` | on | Check an idle connection for a close or stray bytes before reusing it. |
+| `tlsHandshakeTimeoutMs` | 10 s | The TLS handshake of one `https` connection. |
+| `tls.caFile` | none | A PEM file of certificates to trust instead of the system's (below). |
 
-A failure is retried only when that is safe: a failed connect, or a closed connection or a read or write timeout when nothing of the request was written, or one of those when the method is idempotent and the body can be sent again.  The call's deadline, a name that does not resolve, a malformed response and a limit are never retried.  Separately, a request whose pooled connection turns out to have been closed by the server is sent once more on a fresh connection when that is safe (`Client.redispatch?`), without counting as a retry.  `LeanHttp/Config.lean` documents every field.
+A failure is retried only when that is safe: a failed connect or a TLS handshake that the connection closing or its time limit cut short, or a closed connection or a read or write timeout when nothing of the request was written, or one of those when the method is idempotent and the body can be sent again.  The call's deadline, a name that does not resolve, a malformed response and a limit are never retried.  Separately, a request whose pooled connection turns out to have been closed by the server is sent once more on a fresh connection when that is safe (`Client.redispatch?`), without counting as a retry.  `LeanHttp/Config.lean` documents every field.
+
+## HTTPS
+
+An `https` URL needs nothing from you on a Linux machine with the usual bundle of trusted certificates (Debian and Ubuntu's `ca-certificates` package, or its equivalent elsewhere): the client finds it, verifies the server's certificate chain and that the certificate names the host (or carries the IP address) of the URL, and sends the host name as SNI.  Verification cannot be turned off.  TLS 1.2 is the minimum, and TLS 1.3 is used when the server offers it.
+
+The trusted certificates come from, in order:
+
+- `Config.tls.caFile`, a PEM file, when you give one.  It replaces the system's certificates, so give it for a server whose certificate a private CA issued (or the server's own certificate, which may anchor its chain).
+- The `SSL_CERT_FILE` and `SSL_CERT_DIR` environment variables, as OpenSSL reads them.  A variable that is set but names nothing is an error.
+- The first bundle that exists among the usual places (`/etc/ssl/certs/ca-certificates.crt`, `/etc/pki/tls/certs/ca-bundle.crt`, `/etc/ssl/cert.pem` and the others `LeanHttp.Tls.wellKnownFiles` lists), then a directory of certificates with OpenSSL's hashed names.
+
+From `examples/RequestExample.lean`:
+
+```lean
+def privateCaClient : BaseIO Client :=
+  Client.new { tls := { caFile := some "/etc/my-service/ca.pem" } }
+```
+
+A minimal container image often lacks the bundle; install `ca-certificates`, or set `caFile` or `SSL_CERT_FILE`.  Connections are pooled by scheme, host and port, so an `https` connection is only ever reused for the same `https` origin.  A redirect from `https` to `http` is followed, without the credential fields, as browsers do.
+
+The OpenSSL used is the toolchain's own (3.6.0 in the Linux toolchains): the library declares the few OpenSSL functions it calls itself, so neither OpenSSL's headers nor a system OpenSSL are needed to build it.  It is built and tested on Linux.  On Windows there is no bundle file to find, so `caFile` or `SSL_CERT_FILE` is needed; the macOS Keychain and the Windows certificate store are not read.  TLS works in compiled executables, not in the interpreter (`#eval`, `lean --run`), which does not contain OpenSSL.
 
 ## Errors
 
-`Client.request` never throws: a failure is an `Error`.  Its `cause` says what went wrong (`connect`, `resolve`, `timeout`, `peerClosed`, `protocol`, `limit`, `tooManyRedirects`, `invalidRequest`, `localClose`, `requestBody`), and its `delivery` says how far the call got, which decides whether you can safely try again:
+`Client.request` never throws: a failure is an `Error`.  Its `cause` says what went wrong (`connect`, `resolve`, `tls`, `timeout`, `peerClosed`, `protocol`, `limit`, `tooManyRedirects`, `invalidRequest`, `localClose`, `requestBody`), and its `delivery` says how far the call got, which decides whether you can safely try again:
 
 - `notSent`: no byte of any request of the call was written, so the server cannot have seen it.  Sending it again is safe whatever the method.
 - `maybeDelivered`: request bytes were written but no complete response head came back.  The server may or may not have acted on the request.
 - `responseReceived`: the server answered with a final response head, so it received the request; the call failed afterwards, while the body was read or on one redirect too many.
+
+A `tls` cause says what failed before any request byte was sent: `setup` (no trusted certificates found, a CA file that cannot be read), `verify` (the certificate was refused, with OpenSSL's reason, such as "certificate has expired" or "hostname mismatch"), `handshake` (an alert, or no protocol version in common), `closed` (the connection closed during the handshake) or `timeout`; only the last two are retried.  A TLS connection that ends without the server's `close_notify` after a response has begun is reported as `peerClosed`, with a detail saying that the response may be truncated; a body framed by `Content-Length` or chunked coding that had arrived whole is unaffected.
 
 The delivery is the furthest any request of the call got, so a call that followed a redirect or retried a request that may have arrived is never `notSent`.  The error also says why the client did not retry it (`notRetried`), how many redirects and retries it made, and the backoff seed.  From `examples/RequestExample.lean`:
 
@@ -179,20 +204,20 @@ def advice (err : Error) : String :=
 
 ## Current limits
 
-- No TLS: an `https` request, or a redirect to one, fails with `invalidRequest`.  No HTTP/2, no proxies, no cookies and no decompression.
+- No HTTP/2, no proxies, no cookies and no decompression.  TLS has no session resumption and no client certificates, and reads trust stores only from files.
 - A call cannot be cancelled.  `Client.close` closes the idle connections and refuses later calls, but calls in flight run on.
 - Exiting the process.  On v4.34.1 a process can hang at exit when a socket receive is still pending, a bug in Lean's task manager that [leanprover/lean4#15743](https://github.com/leanprover/lean4/pull/15743) fixes (open as of 2026-10-27); the client ends every receive before a call returns, and the real-socket suite checks that processes exit promptly.  A pending connect, write or name lookup cannot be cancelled on v4.34.1: an abandoned connect attempt holds its socket until the kernel gives up on it (about two minutes with Linux's defaults), and a name lookup cut off by the deadline keeps running until the resolver gives up, which can delay exit and has crashed the process at exit.  `NOTES.md` has the measurements.
 
 ## Running the tests and checking the proofs
 
-`scripts/ci.sh` runs everything CI runs, and `scripts/ci.sh vendor build axioms` just the build and the axiom check.  Any warning or `sorry` in the build fails it.  It needs elan (or the toolchain's `lake` on the `PATH`), Python 3 and Git.  Most test executables import the vendored upstream parser in `vendor/`, which it generates from a shallow fetch of lean4 the first time, or from a lean4 clone that has the commit `scripts/vendor.sh` names (`LEAN4_CLONE`).  Each step's output goes to `out/ci/`.
+`scripts/ci.sh` runs everything CI runs, and `scripts/ci.sh vendor build axioms` just the build and the axiom check.  Any warning or `sorry` in the build fails it.  It needs elan (or the toolchain's `lake` on the `PATH`), Python 3, Git and, for the TLS scenarios, the `openssl` command-line tool, which makes their test certificates.  Its `tls-abi` stage compares the library's OpenSSL declarations with OpenSSL's real headers, which it generates from the checksummed 3.6.0 release (`scripts/openssl-headers.sh`): it needs the network, Perl and a C compiler, and is skipped, saying so, where they are missing.  Most test executables import the vendored upstream parser in `vendor/`, which it generates from a shallow fetch of lean4 the first time, or from a lean4 clone that has the commit `scripts/vendor.sh` names (`LEAN4_CLONE`).  Each step's output goes to `out/ci/`.
 
 The pieces, from the repository root:
 
 - `lake build` builds the library and checks every proof.
 - `lake env lean scripts/proof-axioms.lean` prints the axioms of the exchange core's main theorems (likewise `codec-`, `call-` and `pool-axioms.lean`); `scripts/check-axioms.py` checks them.
 - `lake build unit-tests && .lake/build/bin/unit-tests`, and likewise `pool-tests` and `call-tests`; after `scripts/ci.sh vendor`, also `codec-tests`, `response-codec-tests`, `core-tests`, `codec-diff` and `call-diff`.  Each documents its arguments at the top of its file in `Tests/`.
-- `lake build net-client && bash tests/net/run.sh` runs the real-socket suite.  It skips, and says so, what the machine cannot run: some scenarios want IPv6 on loopback, names added to `/etc/hosts` (`tests/net/hosts`), `net.ipv4.tcp_syn_retries` at 2, or root.
+- `lake build net-client && bash tests/net/run.sh` runs the real-socket suite, with the TLS scenarios against `tests/net/tls.py` and certificates made at test time by `tests/net/tls-certs.sh`.  It skips, and says so, what the machine cannot run: some scenarios want IPv6 on loopback, names added to `/etc/hosts` (`tests/net/hosts`), `net.ipv4.tcp_syn_retries` at 2, or root.
 - `examples/run.sh` builds the examples and runs them against `examples/server.py`.
 
 ## Licence

@@ -14,6 +14,10 @@ def advice (err : Error) : String :=
   | .maybeDelivered => "the server may have acted on the request: send it again only if that is harmless"
   | .responseReceived => "the server answered, and the call failed afterwards"
 
+/-- A client for a server whose certificate a private CA issued: it trusts that CA's certificate. -/
+def privateCaClient : BaseIO Client :=
+  Client.new { tls := { caFile := some "/etc/my-service/ca.pem" } }
+
 def main (args : List String) : IO UInt32 := do
   let base := args.headD "http://127.0.0.1:8080"
   let client ← Client.new

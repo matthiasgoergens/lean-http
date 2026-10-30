@@ -2,7 +2,8 @@
 # Runs the container through batchrun, below CI and interactive work on the host, with Podman kept in
 # the batch service's cgroup.  Copies the working tree to ~/$LEAN_HTTP_REMOTE_DIR (default ~/lean-http) on the build host and runs a command there, inside the
 # Lean image with a toolchain from an elan volume (read-only), the tree at /w, uv's CPython at /py,
-# and no network but loopback.  CTR_EXTRA adds podman options.  The toolchain is v4.34.1 from the
+# and no network but loopback, unless LEAN_HTTP_NETWORK names a podman network mode (pasta, for
+# a smoke test against a public site).  CTR_EXTRA adds podman options.  The toolchain is v4.34.1 from the
 # b8perf-elan volume unless LEAN_HTTP_TOOLCHAIN (a release, such as v4.35.0) and LEAN_HTTP_ELAN (a
 # volume that holds it) say otherwise.
 #
@@ -26,6 +27,6 @@ grep --quiet --fixed-strings "$commit" "$here/vendor/SOURCE" 2>/dev/null \
 rsync --archive --delete --exclude .lake --exclude .git --exclude logs --exclude out \
   "$here/" "$host:$rdir/" || exit 1
 quoted=$(printf '%q ' "$@")
-ssh "$host" "cd ~/$rdir && batchrun podman --cgroup-manager=cgroupfs run --cgroups=disabled --rm --network none ${CTR_EXTRA:-} \
+ssh "$host" "cd ~/$rdir && batchrun podman --cgroup-manager=cgroupfs run --cgroups=disabled --rm --network ${LEAN_HTTP_NETWORK:-none} ${CTR_EXTRA:-} \
   -v $elan:/root/.elan:ro -v \"\$PWD\":/w -w /w -v $py:/py:ro localhost/b8perf-lean \
   env PATH=/root/.elan/toolchains/leanprover--lean4---$toolchain/bin:/usr/local/bin:/usr/bin:/bin $quoted"

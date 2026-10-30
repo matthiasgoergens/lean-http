@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18142/truncate-framed ca=/w/out/net/tls-certs/ca.pem
+call 0 ok status=200 bytes=10000 ms=9.479 rounds=1 address=127.0.0.1:18142 seed=17353106796413383552 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18142/truncate-framed tls=TLSv1.3 body_start="ffffffffffffffffffffffffffffffffffffffff"
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=10.069
+exit status=0 wall_ms=81 exit_after_main_ms=71

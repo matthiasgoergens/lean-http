@@ -1,0 +1,97 @@
+      24.5 listening tls=18162 plain=18163 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+     191.4 conn1 accepted from ('127.0.0.1', 37078)
+     193.4 sni=None
+     196.3 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     197.1 conn1 GET /big?n=10000000 {'host': '127.0.0.1:18162', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+Exception in thread Thread-2 (<lambda>):
+     202.4 conn2 accepted from ('127.0.0.1', 37084)
+     226.2 sni=None
+     230.9 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     231.6 conn2 GET /big?n=10000000 {'host': '127.0.0.1:18162', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+Exception in thread Thread-3 (<lambda>):
+Traceback (most recent call last):
+  File "/py/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/py/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/tests/net/tls.py", line 224, in <lambda>
+    target = (lambda: handle(raw, n, tls_ctx)) if tls_ctx else (lambda: serve_plain(raw, n))
+                      ~~~~~~^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/w/tests/net/tls.py", line 203, in handle
+    serve_tls(conn, n)
+    ~~~~~~~~~^^^^^^^^^
+  File "/py/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/w/tests/net/tls.py", line 148, in serve_tls
+    conn.sendall(chunk[:n])
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/py/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/py/lib/python3.14/ssl.py", line 1286, in sendall
+    v = self.send(byte_view[count:])
+  File "/w/tests/net/tls.py", line 224, in <lambda>
+    target = (lambda: handle(raw, n, tls_ctx)) if tls_ctx else (lambda: serve_plain(raw, n))
+                      ~~~~~~^^^^^^^^^^^^^^^^^
+  File "/py/lib/python3.14/ssl.py", line 1255, in send
+    return self._sslobj.write(data)
+           ~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/w/tests/net/tls.py", line 203, in handle
+    serve_tls(conn, n)
+    ~~~~~~~~~^^^^^^^^^
+  File "/w/tests/net/tls.py", line 148, in serve_tls
+    conn.sendall(chunk[:n])
+    ~~~~~~~~~~~~^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/py/lib/python3.14/ssl.py", line 1286, in sendall
+    v = self.send(byte_view[count:])
+  File "/py/lib/python3.14/ssl.py", line 1255, in send
+    return self._sslobj.write(data)
+           ~~~~~~~~~~~~~~~~~~^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+     420.5 conn3 accepted from ('127.0.0.1', 37092)
+     423.1 sni=None
+     426.6 conn3 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     427.0 conn3 GET /trickle?ms=500 {'host': '127.0.0.1:18162', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+     700.8 conn4 accepted from ('127.0.0.1', 37102)
+     702.9 sni=None
+     705.4 conn4 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     706.0 conn4 GET /big?n=10000000 {'host': '127.0.0.1:18162', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+Exception in thread Thread-5 (<lambda>):
+Traceback (most recent call last):
+  File "/py/lib/python3.14/threading.py", line 1082, in _bootstrap_inner
+    self._context.run(self.run)
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/py/lib/python3.14/threading.py", line 1024, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/w/tests/net/tls.py", line 224, in <lambda>
+    target = (lambda: handle(raw, n, tls_ctx)) if tls_ctx else (lambda: serve_plain(raw, n))
+                      ~~~~~~^^^^^^^^^^^^^^^^^
+  File "/w/tests/net/tls.py", line 203, in handle
+    serve_tls(conn, n)
+    ~~~~~~~~~^^^^^^^^^
+  File "/w/tests/net/tls.py", line 148, in serve_tls
+    conn.sendall(chunk[:n])
+    ~~~~~~~~~~~~^^^^^^^^^^^
+  File "/py/lib/python3.14/ssl.py", line 1286, in sendall
+    v = self.send(byte_view[count:])
+  File "/py/lib/python3.14/ssl.py", line 1255, in send
+    return self._sslobj.write(data)
+           ~~~~~~~~~~~~~~~~~~^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+     976.4 conn5 accepted from ('127.0.0.1', 37116)
+     978.8 sni=None
+     984.5 conn5 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     985.4 conn5 GET /big?n=1000000 {'host': '127.0.0.1:18162', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+     993.1 conn0 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+    1070.5 conn6 accepted from ('127.0.0.1', 37124)
+    1074.7 sni=None
+    1079.3 conn6 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1087.3 conn6 GET /trickle?ms=100 {'host': '127.0.0.1:18162', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1431.8 conn3 trickle stopped: BrokenPipeError(32, 'Broken pipe')
+    2199.6 conn6 trickle stopped: BrokenPipeError(32, 'Broken pipe')

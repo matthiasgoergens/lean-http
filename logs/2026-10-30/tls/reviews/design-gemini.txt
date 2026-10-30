@@ -1,0 +1,210 @@
+## 1. Break It
+
+Ranked by severity from highest to lowest.
+
+---
+
+### 1.1. One TCP read can carry multiple TLS records, but one `SSL_read` decrypts at most one record—breaking reuse proofs, split invariance, and the TLS idle check
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L111-L117) ("Memory BIOs", "A transport in the shell", "The idle check"), [LeanHttp/Body.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Body.lean#L134-L170), [LeanHttp/Codec/Response.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Codec/Response.lean#L197-L265), [LeanHttp/Exchange.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Exchange.lean#L519-L522).
+* **Confidence:** Certain (OpenSSL `SSL_read` record semantics).
+* **What goes wrong:**
+  `SSL_read(ssl, buf, max)` never returns data from more than **one** TLS record per call (at most 16 KiB), even when `max` is 64 KiB and `rbio` already holds several complete TLS records from a single `socket.recv?`. HTTP servers routinely flush response headers in one TLS record and the body in a second TLS record (or send a response record followed immediately by a TLS 1.3 `NewSessionTicket`, a `close_notify` alert, or stray bytes), all arriving in one TCP `recv?`.
+  - **If `Transport.recv?` calls `SSL_read` only once per call:**
+    1. **Silent hang / read timeout:** If `Transport.recv?` calls `socket.recv?` before draining `rbio` via `SSL_read`, the second record sitting in `rbio` is never read until the socket times out at `readGapMs`.
+    2. **Broken `extra`-bytes / reuse invariant ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L48), [`Parser.reusable`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Codec/Response.lean#L263-L264)):** Suppose a server sends a `HEAD`, `204`, `304`, or `Content-Length` response in Record 1 and stray bytes (or a second response) in Record 2 within the same TCP read. `SSL_read` returns only Record 1. `Codec.Parser` reaches `.done` without seeing Record 2 (`p.extra` stays `false`), and `Exchange` finishes with `reusable = true` without issuing another `.read`. Record 2 stays undecrypted in `rbio`.
+    3. **Broken idle check ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L117)):** When the next call runs the idle check on that pooled connection, **"plaintext held in OpenSSL" (`SSL_pending(ssl)`) is `0`** (because OpenSSL has not decrypted Record 2 in `rbio` yet), `SSL_get_shutdown(ssl)` has not seen a `close_notify` in Record 2 yet, and **`socket.native.waitReadable` will never fire** (because the kernel already delivered Record 2 in the previous exchange's `socket.recv?`). The idle check declares the connection clean, and Call 2 either reads Call 1's stray bytes as its own response or writes a `POST` into a connection whose `close_notify` was already in `rbio`.
+  - **If `Transport.recv?` loops calling `SSL_read` to drain `rbio` up to `max`:**
+    If Record 1 in `rbio` is a complete `Content-Length` / `chunked` response (or a `408` or early `413` head) and Record 2 in the same `rbio` is a `close_notify` (`SSL_ERROR_ZERO_RETURN`) or an alert (`SSL_ERROR_SSL`), and the loop either fails on the error or drops the EOF status while returning the plaintext from Record 1:
+    - Failing immediately discards the already-decrypted Record 1 bytes (so a complete response followed by an alert/EOF in the same TCP read fails instead of delivering).
+    - Returning Record 1 without recording on the transport that `close_notify`/error was already encountered allows `Exchange` to finish at `Content-Length` without another read and mark the connection `reusable = true`.
+* **What to do instead:**
+  1. In C, drain `rbio` by looping `SSL_read` up to `max` while `BIO_ctrl_pending(rbio) > 0` or `SSL_has_pending(ssl) == 1`.
+  2. If the loop has already accumulated `> 0` plaintext bytes and the next `SSL_read` returns `SSL_ERROR_ZERO_RETURN` or an error, return the accumulated plaintext bytes first and latch the EOF/error on the session for the next read—and mark the session non-reusable so that even if `Exchange` finishes without another read, the connection cannot pass `idleClean` or be pooled.
+  3. At the end of an exchange (before pooling) and at the start of `idleClean` (before `waitReadable`), if `BIO_ctrl_pending(rbio) > 0` or `SSL_has_pending(ssl) == 1`, let OpenSSL process the buffered `rbio` bytes first; only if only post-handshake messages were consumed and `rbio`/record buffers are completely empty may the connection be considered clean.
+
+---
+
+### 1.2. Stripping a trailing dot from a hostname can pass `""` to `SSL_set1_host` (which silently disables hostname verification in OpenSSL) or send an IPv4 literal in SNI
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L124) ("For a host name, the certificate must match it (`SSL_set1_host`, partial wildcards such as `f*.example.com` refused, as RFC 6125 section 6.4.3 says), and SNI carries it; for an IP literal, the certificate must carry the address (`X509_VERIFY_PARAM_set1_ip_asc`), and no SNI is sent, since RFC 6066 section 3 forbids literals there. A trailing dot is removed from the name for both."), [LeanHttp/Address.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Address.lean#L45-L48), [LeanHttp/Wire.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Wire.lean#L52-L64).
+* **Confidence:** Certain (verified against OpenSSL's `X509_VERIFY_PARAM_set1_host` / `int_x509_param_set1` and `v3_utl.c`).
+* **What goes wrong:**
+  1. **Empty string disables hostname verification in OpenSSL:** In OpenSSL 3, calling `SSL_set1_host(ssl, "")` (or `NULL`) clears the expected host list and returns `1` (success!). OpenSSL then verifies the certificate chain against the CA store **without checking the certificate's subject/SAN at all**, accepting a valid certificate for any domain. If the URI host is `.` (e.g. `https://./`), stripping one trailing dot yields `""`, silently turning off hostname verification.
+  2. **`SSL_set1_host` does not refuse partial wildcards by default:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L124) credits `SSL_set1_host` with refusing partial wildcards (`f*.example.com`). In OpenSSL 3, default hostflags are `0`, which **allows** partial wildcards unless `SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS)` (`0x4`) is also called.
+  3. **IPv4 literal with a trailing dot (`https://127.0.0.1./`):** `Std.Http.URI` parses `127.0.0.1.` as `URI.Host.name "127.0.0.1."` (a reg-name). Stripping the trailing dot produces `"127.0.0.1"`, which the design then treats as a host name rather than an IP literal: it sends `"127.0.0.1"` in SNI (violating RFC 6066 §3) and passes `"127.0.0.1"` to `SSL_set1_host` (checking `dNSName` instead of `iPAddress` SAN).
+  4. **Multiple trailing dots (`example.com..`):** Removing a single trailing dot leaves `example.com.`.
+* **What to do instead:**
+  - Strip only a single trailing dot, and then **reject** the host (before connecting or as a TLS setup/verify error) if the resulting string is empty, still ends with `.`, contains an embedded `\x00` (`strlen(cstr) != byte_size`), or parses as an IPv4 address (which was disguised as `URI.Host.name` by the trailing dot).
+  - Explicitly call `SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS)` before `SSL_set1_host`, and check that `SSL_set1_host` / `X509_VERIFY_PARAM_set1_ip_asc` returns `1`.
+
+---
+
+### 1.3. The TLS-aware idle check cannot distinguish a partial TLS record from a consumed post-handshake message, and discards any outgoing `KeyUpdate` reply
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L117) ("if bytes arrived it reads them once and lets OpenSSL process them: records that carry only handshake messages (a session ticket sent late) leave the connection clean, anything else (application data, an alert, the end of input) makes it unclean. No receive is pending when it returns."), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L300-L305), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L569-L577).
+* **Confidence:** High.
+* **What goes wrong:**
+  1. **Partial TLS record indistinguishable from `SSL_ERROR_WANT_READ`:** Suppose a server sends a `408 Request Timeout` or a `close_notify` alert or a large `NewSessionTicket`, and the single `socket.recv?` in `idleClean` receives only the first part of the TLS record. When fed to `rbio`, OpenSSL pulls the bytes out of `rbio` into its internal `SSL3_BUFFER` (`s->rlayer`), sees the record is incomplete, and returns `-1` with `SSL_ERROR_WANT_READ`—the **exact same return value** as when it finishes consuming a complete `NewSessionTicket`! Checking `BIO_ctrl_pending(rbio) == 0` is not enough because OpenSSL already moved the partial record out of `rbio` into `s->rlayer`. If `idleClean` treats `SSL_ERROR_WANT_READ` as "clean", it marks a connection holding half a `408` or half an alert as clean; if the next call is a `POST`, it fails with `maybeDelivered`.
+  2. **Timeouts on the second step (`socket.recv?`) of `idleClean`:** In `idleClean`, `waitReadable` is bounded by `window = min config.idleCheckMs (a.deadline - now)` (default `0 ms`). Once `waitReadable` reports readable, the subsequent `socket.recv?` must **not** be bounded by `0 ms` (which could time out before reading or race with `uv_read_start` and lose bytes), nor left unbounded (which could hang past `a.deadline` on a spurious readability wakeup); it must be bounded by `remainingMs a.deadline`, with `cancelRecv` on timeout and returning `false` (unclean -> drop).
+  3. **Unsent `wbio` bytes after a post-handshake message:** If the handshake message processed during `idleClean` is a TLS 1.3 `KeyUpdate` with `update_requested`, OpenSSL writes a `KeyUpdate` reply into `wbio` during `SSL_read`. [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L117) does not drain `wbio` and `send` it during `idleClean`.
+* **What to do instead:**
+  - In `idleClean`, after feeding the read bytes into `rbio` and calling `SSL_peek`/`SSL_read`, require **both** `SSL_get_error == SSL_ERROR_WANT_READ` **and** `SSL_has_pending(ssl) == 0` (in OpenSSL 3, `SSL_has_pending` returns `1` if either decrypted bytes OR unprocessed partial-record ciphertext bytes remain in OpenSSL's internal record layer) **and** `BIO_ctrl_pending(rbio) == 0` **and** `SSL_get_shutdown(ssl) == 0`; and drain/send any `wbio` output under the session mutex.
+  - Set `SSL_OP_NO_TICKET` on `SSL_CTX` (see Section 2), so compliant TLS 1.3 servers do not send `NewSessionTicket` records on connections that never use session resumption anyway.
+
+---
+
+### 1.4. Handshake timeout at the call's `deadline` is misclassified as `Cause.tls .timeout` (retryable) instead of `Cause.timeout .deadline` (never retried), and can even trigger a retry at the deadline
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L115) ("The handshake runs ... within `Config.tlsHandshakeTimeoutMs` (default 10 s) and the call's deadline"), [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L131) ("The per-call planner retries `closed` and `timeout`, like a failed connect"), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L529-L536), [LeanHttp/Call.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Call.lean#L302-L307), [LeanHttp/Call.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Call.lean#L357-L364).
+* **Confidence:** Certain.
+* **What goes wrong:**
+  1. When the call's whole-call `deadline` expires during the TLS handshake, reporting `Cause.tls .timeout` instead of `Cause.timeout .deadline` contradicts how every other phase (pool wait, DNS, TCP connect in [`Attempt.connect`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L529-L536), and `Exchange`) reports hitting the call's deadline.
+  2. In [`Call.retryFailure`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Call.lean#L357-L364), `Cause.timeout .deadline` is not a `retryableCause`, so `notRetried` is `.cause` ("never retried"). Because `Cause.tls .timeout` *is* a `retryableCause`, hitting the call's deadline during the TLS handshake produces the wrong `Error.cause` (`Cause.tls .timeout`) and the wrong `Error.notRetried` (`.hopLimit`, `.budget`, or `.noTime` instead of `.cause`).
+  3. Worse: because a libuv timer can fire up to 1 ms early by `IO.monoMsNow` ([`Client.sleepUntil`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L679-L681)), when the handshake timer bounded by `remainingMs a.deadline` fires 1 ms early (`st.remaining clock == 1`) and full-jitter backoff draws `st.backoff == 0`, `st.backoff < st.remaining clock` (`0 < 1`) is `true`—so the planner **actually retries** a call that just timed out on its deadline.
+  4. Also, [`Client.checkConfig`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L334-L340) checks `connectTimeoutMs == 0` and `deadlineMs == 0`, but [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L115) does not add a check rejecting `tlsHandshakeTimeoutMs == 0`.
+* **What to do instead:**
+  - In the handshake, if a timeout happens and `(← remainingMs a.deadline) == 0` (or the wait was capped by `a.deadline` rather than `tlsHandshakeTimeoutMs`), report `Cause.timeout .deadline` (just as [`Connect.round`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Connect.lean#L179-L181) and [`Attempt.connect`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L529-L536) do); report `Cause.tls .timeout` only when `tlsHandshakeTimeoutMs` ran out before `a.deadline`.
+  - Reject `config.tlsHandshakeTimeoutMs == 0` in [`Client.checkConfig`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L334).
+
+---
+
+### 1.5. Cancellation race and use-after-cancel in `Transport.recv?` because `Live.cancelRead` does not await `live.reading`
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L114) ("Each TCP receive is registered under the connection's mutex, after checking that the plaintext receive it serves has not been cancelled; `cancelRecv` marks it cancelled and cancels the TCP receive under the same mutex."), [LeanHttp/Body.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Body.lean#L116-L120).
+* **Confidence:** High.
+* **What goes wrong:**
+  [`Live.cancelRead`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Body.lean#L116-L120) calls `cancelRecv` and immediately drops `live.reading` (`{ live with reading := none }`) **without awaiting the task** (unlike [`BodyStream.release`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Body.lean#L530), which awaits `done.result?`).
+  1. Suppose `Transport.recv?` is running on worker thread `W1`, and TCP `socket.recv?` #1 resolves on the libuv loop with `some bytes` (e.g., a partial record or ticket) at the exact moment the caller's timer fires and calls `Live.cancelRead` -> `transport.cancelRecv`. Because TCP `socket.recv?` #1 already resolved its promise, `socket.native.cancelRecv` is a no-op, and `W1`'s continuation is still running concurrently after `Live.cancelRead` returns!
+  2. If `W1` only checks `cancelled` *before registering the next TCP receive* (as written in [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L114)), `W1` will still acquire the mutex, feed `bytes` to `rbio`, call `SSL_read`, and potentially queue a `uv_write` from `wbio` **after** the exchange has already ended and called `Transport.release` (`SSL_shutdown`).
+  3. If `cancelled` is a boolean on the connection rather than a per-receive token/generation counter, and a second operation starts on the same connection after a cancelled one (e.g., `Live.begin` starting right after `idleClean`), a late continuation from the first task can observe the reset `cancelled = false`.
+  4. If `Transport.release` frees the `SSL*` in C instead of relying on the Lean external-object finalizer when the last reference to `Transport` drops, `W1` will execute a **use-after-free** in C.
+* **What to do instead:**
+  - Give each `Transport.recv?` invocation a unique monotonic ID (or generation counter) in the mutex-protected state.
+  - When `W1` wakes up from `socket.recv?`, it must acquire the mutex and check that its receive ID is still the active, uncancelled receive **before** touching `rbio`/`SSL_read` as well as before registering the next `socket.recv?`.
+  - Free `SSL*` and `SSL_CTX*` only in the Lean external-object finalizer (`lean_register_external_class` finalizer), never eagerly in `Transport.release`.
+
+---
+
+### 1.6. Stale OpenSSL thread-local error queue (`ERR_get_error`) corrupts `SSL_get_error` across connections and threads
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L113) ("Each TLS connection has a mutex held, briefly, around every OpenSSL call...").
+* **Confidence:** Certain (documented OpenSSL `SSL_get_error(3)` precondition).
+* **What goes wrong:**
+  In OpenSSL 3, `SSL_get_error(ssl, ret)` inspects **both** `ssl` and the calling OS thread's OpenSSL error queue (`ERR_peek_error()`). OpenSSL's documentation states: *"In order to `SSL_get_error()` to work reliably, the current thread's error queue must be empty before the TLS/SSL I/O operation is attempted, or `SSL_get_error()` will not work reliably."*
+  Lean's async tasks hop across a shared pool of worker threads. If worker thread `T1` encounters a certificate verification error, a truncated EOF (`SSL_R_UNEXPECTED_EOF_WHILE_READING`), or a bad CA file on Connection A and does not completely drain `T1`'s error queue (or leaves an entry behind), the next time `T1` runs `SSL_read` or `SSL_do_handshake` on Connection B and OpenSSL wants more input from `rbio` (`ret = -1`), `SSL_get_error` sees the leftover error in `T1`'s thread-local queue and returns **`SSL_ERROR_SSL` instead of `SSL_ERROR_WANT_READ`**, failing a healthy connection.
+* **What to do instead:**
+  Call `ERR_clear_error()` inside the C session lock immediately **before** every `SSL_do_handshake`, `SSL_read`, `SSL_peek`, `SSL_write`, and `SSL_shutdown` call, and drain errors with `ERR_get_error()` (not `ERR_peek_error()`) before releasing the lock.
+
+---
+
+### 1.7. Several OpenSSL functions in the design are C preprocessor macros, not linkable symbols in `libssl.a` / `libcrypto.a`
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L93-L96) ("declares by hand the few OpenSSL 3 functions and constants it uses (`native/openssl-min.h`, about 45 of them) instead of including OpenSSL's headers"), [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L124-L125).
+* **Confidence:** Certain.
+* **What goes wrong:**
+  1. In OpenSSL 3.0–3.6, the following standard APIs needed by the design are **preprocessor macros** wrapping `SSL_ctrl`, `SSL_CTX_ctrl`, or `BIO_ctrl`, and **do not exist as exported symbols** in `libssl.a` or `libcrypto.a`:
+     - `SSL_set_tlsext_host_name(s, name)` -> `SSL_ctrl(s, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, (void *)name)`
+     - `SSL_CTX_set_min_proto_version(ctx, v)` -> `SSL_CTX_ctrl(ctx, SSL_CTRL_SET_MIN_PROTO_VERSION, v, NULL)`
+     - `SSL_CTX_set_mode(ctx, m)` / `SSL_set_mode(s, m)` -> `SSL_CTX_ctrl` / `SSL_ctrl` (`SSL_CTRL_MODE`)
+     - `BIO_get_mem_data(b, pp)` -> `BIO_ctrl(b, BIO_CTRL_INFO, 0, (char *)(pp))`
+     - `BIO_set_mem_eof_return(b, v)` -> `BIO_ctrl(b, BIO_C_SET_FD, v, NULL)`
+     - `BIO_pending(b)` / `BIO_reset(b)` -> `BIO_ctrl(b, BIO_CTRL_PENDING, 0, NULL)` / `BIO_ctrl(b, BIO_CTRL_RESET, 0, NULL)`
+     - `ERR_GET_LIB(e)` / `ERR_GET_REASON(e)` -> inline bitmask operations in `<openssl/err.h>`.
+     Declaring any of these as `extern` prototypes in `native/openssl-min.h` will fail to link against `libssl.a`/`libcrypto.a`, and in the CI check file (`#include <openssl/ssl.h>` + `#include "openssl-min.h"`) the macro from `<openssl/ssl.h>` will expand the prototype in `openssl-min.h` into a syntax error.
+  2. Also note: `SSL_set_alpn_protos` returns **`0` on success and `1` on failure** (the opposite of `SSL_set1_host` and almost every other OpenSSL function). And when a server does not negotiate ALPN at all, `SSL_get0_alpn_selected` returns `len == 0`, which must be accepted (only `len > 0` and `!= "http/1.1"` is refused).
+* **What to do instead:**
+  Declare the real C symbols (`SSL_ctrl`, `SSL_CTX_ctrl`, `BIO_ctrl`, `BIO_ctrl_pending`) in `native/openssl-min.h`, define prefixed inline wrappers or constants (`LHTTP_SSL_CTRL_...`), and in the CI check file assert equality of both the constants (`_Static_assert`) and the macro expansions against OpenSSL's real headers.
+
+---
+
+### 1.8. Trust-store discovery: `SSL_CTX_load_verify_dir` succeeds on an empty/unhashed `/etc/ssl/certs` directory, `SSL_CTX_set_default_verify_paths` silently uses `/nix/store`, and lazy `SSL_CTX` init blocks or caches transient failures
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L123) ("Trust...").
+* **Confidence:** High.
+* **What goes wrong:**
+  1. **`SSL_CTX_load_verify_dir` does not check for certificates:** Unlike `SSL_CTX_load_verify_file` (which parses the PEM bundle immediately and fails if it is empty or unreadable), `SSL_CTX_load_verify_dir(ctx, "/etc/ssl/certs")` only registers the directory path for on-demand hash-symlink lookup (`XXXXXXXX.0`) during handshakes. It returns `1` (success) even if `/etc/ssl/certs` is **completely empty** or contains `.pem` files without OpenSSL `c_rehash` symlinks. On a container or system where none of the 5 file paths exist but an empty `/etc/ssl/certs` directory exists, setup succeeds and every call fails later with `Cause.tls .verify` ("unable to get local issuer certificate") instead of `Cause.tls .setup`.
+  2. **Empty `SSL_CERT_FILE=""` / `SSL_CERT_DIR=""`:** Many container/CI environments export `SSL_CERT_FILE=""`. Treating `some ""` as set (instead of unset) causes `SSL_CTX_load_verify_file` to fail instead of probing the well-known paths. Conversely, if `SSL_CERT_FILE` is set to a non-empty path that cannot be read, falling back to system certs instead of failing with `Cause.tls .setup` would mask a broken explicit configuration.
+  3. **Do not call `SSL_CTX_set_default_verify_paths`:** In OpenSSL, `SSL_CTX_set_default_verify_paths` is the function that reads `SSL_CERT_FILE`/`SSL_CERT_DIR`, and whenever either is unset it falls back to the compiled-in `/nix/store/...` `OPENSSLDIR` and returns `1` (success) even when `/nix/store` does not exist.
+  4. **Lazy `SSL_CTX` initialization under mutex:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L123) says "The context, with its loaded trust store, is created by the client's first `https` call and kept." It must **not** be created under `client.state` (`PoolState` mutex, which [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L38) requires to guard only quick pure steps with no I/O), because reading and parsing a 200 KiB CA bundle takes several milliseconds of synchronous disk I/O. And if `SSL_CTX` creation fails transiently (e.g., `EMFILE`), caching the error permanently bricks the `Client`.
+* **What to do instead:**
+  - Guard `SSL_CTX` initialization with its own `Std.Mutex (Option SSL_CTX)`, caching only on success.
+  - Read `SSL_CERT_FILE` and `SSL_CERT_DIR` explicitly (ignoring `""`): if either is non-empty, load it with `SSL_CTX_load_verify_file` / `SSL_CTX_load_verify_dir` and fail with `Cause.tls .setup` if loading fails.
+  - When falling back to the well-known locations, check the bundle **files** first; only use a directory (`/etc/ssl/certs`, `/etc/pki/tls/certs`) if it actually contains at least one entry, and also load all existing candidate directories (as Go's `crypto/x509` does) rather than stopping at the first empty one.
+
+---
+
+### 1.9. `Transport.release` (`close_notify`) has no way to tell a clean `Connection: close` exchange from a failed/abandoned `.finished false` exchange, and pool eviction currently drops sockets inside the pool mutex
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L118) ("A connection the shell lets go after a clean exchange (a response with `Connection: close`, an idle connection that expired or did not fit the pool, a closed client) sends `close_notify`, best effort... A connection that failed is dropped without it."), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L247-L248), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L282-L286), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L409-L436), [LeanHttp/Exchange.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Exchange.lean#L588-L591).
+* **Confidence:** Certain.
+* **What goes wrong:**
+  1. In [`Exchange.lean`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Exchange.lean#L588-L591), `failOrDrop` during `.draining` calls `finishNow false` (setting `ex.phase := .finished false`), and [`Live.verdict`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Body.lean#L98-L102), [`Live.abandon`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Body.lean#L218), and [`settleHeld`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L434) collapse `.finished false` and `.failed _` into a single `reusable : Bool` (`false`). Moreover, an early response (`ex.early == true`) where the request body `live.writing` is **still in flight** also ends in `.finished false` ([`Exchange.lean`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Exchange.lean#L699)). If `settleHeld` sends `close_notify` whenever `reusable == false` or `phase == .finished false`, it will call `SSL_shutdown` on failed connections, on abandoned connections where the server is still streaming a huge body, and on connections where a request body `SSL_write` task is still in flight.
+  2. In [`Client.forget`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L247-L248), [`Client.close`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L282-L286), [`Client.giveBack`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L409-L419), and [`Client.takeConn`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L454-L475), expired/overflowed idle connections are simply erased from `s.idle` **while holding the pool mutex**. Calling `Transport.release` (`SSL_shutdown` + `socket.send`) inside `client.withState` would perform OpenSSL and libuv calls under the global pool mutex.
+* **What to do instead:**
+  - Distinguish three settlement states in the shell (`reusable`, `cleanClose`, `drop`): send `close_notify` after an exchange only when `ex.parser.complete && !ex.early && ex.written == ex.request.size && ex.writeError.isNone && !ex.reusableNow`.
+  - Have `forget`, `giveBack`, and `Client.close` return the list of evicted `IdleTransport`s out of `client.withState`, and call `Transport.release` on them **after** releasing the pool mutex.
+
+---
+
+### 1.10. TLS 1.3 post-handshake alerts (`certificate_required`, `bad_certificate`, etc.) and handshake `Finished` writes cross the handshake/exchange boundary
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L115), [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L131).
+* **Confidence:** High.
+* **What goes wrong:**
+  1. **Unawaited client `Finished` write:** At the end of `SSL_do_handshake`, OpenSSL puts the client's `Finished` flight into `wbio` and returns `1`. If the handshake does not await the `socket.send` of that final handshake flight before starting `Live.begin`, then:
+     - Two writes are in flight at once on the socket (`Finished` and the first HTTP request chunk).
+     - If the socket was reset during the handshake, the failure happens after `Exchange.begin` has already set `sentAny = true` (`delivery = .maybeDelivered`), preventing the planner from retrying a `POST` that was never actually sent after a completed handshake.
+  2. **TLS 1.3 alert after client `Finished`:** In TLS 1.3, when a server rejects the client's `Finished` or empty client `Certificate` (with `certificate_required`, `bad_certificate`, `access_denied`, etc.), `SSL_do_handshake` on the client has already returned `1` after reading `ServerHello..Finished`. The server's fatal alert arrives on the very first `SSL_read` inside `Live.begin` (after the client wrote the HTTP request). Under [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L131), any `SSL_read` failure during the exchange is reported to `Exchange` as `readFailed` -> `Cause.peerClosed` (`delivery = .maybeDelivered`), and its detail must not claim the connection was "truncated" when `SSL_get_error` was `SSL_ERROR_SSL` (an alert/protocol error) rather than `SSL_R_UNEXPECTED_EOF_WHILE_READING`.
+* **What to do instead:**
+  - Always await the `socket.send` of the client's final handshake flight inside the handshake (within the handshake/call deadline) before starting `Live.begin`, so any write error there is reported as `Cause.tls .closed` with `delivery = .notSent`.
+  - In `Transport.recv?`, distinguish `SSL_R_UNEXPECTED_EOF_WHILE_READING` / TCP EOF without `close_notify` ("the TLS connection was truncated") from TLS alerts / record errors (include OpenSSL's alert/error string in `readFailed`'s `detail`).
+
+---
+
+### 1.11. `Client.lean` and `Wire.lean` places where `target` and `Call.validate` must match the new `scheme://host:port` origin key
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L126) ("The pool's origin key is `scheme://host:port` (as is every error's `target`)"), [LeanHttp/Wire.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Wire.lean#L27-L71), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L754), [LeanHttp/Client.lean](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L848-L852).
+* **Confidence:** Certain.
+* **What goes wrong:**
+  - [`Plan`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Wire.lean#L27-L42) currently has only `host`, `port`, and `head` (no `scheme` / `tls : Bool`), and [`Plan.target`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Wire.lean#L69-L70) formats `s!"{plan.host}:{plan.port}"`.
+  - [`Client.lean:754`](file:///home/matthias/prog/lean-http-wt-tls/LeanHttp/Client.lean#L754) hardcodes `let target := s!"{hop.origin.host}:{hop.origin.port}"` when `Client.plan` fails on a redirect. If not updated alongside `Plan.target` to `s!"{hop.origin.scheme.val}://{hop.origin.host}:{hop.origin.port}"`, `Error.target` on redirect refusal disagrees with [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L126).
+  - Existing unit and trace tests that assert on `Error.target` or `Event.send`'s `target` string will see `http://host:port` instead of `host:port` and must be updated consistently with `Plan.target`.
+
+---
+
+### 1.12. Real-world servers without `close_notify` vs. RFC 9112 §9.8
+* **Where:** [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L116) ("a body delimited by the close, the case RFC 9112 section 9.8 warns about, fails instead of being delivered short. There is no option to accept a truncated close.").
+* **Confidence:** High.
+* **What goes wrong:**
+  - Against **RFC 9112 §9.8**, the design is **right**: RFC 9112 §9.8 explicitly requires that when a response body is delimited by connection close over TLS, a TCP FIN without `close_notify` MUST be treated as an incomplete/truncated response (because an attacker on the network can inject a TCP FIN to truncate an unframed body).
+  - For **framed** responses (`Content-Length`, `chunked`, `HEAD`, `204`, `304`), servers that omit `close_notify` and close TCP immediately after the response are completely unaffected **provided Finding 1.1 is fixed** (i.e., `Transport.recv?` returns decrypted plaintext before reporting a subsequent unexpected EOF in the same read, so `Codec.Parser` reaches `.done` before EOF is ever consulted).
+  - The **only** real-world failure mode of having no option (`SSL_OP_IGNORE_UNEXPECTED_EOF`) is an legacy server/appliance that sends an **unframed** (`Connection: close`, no `Content-Length`, no `Transfer-Encoding: chunked`) `200 OK` body over HTTPS and closes TCP without `close_notify`. That is non-compliant with both TLS 1.2/1.3 and RFC 9112 §9.8, so refusing it by default is sound; if interoperability with such broken servers is ever needed, a `Config.tls` flag wouldn't affect any core or proof.
+
+---
+
+## 2. Alternatives
+
+### 2.1. Do the design's rejections of the listed alternatives hold up?
+Yes, all six rejections in [DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L100-L107) hold up:
+1. **Fetching/generating OpenSSL headers at build time ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L102)):** Correct to reject. OpenSSL 3's `ssl.h`, `x509.h`, `err.h`, etc. are generated from `.h.in` via Perl during `./Configure`; running that in `lake build` would require network + Perl on every user machine.
+2. **System OpenSSL via `pkg-config` ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L103)):** Correct to reject. `leanc` unconditionally passes `-L<toolchain>/lib -lssl -lcrypto`, resolving against the toolchain's static OpenSSL 3.6.0. Compiling against `/usr/include/openssl` mixes system headers (3.0 on Ubuntu 24.04, LibreSSL on macOS, or absent without `libssl-dev`) with the toolchain's 3.6.0 archive.
+3. **Vendoring the proposed `Std` TLS PRs (#14064–#14066) ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L104)):** Correct to reject. Apart from symbol collisions and needing headers, its Linux cert loading relies on OpenSSL's compiled-in `OPENSSLDIR` (`/nix/store/...`), which fails out of the box on non-Nix machines.
+4. **Pure Lean TLS ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L105)):** Obviously out of scope.
+5. **Other TLS libraries (`rustls-ffi`, `mbedTLS`, `BoringSSL`, `libcurl`) ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L106)):** Given the zero-external-build-dependency constraint ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L7)) and the fact that OpenSSL 3.6.0 is *already* statically linked into every binary by `leanc`, linking a second TLS library is unnecessary weight. Vendoring mbedTLS (~100k LoC C) is the only viable zero-toolchain alternative if a future Lean release ever drops `-lssl -lcrypto` from `leanc`.
+6. **Blocking OpenSSL on dedicated threads ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L107)):** Correct to reject. Blocking `SSL_read` on an OS socket fd pins a thread, cannot be cancelled via `cancelRecv`, and violates the exit-hang / no-pending-operation-after-call rule.
+
+### 2.2. Better split of responsibilities between C (`native/tls.c`) and Lean
+The overall architecture—driving the toolchain's static OpenSSL 3 over memory BIOs (`BIO_s_mem()`) beneath a `LeanHttp.Transport` abstraction—is the right choice for this library. However, **two changes to the C/Lean boundary make the implementation substantially simpler and safer**:
+
+1. **Do more per step in C: expose 5 session-locked state-machine operations from `native/tls.c`, not low-level OpenSSL calls.**
+   Instead of Lean orchestrating `BIO_write`, `SSL_read`, `SSL_get_error`, and `BIO_read` across multiple FFI calls, `native/tls.c` should own the `SSL*`, `rbio`, `wbio`, and a small per-session status struct, and expose only coarse-grained atomic steps:
+   - `tls_ctx_new(ca_file_or_null, cert_file_env, cert_dir_env) -> Except String TlsCtx`
+   - `tls_session_new(ctx, host_or_ip, is_ip) -> Except (TlsErrorKind × String) TlsSession`
+   - `tls_step_handshake(sess, in_cipher : ByteArray) -> HandshakeStep × ByteArray` (where `HandshakeStep` is `done | wantRead | error kind detail`, and the second element is the drained `wbio` ciphertext to `send`)
+   - `tls_encrypt(sess, plain : ByteArray) -> Except String ByteArray` (calls `ERR_clear_error()`, `SSL_write`, drains `wbio`, returns ciphertext)
+   - `tls_decrypt(sess, in_cipher : ByteArray, tcp_eof : Bool, max_plain : USize) -> DecryptStep × ByteArray` (where `DecryptStep` is `data (plain : ByteArray) | wantRead | cleanEof | truncated String | error String`, and the second element is any `wbio` ciphertext OpenSSL produced during `SSL_read`, e.g. for a TLS 1.3 `KeyUpdate`)
+   - `tls_inspect_idle(sess, in_cipher : ByteArray, tcp_eof : Bool) -> Bool × ByteArray` (processes any buffered/incoming bytes, checks `SSL_has_pending(ssl) == 0 && BIO_ctrl_pending(rbio) == 0 && SSL_get_shutdown(ssl) == 0`, and returns `(clean, out_cipher)`)
+   - `tls_close_notify(sess) -> ByteArray`
+
+   **Why this split is better:**
+   - The multi-record `rbio` loop (Finding 1.1), `ERR_clear_error()` (Finding 1.6), latching an EOF/alert that follows valid plaintext in the same TCP read (Finding 1.1), and draining `wbio` all happen inside a single C call with zero intermediate states exposed to Lean.
+   - Lean's per-connection mutex only needs to wrap:
+     ```lean
+     let (step, outCipher) ← tlsDecrypt sess inCipher eof max
+     if !outCipher.isEmpty then discard <| start (socket.send outCipher)
+     ```
+     which guarantees that every `uv_write` is queued in the exact order OpenSSL produced the records.
+
+2. **Set `SSL_OP_NO_TICKET` on the `SSL_CTX` since session resumption is not used ([DESIGN.md](file:///home/matthias/prog/lean-http-wt-tls/DESIGN.md#L125)).**
+   In OpenSSL 3, `SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET)` stops the client from sending `SessionTicket` (TLS 1.2) and `psk_key_exchange_modes` (TLS 1.3) in `ClientHello`. Per RFC 8446 §4.2.9, TLS 1.3 servers then **must not send post-handshake `NewSessionTicket` messages**, eliminating the primary source of post-handshake records arriving after `SSL_do_handshake` or while a connection sits idle in the pool.
+exit 0

@@ -1,0 +1,9 @@
+     114.3 listening on 127.0.0.1:18112
+     198.4 conn1 accepted from ('127.0.0.1', 55984)
+     204.4 conn1 req1 GET /echo {'host': ['127.0.0.1:18112'], 'connection': ['keep-alive']} body=0B
+     206.2 conn1 EOF from client after 1 requests
+     206.3 conn1 closed by server
+     294.6 conn2 accepted from ('127.0.0.1', 55996)
+     295.5 conn2 req1 GET /bounce/18111/echo {'host': ['127.0.0.1:18112'], 'connection': ['keep-alive']} body=0B
+     337.7 conn2 EOF from client after 1 requests
+     337.9 conn2 closed by server

@@ -11,9 +11,23 @@ lean_lib LeanHttpProto where
   srcDir := "vendor"
   roots := #[`LeanHttpProto.Http.Protocol.H1]
 
+/--
+The TLS binding (`native/tls.c`), compiled with the toolchain's own C compiler and flags.  It
+declares the OpenSSL functions it uses itself (`native/openssl-min.h`) and is linked against the
+toolchain's static OpenSSL, which `leanc` links into every executable; nothing else is needed.
+-/
+target tls.o pkg : System.FilePath := do
+  let src ← inputTextFile <| pkg.dir / "native" / "tls.c"
+  let header := pkg.dir / "native" / "openssl-min.h"
+  let lean ← getLeanInstall
+  buildO (pkg.buildDir / "native" / "tls.o") src #["-I", lean.includeDir.toString]
+    (lean.ccFlags ++ #["-O2", "-Wall"]) (compiler := lean.cc)
+    (extraDepTrace := computeTrace (TextFilePath.mk header))
+
 @[default_target]
 lean_lib LeanHttp where
   leanOptions := #[⟨`autoImplicit, false⟩]
+  moreLinkObjs := #[tls.o]
   -- The proofs about the exchange core, the codec, the planner, the pool core and streamed request
   -- bodies are checked by every build, but no other module imports them.
   roots := #[`LeanHttp, `LeanHttp.Codec, `LeanHttp.Codec.Proofs, `LeanHttp.Exchange.Proofs,

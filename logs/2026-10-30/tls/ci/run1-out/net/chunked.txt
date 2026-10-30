@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18080/chunked-ext
+call 0 ok status=200 bytes=11 ms=1.277 rounds=1 address=127.0.0.1:18080 seed=14364662546856841560 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18080/chunked-ext tls=none body_start="hello world"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=1.749
+exit status=0 wall_ms=9 exit_after_main_ms=8

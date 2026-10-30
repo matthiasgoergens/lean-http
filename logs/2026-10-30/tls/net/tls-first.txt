@@ -1,0 +1,115 @@
+Build completed successfully (55 jobs).
+### 2026-10-30T10:33:26Z 7.0.0-38-generic; syn_retries=2; uid=0
+PASS redirect-303: process exited 132 ms after main returned
+PASS redirect-303: a 303 after a POST is followed
+PASS redirect-303: the POST went out with its body
+PASS redirect-303: and the 303 made it a GET, with no body and no Content-Length
+PASS redirect-307: process exited 11 ms after main returned
+PASS redirect-307: a 307 keeps the POST
+PASS redirect-303: redirect-307: and its body (the server is redirect-303's)
+PASS redirect-303: each call sent both of its requests on one connection: 2
+PASS https-plain: process exited 18 ms after main returned
+PASS https-plain: an https request to a plain HTTP server fails in the handshake; nothing sent
+PASS redirect-303: and that is one more connection: 3
+PASS redirect-303: every call's steps replay through the planner
+PASS redirect-307: every call's steps replay through the planner
+PASS https-plain: every call's steps replay through the planner
+PASS tls-get: process exited 17 ms after main returned
+PASS tls-get: a GET over TLS 1.3, verified against the test CA
+PASS tls-post: process exited 15 ms after main returned
+PASS tls-post: a POST of 100 KB over TLS, echoed
+PASS tls-localhost: process exited 9 ms after main returned
+PASS tls-localhost: a host name matches the certificate's DNS name
+PASS tls-localhost: the server got Host: localhost:18130
+PASS tls-get: the client offered ALPN http/1.1
+PASS tls-get: every call's steps replay through the planner
+PASS tls-post: every call's steps replay through the planner
+PASS tls-reuse: process exited 25 ms after main returned
+PASS tls-reuse: the third call reuses the first call's TLS connection
+PASS tls-reuse: one TLS connection for three calls: 1
+PASS tls-nopool: process exited 59 ms after main returned
+PASS tls-nopool: with pooling off, every call has its own
+PASS tls-reuse: and the server saw two more: 3
+PASS tls-reuse: every call's steps replay through the planner
+PASS tls-wrong-ip: process exited 23 ms after main returned
+PASS tls-wrong-ip: a certificate without the address is refused, not retried, nothing sent
+PASS tls-wrong-name: process exited 64 ms after main returned
+PASS tls-wrong-name: a certificate for another name is refused
+PASS tls-verify: one connection for each, no retry: 2
+PASS tls-untrusted: process exited 10 ms after main returned
+PASS tls-untrusted: a certificate from a CA the client does not trust is refused
+PASS tls-expired: process exited 14 ms after main returned
+PASS tls-expired: an expired certificate is refused
+PASS tls-system: process exited 59 ms after main returned
+PASS tls-system: the system's trust store does not trust the test CA
+PASS tls-wrong-ip: every call's steps replay through the planner
+PASS tls-wrong-name: every call's steps replay through the planner
+PASS tls-untrusted: every call's steps replay through the planner
+PASS tls-expired: every call's steps replay through the planner
+PASS tls-system: every call's steps replay through the planner
+PASS tls-trust-env: process exited 15 ms after main returned
+PASS tls-trust-env: SSL_CERT_FILE names the trust store
+PASS tls-trust-missing: process exited 14 ms after main returned
+PASS tls-trust-missing: an SSL_CERT_FILE that names nothing is a setup error, not a reason to look elsewhere
+PASS tls-trust-badfile: process exited 13 ms after main returned
+PASS tls-trust-badfile: a caFile that cannot be loaded is a setup error
+PASS tls-trust: setup errors open no connection: 1
+PASS tls-trust-leaf: process exited 10 ms after main returned
+PASS tls-trust-leaf: the server's own certificate may anchor its chain
+PASS tls-close-delimited: process exited 15 ms after main returned
+PASS tls-close-delimited: a body ended by close_notify is complete
+PASS tls-truncated: process exited 61 ms after main returned
+PASS tls-truncated: a body ended by the connection without close_notify is truncated, and the error says so
+PASS tls-truncated-framed: process exited 57 ms after main returned
+PASS tls-truncated-framed: a complete Content-Length body is unaffected by a close without close_notify
+PASS tls-truncated-midbody: process exited 8 ms after main returned
+PASS tls-truncated-midbody: a Content-Length body cut short without close_notify fails
+PASS tls-close-delimited: every call's steps replay through the planner
+PASS tls-truncated: every call's steps replay through the planner
+PASS tls-truncated-framed: every call's steps replay through the planner
+PASS tls-truncated-midbody: every call's steps replay through the planner
+PASS tls-stray: process exited 10 ms after main returned
+PASS tls-stray: a response followed by stray bytes in a record of their own
+PASS tls-stray: the connection with stray bytes is not reused: the second call has a connection of its own
+PASS tls-stray: two connections: 2
+PASS tls-stray: every call's steps replay through the planner
+PASS tls-redirect-down: process exited 10 ms after main returned
+PASS tls-redirect-down: a redirect from https to http is followed
+PASS tls-redirect-down: and the http origin got no Authorization
+PASS tls-redirect-up: process exited 16 ms after main returned
+PASS tls-redirect-up: a redirect from http to https is followed, over TLS
+PASS tls-redirect-down: every call's steps replay through the planner
+PASS tls-redirect-up: every call's steps replay through the planner
+PASS tls-hang: process exited 56 ms after main returned
+PASS tls-hang: a server that never answers the handshake: it times out, is retried once, nothing sent
+PASS tls-hang: two 500 ms handshakes and one backoff: 1024 ms
+PASS tls-hang: two connections: 2
+PASS tls-hang-deadline: process exited 15 ms after main returned
+PASS tls-hang-deadline: the deadline during the handshake is the deadline's timeout, never retried
+PASS tls-hang-deadline: at the 700 ms deadline: 704 ms
+PASS tls-closed: process exited 16 ms after main returned
+PASS tls-closed: a server that closes during the handshake: retried like a refused connect, nothing sent
+PASS tls-closed: three connections: 3
+PASS tls-version: process exited 22 ms after main returned
+PASS tls-version: a server that offers TLS 1.1 at most is refused, not retried
+PASS tls-version: one connection: 1
+PASS tls-hang: every call's steps replay through the planner
+PASS tls-hang-deadline: every call's steps replay through the planner
+PASS tls-closed: every call's steps replay through the planner
+PASS tls-version: every call's steps replay through the planner
+PASS tls-idle-notify: process exited 14 ms after main returned
+PASS tls-idle-notify: an idle connection the server closed with close_notify is caught by the idle check
+PASS tls-idle-abrupt: process exited 56 ms after main returned
+PASS tls-idle-abrupt: and one closed without it
+PASS tls-idle-nocheck: process exited 12 ms after main returned
+PASS tls-idle-nocheck: without the idle check, the GET on the closed connection is sent again on a fresh one
+PASS tls-idle-expire: process exited 63 ms after main returned
+PASS tls-idle-expire: an expired idle connection is not used
+PASS tls-idle-expire: and the client closed it cleanly, with close_notify
+PASS tls-idle-notify: every call's steps replay through the planner
+PASS tls-idle-abrupt: every call's steps replay through the planner
+PASS tls-idle-nocheck: every call's steps replay through the planner
+PASS tls-idle-expire: every call's steps replay through the planner
+PASS traces: every call's steps replay through the planner (40 calls)
+### 111 passed, 0 failed, 0 known limitations, 0 skipped
+exit 0

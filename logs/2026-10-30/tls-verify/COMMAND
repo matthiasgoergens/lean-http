@@ -1,0 +1,4 @@
+Independent checks of branch tls (14 commits on db37391), 2026-10-30, build host via scripts/remote.sh, fresh dirs lean-http-tls-verify and lean-http-tls-netverify:
+- history: no key or certificate files or text, no private strings, personal identity only
+- lake build; check-axioms.py on the four axiom scripts: all within propext, Classical.choice, Quot.sound; unit-tests 159 passing -> tls-verify.txt
+- real sockets: 440 passed (138 tls-*), 0 failed, 1 known (dns-timeout) -> tls-net-verify.txt

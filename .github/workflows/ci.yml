@@ -27,6 +27,8 @@ jobs:
         toolchain: [leanprover/lean4:v4.34.1, leanprover/lean4:v4.35.0]
     env:
       ELAN_VERSION: v4.2.4
+      # The check of the hand-written OpenSSL declarations must run here, not be skipped.
+      CI_REQUIRE_TLS_ABI: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -57,6 +59,14 @@ jobs:
         with:
           path: vendor
           key: vendor-${{ hashFiles('scripts/vendor.sh') }}
+
+      # OpenSSL 3.6.0's headers, generated from its checksummed release tarball, for the tls-abi
+      # stage only (the library needs none).  They depend only on scripts/openssl-headers.sh.
+      - name: Cache the OpenSSL headers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .lake/openssl-3.6.0
+          key: openssl-headers-${{ hashFiles('scripts/openssl-headers.sh') }}
 
       # The real-socket suite wants these; scripts/ci.sh changes no system state itself.  It skips,
       # and says so, dns-timeout, which needs root.

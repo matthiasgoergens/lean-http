@@ -1,0 +1,14 @@
+You are reviewing an implementation before it is merged.  You can read files but cannot run commands or write anything; answer in text only.
+
+The repository is lean-http, an HTTP/1.1 client library for Lean 4 (v4.34.1).  Its branch `tls` adds HTTPS.  The change is everything since commit db37391 (`git diff db37391` is what to review; you cannot run git, so read the files): DESIGN.md section "## TLS" (the design, already reviewed once; NOTES.md "TLS: the design and its review" records what that review changed), and the implementation in native/tls.c, native/openssl-min.h, native/openssl-check.c, lakefile.lean, LeanHttp/Tls.lean, LeanHttp/Transport.lean, LeanHttp/Body.lean, LeanHttp/Client.lean, LeanHttp/Wire.lean, LeanHttp/Error.lean, LeanHttp/Call.lean (retryableCause), LeanHttp/Config.lean, the tests in Tests/Unit.lean (tlsChecks, planChecks), tests/net/run.sh (the scenarios named tls-*), tests/net/tls.py, tests/net/tls-certs.sh, scripts/ci.sh (stage tls-abi), scripts/openssl-headers.sh, .github/workflows/ci.yml, and README.md ("HTTPS").
+
+Background facts, measured: the toolchain's C compiler has only freestanding headers in C mode (no stdio.h, pthread.h, string.h), so native/tls.c avoids libc headers; Lean's TCP socket `send` queues a uv_write synchronously and returns a promise; `cancelRecv` drops the pending receive's promise (an awaiting task then sees an error); only one receive may be pending per socket; continuations chained with `sync := true` may run inline on the event loop's thread while it holds the loop's lock.  All real-socket TLS scenarios pass on loopback.
+
+Find defects, ranked by severity, each with file:line, what goes wrong, your confidence, and the fix.  In particular:
+- memory safety and reference counting in native/tls.c (Lean FFI conventions: borrowed @& arguments, owned results, external objects and finalisers, IO results without a world argument in this Lean version), OpenSSL return-value handling, the error queue, the read loop and the latched end, the clean check;
+- whether any path leaves a receive registered after a call returns (the rule in NOTES.md "The exit hang"), or touches a session from two tasks at once, or reuses a TLS connection whose session or socket could hold bytes of an earlier exchange;
+- whether errors are classified and retried as DESIGN.md says (setup, verify, handshake, closed, timeout; the deadline; truncation after the handshake);
+- the trust-store discovery against DESIGN.md, and the server-name rules;
+- whether the tests would notice if the implementation were wrong (missing negative cases, checks that pass vacuously, regexes that match too much);
+- prose in DESIGN.md, NOTES.md, README.md and the doc comments that claims more than the code or the tests show.
+Do not pad with praise.
