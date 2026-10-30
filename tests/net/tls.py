@@ -160,18 +160,23 @@ def serve_tls(conn, n):
                 return
         elif target == "/close-after":
             # Cork the socket, so that the response and the close_notify after it leave in one
-            # segment and reach the client in one read; uncork once both are queued.
+            # segment and reach the client in one read; uncork only once both are queued.  unwrap()
+            # queues close_notify and then waits for the client's, which cannot come before the
+            # uncork: its time-out ends that wait.
             conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 1)
             conn.sendall(response("200 OK", b"bye\n"))
-
-            def uncork():
-                try:
-                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 0)
-                except OSError:
-                    pass
-
-            threading.Timer(0.05, uncork).start()
-            notify(conn, n)
+            conn.settimeout(0.2)
+            log(f"conn{n} sending close_notify, corked with the response")
+            try:
+                conn.unwrap()
+            except (OSError, ssl.SSLError) as e:
+                log(f"conn{n} unwrap: {e!r}")
+            try:
+                conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 0)
+                time.sleep(0.2)
+            except OSError:
+                pass
+            conn.close()
             return
         elif target == "/redirect-http":
             conn.sendall(response("302 Found", b"", f"Location: http://127.0.0.1:{ARGS.plain_bound}/plain\r\n"))

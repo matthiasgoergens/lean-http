@@ -497,7 +497,7 @@ LEAN_EXPORT lean_obj_res lean_http_tls_read(b_lean_obj_arg o, size_t max) {
     /* Nothing buffered and the input not ended: no buffer is allocated for a read that would wait. */
     int idle = s->latched == 0 && !s->failed && !s->eof_fed && !SSL_has_pending(s->ssl)
         && BIO_ctrl_pending(SSL_get_rbio(s->ssl)) == 0;
-    lean_object *out = lean_alloc_sarray(1, 0, idle ? 0 : max);
+    lean_object *out = lean_alloc_sarray(1, 0, idle || s->latched != 0 || s->failed ? 0 : max);
     uint8_t *buf = lean_sarray_cptr(out);
     if (idle) {
         /* status stays RD_WANT_READ */

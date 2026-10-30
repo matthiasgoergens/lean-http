@@ -303,7 +303,10 @@ digits, or `0x` and hexadecimal digits.  Such a name is no DNS name (no top-leve
 numeric), and resolvers read it as an IPv4 address: `1.2.3` as 1.2.0.3, `0x7f000001` as 127.0.0.1.
 -/
 def endsInNumber (name : String) : Bool :=
-  let last := (name.splitOn ".").getLast?.getD ""
+  let labels := name.splitOn "."
+  -- One empty last label (a trailing dot) is dropped first, as the standard does.
+  let labels := if labels.getLast? == some "" then labels.dropLast else labels
+  let last := labels.getLast?.getD ""
   let hex := last.startsWith "0x" || last.startsWith "0X"
   let digits := if hex then (last.drop 2).toString else last
   if hex then digits.all Char.isHexDigit
