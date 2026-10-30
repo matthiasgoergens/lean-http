@@ -57,5 +57,12 @@ case $(cat "$out/stream-example.txt") in
   *) echo "FAIL stream-example.txt: expected 588890 bytes"; fails=$((fails + 1)) ;;
 esac
 
+"$here/.lake/build/bin/upload-example" "$base" > "$out/upload-example.txt" 2>&1 \
+  || { echo "FAIL upload-example exited with status $?"; fails=$((fails + 1)); }
+cat "$out/upload-example.txt"
+# "line 0\n" to "line 9999\n": 10 * 7 + 90 * 8 + 900 * 9 + 9000 * 10 bytes.
+expect "$out/upload-example.txt" 'streamed 200 {"bytes": 98890, "lines": 10000, "framing": "chunked"}'
+expect "$out/upload-example.txt" 'known size 200 {"bytes": 24, "lines": 1, "framing": "length"}'
+
 echo "$fails failing"
 [ $fails -eq 0 ]

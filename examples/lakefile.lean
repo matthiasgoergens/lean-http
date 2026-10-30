@@ -19,3 +19,7 @@ lean_exe «request-example» where
 @[default_target]
 lean_exe «stream-example» where
   root := `StreamExample
+
+@[default_target]
+lean_exe «upload-example» where
+  root := `UploadExample

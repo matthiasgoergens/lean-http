@@ -7,6 +7,8 @@
 
     GET  /hello            200, a JSON object, Content-Type: application/json
     POST /echo             200, the request body back, with the request's Content-Type
+    POST /count            200, a JSON object that says how many body bytes and lines arrived and
+                           how the body was framed (Content-Length or chunked)
     GET  /numbers?count=N  200, the numbers 0 to N-1, one per line, in a chunked body
 
 Prints "listening on PORT" once it accepts connections.  Usage: server.py [PORT] (default 8080)
@@ -46,8 +48,30 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
+    def read_chunked(self) -> bytes:
+        body = b""
+        while True:
+            size = int(self.rfile.readline().split(b";")[0], 16)
+            if size == 0:
+                while self.rfile.readline() not in (b"\r\n", b""):
+                    pass
+                return body
+            body += self.rfile.read(size)
+            self.rfile.readline()
+
     def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/echo":
+        path = urlsplit(self.path).path
+        if path == "/count":
+            chunked = self.headers.get("Transfer-Encoding", "").lower() == "chunked"
+            if chunked:
+                body = self.read_chunked()
+            else:
+                body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            summary = {"bytes": len(body), "lines": body.count(b"\n"),
+                       "framing": "chunked" if chunked else "length"}
+            self.send_body(json.dumps(summary).encode(), "application/json")
+            return
+        if path != "/echo":
             self.send_error(404)
             return
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
