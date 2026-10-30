@@ -6,8 +6,9 @@ import Tests.Support.Drive
 
 Pure parts of the client: the backoff schedule, address ordering and de-duplication, request
 planning, error classification, the pool's settings, when an exchange is sent again, the check of
-a call's steps against the planner (with mutated traces as positive controls) and how the body
-stream hands out what it holds.  Prints one line per check and exits with status 1 if any
+a call's steps against the planner (with mutated traces as positive controls), how the body
+stream hands out what it holds, and TLS: the choice of trust store, the name a certificate must
+carry and what the planner retries.  Prints one line per check and exits with status 1 if any
 failed.
 -/
 
@@ -122,7 +123,15 @@ def planChecks : Checks Unit := do
   checkEq "plan keeps a Host the caller set"
     (planText "http://127.0.0.1:9/" (Headers.empty.insert Header.Name.host (.mk "api.test")))
     "127.0.0.1:9 / Host=api.test"
-  check "plan refuses https" (planText "https://example.com/" |>.startsWith "error: unsupported scheme")
+  checkEq "plan for https" (planText "https://example.com/x") "example.com:443 /x Host=example.com"
+  checkEq "an https plan says TLS" ((planOf "https://example.com/").toOption.map (·.scheme)) (some .https)
+  checkEq "an http plan says plain" ((planOf "http://example.com/").toOption.map (·.scheme)) (some .http)
+  -- The pool's origin key: a TLS and a plain connection to the same host and port never mix.
+  checkEq "an https origin key" ((planOf "https://example.com:8443/").toOption.map (·.target))
+    (some "https://example.com:8443")
+  checkEq "an http origin key" ((planOf "http://example.com:8443/").toOption.map (·.target))
+    (some "http://example.com:8443")
+  check "plan refuses another scheme" (planText "ftp://example.com/" |>.startsWith "error: unsupported scheme")
   let origin := Client.plan { method := .get, version := .v11, uri := rootTarget }
   check "plan refuses an origin-form target" (origin matches .error _)
   -- A zero read gap would make every write and read due the moment it is issued.
@@ -365,7 +374,7 @@ def traceChecks : Checks Unit := do
   let failingAfter := (failing.extract 0 2).push (.redispatch true closedFirst .closedBeforeResponse)
     |>.append (failing.extract 2 failing.size)
   check "a failure reported as not sent after a re-dispatch is caught" (rejects failingAfter)
-  -- The client may fail a call when it cannot send the planner's next request (https).
+  -- The client reaches https now: refusing the planner's redirect to https is caught.
   let httpsRedirect : Response.Head := {
     status := .found,
     headers := Headers.empty.insert Header.Name.location (.mk "https://127.0.0.1:1/b") }
@@ -374,12 +383,8 @@ def traceChecks : Checks Unit := do
     cause := .invalidRequest "https", delivery := .responseReceived, hops := stH.hops,
     retries := stH.retries }
   let httpsTrace := (good.extract 0 5).push (.decide c2 (.response httpsRedirect) sH)
-  check "after a redirect to https, the client may refuse to send it"
-    ((Call.validate (httpsTrace.push (.fail refusedHop))).toOption.isSome)
-  check "but not with another cause"
-    (rejects (httpsTrace.push (.fail { refusedHop with cause := .peerClosed })))
-  check "nor with a delivery short of the response received"
-    (rejects (httpsTrace.push (.fail { refusedHop with delivery := .notSent })))
+  check "after a redirect to https, the client may not refuse to send it"
+    (rejects (httpsTrace.push (.fail refusedHop)))
   check "and an http redirect may not be refused"
     (rejects ((good.extract 0 6).push (.fail { refusedHop with hops := 1 })))
 
@@ -396,9 +401,92 @@ def streamChecks : Checks Unit := do
   checkEq "and continued from the offset" (view (BodyStream.take [piece, other] 2 2)) (some ([3, 4], 2, 4))
   checkEq "to its end" (view (BodyStream.take [piece, other] 4 2)) (some ([5], 1, 0))
 
+/-! ## TLS: the trust store, the server's name, errors -/
+
+def hostOf (url : String) : Option URI.Host :=
+  URI.parse? url >>= (·.host?)
+
+def nameText (url : String) : String :=
+  match hostOf url with
+  | none => "test: no host"
+  | some h => match Tls.serverName h with
+    | .ok (.host n) => s!"host {n}"
+    | .ok (.ip a) => s!"ip {a}"
+    | .error msg => s!"error: {msg}"
+
+def trustText (p : Tls.TrustProbe) : String :=
+  match Tls.chooseTrust p with
+  | .ok t => s!"file={t.file} dirs={t.dirs.toList}"
+  | .error msg => s!"error: {msg}"
+
+def tlsChecks : Checks Unit := do
+  -- The OpenSSL linked in: the toolchain's static OpenSSL 3.
+  let v ← Tls.opensslVersionNumber ()
+  check "the OpenSSL linked in is version 3" (v >>> 28 == 3) s!"version number {v}"
+  -- Which certificates to trust.
+  let ubuntu : Tls.TrustProbe := {
+    isFile := (· == "/etc/ssl/certs/ca-certificates.crt"), isDir := (· == "/etc/ssl/certs"),
+    hasHashed := (· == "/etc/ssl/certs") }
+  checkEq "the caFile setting wins" (trustText { ubuntu with caFile := some "/my/ca.pem", envFile := some "/x" })
+    "file=/my/ca.pem dirs=[]"
+  checkEq "SSL_CERT_FILE is honoured"
+    (trustText { ubuntu with envFile := some "/e.pem", isFile := fun f => f == "/e.pem" || ubuntu.isFile f })
+    "file=/e.pem dirs=[]"
+  checkEq "SSL_CERT_DIR is a list of directories"
+    (trustText { ubuntu with envDir := some "/a::/b", isDir := fun d => d == "/a" || d == "/b" })
+    "file= dirs=[/a, /b]"
+  let both : Tls.TrustProbe :=
+    { ubuntu with envFile := some "/e.pem", envDir := some "/a", isFile := (· == "/e.pem"), isDir := (· == "/a") }
+  checkEq "both variables together" (trustText both) "file=/e.pem dirs=[/a]"
+  check "an SSL_CERT_FILE that names nothing is an error, not a reason to look elsewhere"
+    (trustText { ubuntu with envFile := some "/missing.pem" } |>.startsWith "error: SSL_CERT_FILE names /missing.pem")
+  check "likewise SSL_CERT_DIR"
+    (trustText { ubuntu with envDir := some "/missing" } |>.startsWith "error: SSL_CERT_DIR names /missing")
+  checkEq "empty variables count as unset" (trustText { ubuntu with envFile := some "", envDir := some "" })
+    "file=/etc/ssl/certs/ca-certificates.crt dirs=[]"
+  checkEq "Debian and Ubuntu's bundle" (trustText ubuntu) "file=/etc/ssl/certs/ca-certificates.crt dirs=[]"
+  checkEq "Fedora's bundle" (trustText { isFile := (· == "/etc/pki/tls/certs/ca-bundle.crt") })
+    "file=/etc/pki/tls/certs/ca-bundle.crt dirs=[]"
+  checkEq "Alpine's and macOS's bundle" (trustText { isFile := (· == "/etc/ssl/cert.pem") })
+    "file=/etc/ssl/cert.pem dirs=[]"
+  checkEq "a bundle file before a directory"
+    (trustText { ubuntu with isFile := (· == "/etc/ssl/cert.pem") }) "file=/etc/ssl/cert.pem dirs=[]"
+  checkEq "a directory with hashed names when no bundle exists"
+    (trustText { ubuntu with isFile := fun _ => false }) "file= dirs=[/etc/ssl/certs]"
+  check "a directory without hashed names is not a trust store"
+    (trustText { ubuntu with isFile := fun _ => false, hasHashed := fun _ => false } |>.startsWith "error: no trusted certificates found")
+  check "nothing at all is an error that says what to set"
+    ((trustText {}).startsWith "error: no trusted certificates found" &&
+      ((trustText {}).splitOn "Config.tls.caFile").length == 2)
+  check "never OpenSSL's compiled-in default (a Nix store path)"
+    (!(Tls.wellKnownFiles ++ Tls.wellKnownDirs).any (·.startsWith "/nix"))
+  checkEq "hashed names" (["5ad8a5d6.0", "5ad8a5d6.12", "5AD8A5D6.0", "5ad8a5d.0", "5ad8a5d6",
+      "5ad8a5d6.r0", "ca.pem"].map Tls.isHashedName) [true, true, false, false, false, false, false]
+  -- The name the certificate must carry.
+  checkEq "a host name" (nameText "https://example.com/") "host example.com"
+  checkEq "a host name is lowercase" (nameText "https://API.Example.COM/") "host api.example.com"
+  checkEq "an IPv4 literal" (nameText "https://127.0.0.1:8443/") "ip 127.0.0.1"
+  checkEq "an IPv6 literal, without brackets" (nameText "https://[::1]:8443/") "ip ::1"
+  check "a name of digits and dots is refused" (nameText "https://1.2.3/" |>.startsWith "error:")
+  -- The URI parser already refuses the names `SSL_set1_host` must never see.
+  checkEq "the URI parser refuses a trailing dot" (hostOf "https://example.com./").isNone true
+  checkEq "and an empty label" (hostOf "https://a..b/").isNone true
+  -- Errors and what the planner retries.
+  checkEq "a refused certificate says why"
+    (Cause.describe (.tls (.verify "certificate has expired"))) "TLS certificate verification failed: certificate has expired"
+  check "a handshake cut short by the connection closing is retried"
+    (Call.retryableCause (.tls (.closed "reset")))
+  check "a handshake timeout is retried" (Call.retryableCause (.tls .timeout))
+  check "a refused certificate is not retried" (!Call.retryableCause (.tls (.verify "expired")))
+  check "a failed handshake is not retried" (!Call.retryableCause (.tls (.handshake "protocol version")))
+  check "a TLS setup failure is not retried" (!Call.retryableCause (.tls (.setup "no trust store")))
+  check "a zero TLS handshake timeout is an invalid request"
+    (Client.checkConfig { tlsHandshakeTimeoutMs := 0 } matches .error (.invalidRequest _))
+
 def main : IO UInt32 := do
   let ((), results) ←
     (do backoffChecks; addressChecks; planChecks; errorChecks; poolChecks; traceChecks; streamChecks
+        tlsChecks
       : Checks Unit).run #[]
   let failed := results.filter (!·.2)
   IO.println s!"{results.size} checks, {failed.size} failing"

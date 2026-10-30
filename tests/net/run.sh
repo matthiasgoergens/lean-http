@@ -199,6 +199,17 @@ if [ "$(id --user)" -ne 0 ]; then
   unavailable[dns-timeout]="needs root, to rewrite /etc/resolv.conf and listen on port 53"
 fi
 syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)
+# The TLS scenarios need the openssl command-line tool to make their certificates.
+certs=$out/tls-certs
+if ! command -v openssl > /dev/null; then
+  for s in tls-get tls-reuse tls-verify tls-trust tls-close tls-stray tls-redirect tls-handshake tls-idle; do
+    unavailable[$s]="the openssl command-line tool, which makes the test certificates, is not installed"
+  done
+elif ! { mkdir --parents "$certs" && bash "$here/tls-certs.sh" "$certs" > "$certs/made.out" 2>&1; }; then
+  echo "tests/net/tls-certs.sh failed:" >&2
+  cat "$certs/made.out" >&2
+  exit 1
+fi
 
 servers() {
   start shared evil "listening" "$PY" -I "$here/evil.py" --port $EVIL || return 1
@@ -644,7 +655,7 @@ requests() {
 if scenario redirect-chain; then
   evil redirect-chain 18110 || exit 1
   client redirect-chain call GET "http://127.0.0.1:18110/chain/3"
-  expect redirect-chain 'call 0 ok status=200 .*hops=3 retries=0 uri=http://127\.0\.0\.1:18110/chain/0 body_start="GET /chain/0 ' \
+  expect redirect-chain 'call 0 ok status=200 .*hops=3 retries=0 uri=http://127\.0\.0\.1:18110/chain/0 tls=none body_start="GET /chain/0 ' \
     "three redirects within one origin, then the answer"
   conns redirect-chain 1 "the redirects and the final request share one connection"
   logged redirect-chain 'conn1 req4 GET /chain/0 ' "the server saw four requests on it"
@@ -656,7 +667,7 @@ if scenario redirect-cross; then
   start redirect-cross other "listening" "$PY" -I "$here/evil.py" --port 18112 || exit 1
   other=$out/redirect-cross.other.log
   client redirect-cross call GET "http://127.0.0.1:18111/bounce/18112/echo" auth=Bearer-secret cookie=s1
-  expect redirect-cross 'call 0 ok status=200 .*hops=1 .*uri=http://127\.0\.0\.1:18112/echo body_start="GET /echo auth=None cookie=None ' \
+  expect redirect-cross 'call 0 ok status=200 .*hops=1 .*uri=http://127\.0\.0\.1:18112/echo tls=none body_start="GET /echo auth=None cookie=None ' \
     "a redirect to another origin is followed"
   logged redirect-cross "req1 GET /bounce/18112/echo \{'authorization': \['Bearer-secret'\], 'cookie': \['s1'\], " \
     "the first origin got the Authorization and Cookie fields"
@@ -686,17 +697,15 @@ if scenario redirect-303; then
   expect redirect-307 "call 0 ok status=200 .*hops=1 .*body_start=\"POST /echo " "a 307 keeps the POST"
   logged redirect-303 "req2 POST /echo .*'content-length': \['11'\]\} body=11B" "redirect-307: and its body (the server is redirect-303's)"
   conns redirect-303 2 "each call sent both of its requests on one connection"
-  # There is no TLS yet: an https target, or a redirect to one, is refused with a clear error.
-  client redirect-https call GET "http://127.0.0.1:18113/redir/302?to=https://127.0.0.1:18113/echo"
-  expect redirect-https 'call 0 error delivery=response received .*hops=1 .*cause="invalid request: cannot follow the redirect to https://127\.0\.0\.1:18113/echo: unsupported scheme https: this client speaks plain HTTP only \(no TLS yet\)"' \
-    "a redirect to https fails the call"
-  client https call GET "https://127.0.0.1:18113/echo"
-  expect https 'call 0 error delivery=not sent .*cause="invalid request: unsupported scheme https: this client speaks plain HTTP only \(no TLS yet\)"' \
-    "an https request is refused before any I/O"
-  conns redirect-303 3 "and the https target got no connection"
+  # An https target that speaks plain HTTP: evil.py waits for a request head, which a ClientHello
+  # never completes, so the handshake times out.
+  client https-plain call GET "https://127.0.0.1:18113/echo" tlshs=300 retries=0
+  expect https-plain 'call 0 error delivery=not sent .*cause="TLS handshake timeout"' \
+    "an https request to a plain HTTP server fails in the handshake; nothing sent"
+  conns redirect-303 3 "and that is one more connection"
   trace_ok redirect-303
   trace_ok redirect-307
-  trace_ok redirect-https
+  trace_ok https-plain
 fi
 
 if scenario redirect-limit; then
@@ -881,6 +890,203 @@ if scenario stream-abandon; then
     "a body still coming at the deadline fails the call"
   within stream-deadline 990 1400 "at the 1 s deadline"
   for s in stream-abandon stream-drain stream-drain-late stream-unread-big stream-unread stream-throw stream-throw-big stream-escape stream-error stream-badchunk stream-redirect stream-race stream-deadline; do trace_ok $s; done
+fi
+
+# TLS.  The certificates are made at test time by tests/net/tls-certs.sh (a test CA, server
+# certificates for the right name, a wrong name, an untrusted CA and an expired one); tls.py serves
+# HTTPS with one of them on its port and plain HTTP on the next.  The client trusts the test CA
+# through ca=<file> (Config.tls.caFile) unless a check says otherwise.  Every client run is also
+# checked for a prompt exit, as everywhere.
+tls_server() { # tls_server <scenario> <port> <certificate> [tls.py options...]
+  local scenario=$1 port=$2 cert=$3; shift 3
+  start "$scenario" tls "listening" "$PY" -I "$here/tls.py" --cert "$certs/$cert.pem" \
+    --key "$certs/$cert.key" --port "$port" --plain-port $((port + 1)) "$@"
+}
+
+# tls_conns <scenario> <count> <description>: the scenario's TLS server accepted <count> connections.
+tls_conns() {
+  local got
+  got=$(grep --count '^ *[0-9.]* conn[0-9]* accepted from ' "$out/$1.tls.log")
+  if [ "$got" -eq "$2" ]; then
+    result PASS "$1" "$3: $got"
+  else
+    result FAIL "$1" "$3: $got, expected $2"
+  fi
+}
+
+if scenario tls-get; then
+  tls_server tls-get 18130 good || exit 1
+  client tls-get call GET "https://127.0.0.1:18130/hello" ca="$certs/ca.pem"
+  expect tls-get 'call 0 ok status=200 bytes=15 .*uri=https://127\.0\.0\.1:18130/hello tls=TLSv1\.3 body_start="hello over tls' \
+    "a GET over TLS 1.3, verified against the test CA"
+  client tls-post call POST "https://127.0.0.1:18130/echo" body=100000 ca="$certs/ca.pem"
+  expect tls-post 'call 0 ok status=200 bytes=100000 .*tls=TLSv1\.3' "a POST of 100 KB over TLS, echoed"
+  client tls-big call GET "https://127.0.0.1:18130/big?n=50000000" ca="$certs/ca.pem"
+  expect tls-big 'call 0 ok status=200 bytes=50000000 .*tls=TLSv1\.3' "a 50 MB body over TLS"
+  within tls-big 0 5000 "in less than 5 s"
+  client tls-localhost call GET "https://localhost:18130/hello" ca="$certs/ca.pem"
+  expect tls-localhost 'call 0 ok status=200 .*tls=TLSv1\.3' "a host name matches the certificate's DNS name"
+  if grep --quiet --extended-regexp "conn[0-9]+ GET /hello \{'host': 'localhost:18130', 'connection': 'keep-alive'\}" "$out/tls-get.tls.log"; then
+    result PASS tls-localhost "the server got Host: localhost:18130"
+  else
+    result FAIL tls-localhost "the server did not log the request to localhost"
+  fi
+  if grep --quiet "alpn=http/1.1" "$out/tls-get.tls.log"; then
+    result PASS tls-get "the client offered ALPN http/1.1"
+  else
+    result FAIL tls-get "the server saw no ALPN http/1.1"
+  fi
+  trace_ok tls-get
+  trace_ok tls-post
+fi
+
+if scenario tls-reuse; then
+  tls_server tls-reuse 18132 good || exit 1
+  client tls-reuse call GET "https://127.0.0.1:18132/hello" ca="$certs/ca.pem" repeat=3
+  expect tls-reuse 'call 2 ok status=200 .*conn=\(some 0\) reused=true .*tls=TLSv1\.3' \
+    "the third call reuses the first call's TLS connection"
+  tls_conns tls-reuse 1 "one TLS connection for three calls"
+  client tls-nopool call GET "https://127.0.0.1:18132/hello" ca="$certs/ca.pem" repeat=2 pool=0
+  expect tls-nopool 'call 1 ok status=200 .*reused=false' "with pooling off, every call has its own"
+  tls_conns tls-reuse 3 "and the server saw two more"
+  trace_ok tls-reuse
+fi
+
+if scenario tls-verify; then
+  tls_server tls-verify 18134 wrong || exit 1
+  client tls-wrong-ip call GET "https://127.0.0.1:18134/hello" ca="$certs/ca.pem"
+  expect tls-wrong-ip 'call 0 error delivery=not sent .*not_retried=LeanHttp.Call.NoRetry.cause .*cause="TLS certificate verification failed: IP address mismatch"' \
+    "a certificate without the address is refused, not retried, nothing sent"
+  client tls-wrong-name call GET "https://localhost:18134/hello" ca="$certs/ca.pem"
+  expect tls-wrong-name 'call 0 error delivery=not sent .*cause="TLS certificate verification failed: hostname mismatch"' \
+    "a certificate for another name is refused"
+  tls_conns tls-verify 2 "one connection for each, no retry"
+  tls_server tls-untrusted 18136 untrusted || exit 1
+  client tls-untrusted call GET "https://127.0.0.1:18136/hello" ca="$certs/ca.pem"
+  expect tls-untrusted 'call 0 error delivery=not sent .*not_retried=LeanHttp.Call.NoRetry.cause .*cause="TLS certificate verification failed: unable to get local issuer certificate"' \
+    "a certificate from a CA the client does not trust is refused"
+  tls_server tls-expired 18138 expired || exit 1
+  client tls-expired call GET "https://127.0.0.1:18138/hello" ca="$certs/ca.pem"
+  expect tls-expired 'call 0 error delivery=not sent .*cause="TLS certificate verification failed: certificate has expired"' \
+    "an expired certificate is refused"
+  # Without the test CA the system's trust store is used, which does not hold it.
+  client tls-system call GET "https://127.0.0.1:18136/hello"
+  expect tls-system 'call 0 error delivery=not sent .*cause="TLS certificate verification failed: unable to get local issuer certificate"' \
+    "the system's trust store does not trust the test CA"
+  for s in tls-wrong-ip tls-wrong-name tls-untrusted tls-expired tls-system; do trace_ok $s; done
+fi
+
+if scenario tls-trust; then
+  tls_server tls-trust 18140 good || exit 1
+  export SSL_CERT_FILE="$certs/ca.pem"
+  client tls-trust-env call GET "https://127.0.0.1:18140/hello"
+  unset SSL_CERT_FILE
+  expect tls-trust-env 'call 0 ok status=200 .*tls=TLSv1\.3' "SSL_CERT_FILE names the trust store"
+  export SSL_CERT_FILE=/nonexistent.pem
+  client tls-trust-missing call GET "https://127.0.0.1:18140/hello"
+  unset SSL_CERT_FILE
+  expect tls-trust-missing 'call 0 error delivery=not sent .*not_retried=LeanHttp.Call.NoRetry.cause .*cause="TLS setup failed: SSL_CERT_FILE names /nonexistent\.pem, which is not a file"' \
+    "an SSL_CERT_FILE that names nothing is a setup error, not a reason to look elsewhere"
+  client tls-trust-badfile call GET "https://127.0.0.1:18140/hello" ca=/nonexistent.pem
+  expect tls-trust-badfile 'call 0 error delivery=not sent .*cause="TLS setup failed: .*cannot load the CA file /nonexistent\.pem' \
+    "a caFile that cannot be loaded is a setup error"
+  tls_conns tls-trust 1 "setup errors open no connection"
+  client tls-trust-leaf call GET "https://127.0.0.1:18140/hello" ca="$certs/good.pem"
+  expect tls-trust-leaf 'call 0 ok status=200 .*tls=TLSv1\.3' "the server's own certificate may anchor its chain"
+fi
+
+if scenario tls-close; then
+  tls_server tls-close 18142 good || exit 1
+  client tls-close-delimited call GET "https://127.0.0.1:18142/close-delimited" ca="$certs/ca.pem"
+  expect tls-close-delimited 'call 0 ok status=200 bytes=100000 ' "a body ended by close_notify is complete"
+  client tls-truncated call GET "https://127.0.0.1:18142/truncate" ca="$certs/ca.pem"
+  expect tls-truncated 'call 0 error delivery=response received .*status=\(some 200\) cause="the connection closed before a complete response" detail=".*without close_notify, so the response may be truncated' \
+    "a body ended by the connection without close_notify is truncated, and the error says so"
+  client tls-truncated-framed call GET "https://127.0.0.1:18142/truncate-framed" ca="$certs/ca.pem"
+  expect tls-truncated-framed 'call 0 ok status=200 bytes=10000 ' \
+    "a complete Content-Length body is unaffected by a close without close_notify"
+  client tls-truncated-midbody call GET "https://127.0.0.1:18142/truncate-midbody" ca="$certs/ca.pem"
+  expect tls-truncated-midbody 'call 0 error delivery=response received .*cause="the connection closed before a complete response" detail=".*without close_notify' \
+    "a Content-Length body cut short without close_notify fails"
+  for s in tls-close-delimited tls-truncated tls-truncated-framed tls-truncated-midbody; do trace_ok $s; done
+fi
+
+if scenario tls-stray; then
+  tls_server tls-stray 18144 good || exit 1
+  client tls-stray call GET "https://127.0.0.1:18144/stray" ca="$certs/ca.pem" repeat=2
+  expect tls-stray 'call 0 ok status=200 bytes=6 .*body_start="stray' "a response followed by stray bytes in a record of their own"
+  expect tls-stray 'call 1 ok status=200 bytes=6 .*conn=\(some 1\) ' \
+    "the connection with stray bytes is not reused: the second call has a connection of its own"
+  tls_conns tls-stray 2 "two connections"
+  trace_ok tls-stray
+fi
+
+if scenario tls-redirect; then
+  tls_server tls-redirect 18146 good || exit 1
+  client tls-redirect-down call GET "https://127.0.0.1:18146/redirect-http" ca="$certs/ca.pem" auth=Bearer-secret
+  expect tls-redirect-down 'call 0 ok status=200 .*hops=1 .*uri=http://127\.0\.0\.1:18147/plain tls=none body_start="plain hello' \
+    "a redirect from https to http is followed"
+  if grep --quiet "plain[0-9]* GET /plain {'host': '127.0.0.1:18147', 'connection': 'keep-alive'}" "$out/tls-redirect.tls.log"; then
+    result PASS tls-redirect-down "and the http origin got no Authorization"
+  else
+    result FAIL tls-redirect-down "the http origin's log shows credentials, or no request"
+  fi
+  evil tls-redirect-up 18148 || exit 1
+  client tls-redirect-up call GET "http://127.0.0.1:18148/redir/302?to=https://127.0.0.1:18146/hello" ca="$certs/ca.pem"
+  expect tls-redirect-up 'call 0 ok status=200 .*hops=1 .*uri=https://127\.0\.0\.1:18146/hello tls=TLSv1\.3' \
+    "a redirect from http to https is followed, over TLS"
+  trace_ok tls-redirect-down
+  trace_ok tls-redirect-up
+fi
+
+if scenario tls-handshake; then
+  tls_server tls-hang 18150 good --mode hang || exit 1
+  client tls-hang call GET "https://127.0.0.1:18150/hello" ca="$certs/ca.pem" tlshs=500 retries=1 seed=1
+  expect tls-hang 'call 0 error delivery=not sent .*retries=1 not_retried=LeanHttp.Call.NoRetry.hopLimit .*cause="TLS handshake timeout"' \
+    "a server that never answers the handshake: it times out, is retried once, nothing sent"
+  within tls-hang 1000 1800 "two 500 ms handshakes and one backoff"
+  tls_conns tls-hang 2 "two connections"
+  client tls-hang-deadline call GET "https://127.0.0.1:18150/hello" ca="$certs/ca.pem" deadline=700
+  expect tls-hang-deadline 'call 0 error delivery=not sent .*not_retried=LeanHttp.Call.NoRetry.cause .*cause="deadline timeout" detail="the deadline passed during the TLS handshake"' \
+    "the deadline during the handshake is the deadline's timeout, never retried"
+  within tls-hang-deadline 690 1000 "at the 700 ms deadline"
+  tls_server tls-closed 18152 good --mode close-handshake || exit 1
+  client tls-closed call GET "https://127.0.0.1:18152/hello" ca="$certs/ca.pem" seed=1
+  expect tls-closed 'call 0 error delivery=not sent .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*cause="the connection closed during the TLS handshake' \
+    "a server that closes during the handshake: retried like a refused connect, nothing sent"
+  tls_conns tls-closed 3 "three connections"
+  tls_server tls-version 18154 good --mode tls11 || exit 1
+  client tls-version call GET "https://127.0.0.1:18154/hello" ca="$certs/ca.pem"
+  expect tls-version 'call 0 error delivery=not sent .*not_retried=LeanHttp.Call.NoRetry.cause .*cause="TLS handshake failed: ' \
+    "a server that offers TLS 1.1 at most is refused, not retried"
+  tls_conns tls-version 1 "one connection"
+  for s in tls-hang tls-hang-deadline tls-closed tls-version; do trace_ok $s; done
+fi
+
+if scenario tls-idle; then
+  # Servers that close a kept connection after 200 ms of idleness, with and without close_notify.
+  tls_server tls-idle-notify 18156 good --idle-close 200 --idle-notify 1 || exit 1
+  client tls-idle-notify call GET "https://127.0.0.1:18156/hello" ca="$certs/ca.pem" repeat=2 pause=400
+  expect tls-idle-notify 'call 1 ok status=200 .*reused=false discarded=1 ' \
+    "an idle connection the server closed with close_notify is caught by the idle check"
+  tls_server tls-idle-abrupt 18158 good --idle-close 200 --idle-notify 0 || exit 1
+  client tls-idle-abrupt call GET "https://127.0.0.1:18158/hello" ca="$certs/ca.pem" repeat=2 pause=400
+  expect tls-idle-abrupt 'call 1 ok status=200 .*reused=false discarded=1 ' \
+    "and one closed without it"
+  client tls-idle-nocheck call GET "https://127.0.0.1:18158/hello" ca="$certs/ca.pem" repeat=2 pause=400 idlecheck=off
+  expect tls-idle-nocheck 'call 1 ok status=200 .*redispatched=true ' \
+    "without the idle check, the GET on the closed connection is sent again on a fresh one"
+  # The pool lets an expired idle connection go with close_notify.
+  tls_server tls-idle-expire 18160 good || exit 1
+  client tls-idle-expire call GET "https://127.0.0.1:18160/hello" ca="$certs/ca.pem" repeat=2 pause=300 idletimeout=100
+  expect tls-idle-expire 'call 1 ok status=200 .*reused=false ' "an expired idle connection is not used"
+  if grep --quiet --extended-regexp "conn1 (EOF from client|read failed)" "$out/tls-idle-expire.tls.log" &&
+      ! grep --quiet "conn1 read failed" "$out/tls-idle-expire.tls.log"; then
+    result PASS tls-idle-expire "and the client closed it cleanly, with close_notify"
+  else
+    result FAIL tls-idle-expire "the server did not see the expired connection end with close_notify"
+  fi
+  for s in tls-idle-notify tls-idle-abrupt tls-idle-nocheck tls-idle-expire; do trace_ok $s; done
 fi
 
 # Last, because it points the resolver at a name server that never answers.

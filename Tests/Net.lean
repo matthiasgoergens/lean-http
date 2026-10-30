@@ -15,6 +15,8 @@ net-client call <METHOD> <URL> [key=value ...]
   concurrent=N   make N calls at once through the one client, repeat times (default 1)
   close=1        close the client after the calls
   deadline=MS gap=MS connect=MS stagger=MS retries=N budget=N base=MS cap=MS maxbody=N interim=N
+  ca=PATH        trust the certificates of this PEM file for https (Config.tls.caFile)
+  tlshs=MS       the TLS handshake's time limit (Config.tlsHandshakeTimeoutMs)
   seed=N nodelay=0|1 pool=0|1 idlecheck=MS|off maxidle=N idletimeout=MS maxactive=N
   follow=0|1 maxredirects=N retry429=0|1 retry503=0|1 maxretryafter=MS drainbytes=N drainms=MS
   auth=VALUE cookie=VALUE   send an Authorization or Cookie field
@@ -95,7 +97,9 @@ def configOf (kv : List (String × String)) : Config :=
     retry503 := getNat kv "retry503" 0 == 1
     maxRetryAfterMs := getNat kv "maxretryafter" d.maxRetryAfterMs
     drainBytes := getNat kv "drainbytes" d.drainBytes
-    drainMs := getNat kv "drainms" d.drainMs }
+    drainMs := getNat kv "drainms" d.drainMs
+    tlsHandshakeTimeoutMs := getNat kv "tlshs" d.tlsHandshakeTimeoutMs
+    tls := { caFile := (kv.lookup "ca").map System.FilePath.mk } }
 
 /-- The steps of every call, by call number, as `Config.observe` reports them. -/
 abbrev Traces := IO.Ref (Std.HashMap Nat (Array Call.Event))
@@ -163,7 +167,7 @@ def describeCall (i : Nat) (ns : Nat) (result : Except Error (Response ByteArray
         s!"rounds={i.connectRounds} address={i.address} seed={i.seed} " ++
           s!"failed_attempts={attemptsText i.failedAttempts} conn={i.connection} reused={i.reused} " ++
           s!"discarded={i.discarded} check_us={i.idleCheckUs} redispatched={i.redispatched} " ++
-          s!"hops={i.hops} retries={i.retries} uri={i.uri}"
+          s!"hops={i.hops} retries={i.retries} uri={i.uri} tls={i.tls.getD "none"}"
       | none => "no CallInfo"
     let preview := (String.fromUTF8? (resp.body.extract 0 40)).getD "<binary>"
     s!"call {i} ok status={resp.line.status.toCode} bytes={resp.body.size} ms={fmtMs ns} " ++
