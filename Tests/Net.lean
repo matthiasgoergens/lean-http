@@ -384,17 +384,17 @@ def patternBytes (o n : Nat) : ByteArray := Id.run do
 
 /--
 A producer of `size` bytes of the pattern in chunks of `chunk`, counting its pulls and the bytes it
-gave in `pulls` and `given`; it raises an error at pull `fail` and waits `delay` ms before each chunk.
+gave in `pulls` and `produced`; it raises an error at pull `fail` and waits `delay` ms before each chunk.
 -/
-def producer (size chunk : Nat) (fail : Option Nat) (delay : Nat) (pulls given : IO.Ref Nat) :
+def producer (size chunk : Nat) (fail : Option Nat) (delay : Nat) (pulls produced : IO.Ref Nat) :
     Async (Option ByteArray) := do
   let k ← pulls.modifyGet fun k => (k, k + 1)
   if fail == some k then throw (IO.userError "the producer failed on purpose")
   if delay > 0 then Std.Async.sleep (.ofNat delay)
-  let o ← given.get
+  let o ← produced.get
   if o ≥ size then return none
   let n := min (max 1 chunk) (size - o)
-  given.set (o + n)
+  produced.set (o + n)
   return some (patternBytes o n)
 
 def runUpload (args : List String) : IO Unit := do
@@ -416,18 +416,18 @@ def runUpload (args : List String) : IO Unit := do
   for i in [0:getNat kv "repeat" 1] do
     if i > 0 then IO.sleep (getNat kv "pause" 0).toUInt32
     let pulls ← IO.mkRef 0
-    let given ← IO.mkRef 0
+    let produced ← IO.mkRef 0
     let t0 ← IO.monoNanosNow
     let result ← if getNat kv "bytes" 0 == 1 then
         (client.request { req with body := patternBytes 0 size }).block
       else
-        let body := RequestBody.stream declared (producer size chunk fail delay pulls given)
+        let body := RequestBody.stream declared (producer size chunk fail delay pulls produced)
         (client.upload { req with body }).block
     let ns := (← IO.monoNanosNow) - t0
     let response := match result with
       | .ok resp => s!" response={repr ((String.fromUTF8? resp.body).getD "<binary>")}"
       | .error _ => ""
-    IO.println s!"upload {describeCall i ns result} pulls={← pulls.get} produced={← given.get}{response}"
+    IO.println s!"upload {describeCall i ns result} pulls={← pulls.get} produced={← produced.get}{response}"
     let stats ← client.stats
     IO.println s!"after upload {i}: pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
   reportTraces kv traces
