@@ -12,6 +12,7 @@ public import LeanHttp.Connect
 public import LeanHttp.Error
 public import LeanHttp.Exchange
 public import LeanHttp.Pool
+public import LeanHttp.RequestBody
 public import LeanHttp.Wait
 public import LeanHttp.Wire
 
@@ -47,8 +48,13 @@ socket once (`NOTES.md`).  When the exchange ends, the connection goes back to t
 core's reuse verdict.  An exchange whose pooled connection turns out to be closed anyway is sent
 once more, on a fresh connection, when that is safe (`redispatch?`): nothing of it was written, or
 the server answered 408 before anything else, or the method is idempotent and the connection closed
-before any byte of a response.  For the planner that is all one exchange, and it spends none of the
-planner's retries.
+before any byte of a response; for a streamed body, only when nothing was written.  For the planner
+that is all one exchange, and it spends none of the planner's retries.
+
+A streamed request body (`RequestBody.stream`) is pulled by the exchange as it is written, never
+before the request head is out, and is never sent again once anything was written: the planner sees
+it as `Call.BodyKind.stream`, which it neither retries after a byte may have reached the server nor
+replays on a redirect.
 
 No receive is left pending when a call returns, nor when the callback of `withResponse` ends: a
 pending receive on v4.34.1 can keep the process from exiting (`NOTES.md`).
@@ -486,6 +492,10 @@ private structure Attempt where
   target : String
   /-- The request, encoded. -/
   prepared : PreparedRequest
+  /-- The producer of a streamed body. -/
+  produce : Async (Option ByteArray) := pure none
+  /-- Whether the body can be sent again (`redispatch?`). -/
+  replayable : Bool := true
   /-- The deadline of the whole call. -/
   deadline : Nat
   /-- Reports a step of the call (`Config.observe`). -/
@@ -614,7 +624,7 @@ private partial def Attempt.run (a : Attempt) (reuse : Bool) (progress : Progres
   -- connection is dropped like after any failure, with no receive left pending, and the exchange
   -- is not sent again.
   let begun : Except Failure (Live × Option Response.Head) ←
-    try pure (.ok (← Live.begin held.socket a.prepared a.deadline))
+    try pure (.ok (← Live.begin held.socket a.prepared a.deadline a.produce))
     catch e =>
       try held.socket.native.cancelRecv catch _ => pure ()
       pure (.error {
@@ -628,7 +638,8 @@ private partial def Attempt.run (a : Attempt) (reuse : Bool) (progress : Progres
         { cause := .peerClosed, delivery := live.ex.delivery, written := live.ex.written }
       (.failure f live.received, some live)
     | .error f => (.failure f true, none)
-  let why := if held.reused && !progress.redispatched then redispatch? a.prepared.method ended
+  let why :=
+    if held.reused && !progress.redispatched then redispatch? a.prepared.method a.replayable ended
     else none
   -- The second attempt describes the exchange, but the first one was written: unless the server
   -- said with a 408 that it did not process it, it may have been delivered even if the second was
@@ -693,7 +704,7 @@ private structure CallSpec where
   /-- The client. -/
   client : Client
   /-- The caller's request. -/
-  req : Request ByteArray
+  req : Request RequestBody
   /-- The exchange core's settings. -/
   xcfg : ExchangeConfig
   /-- The seed of the backoff jitter. -/
@@ -742,7 +753,7 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
   let hop := st.current
   let body := match hop.body with
     | .original => spec.req.body
-    | .empty => .empty
+    | .empty => .bytes .empty
   let fail (e : Error) : Async (Except Error α) := do
     spec.observe (.fail e)
     return .error e
@@ -754,13 +765,18 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
       let target := s!"{hop.origin.host}:{hop.origin.port}"
       return ← fail (spec.error st { progress with reused := false, redispatched := false } target f none)
   let target := plan.target
-  let prepared := Exchange.prepare spec.xcfg plan.head body
+  let (prepared, produce, framing) : PreparedRequest × Async (Option ByteArray) ×
+      Codec.RequestFraming := match body with
+    | .bytes data => (Exchange.prepare spec.xcfg plan.head data, pure none, .length data.size)
+    | .stream size next =>
+      let prepared := Exchange.prepareStream spec.xcfg plan.head size
+      (prepared, next, prepared.framing.getD .chunked)
   if spec.client.config.observe.isSome then
     let wire := prepared.bytes.extract 0 prepared.headBytes
-    spec.observe (.send hop.head target wire body.size (← IO.monoMsNow))
+    spec.observe (.send hop.head target wire framing (← IO.monoMsNow))
   let attempt : Attempt := {
-    client := spec.client, plan, target, prepared, deadline := spec.deadline,
-    observe := spec.observe }
+    client := spec.client, plan, target, prepared, produce,
+    replayable := hop.replayable st.bodyKind, deadline := spec.deadline, observe := spec.observe }
   let (began, progress) ← attempt.run true { progress with redispatched := false }
   let outcome := match began with
     | .head _ head _ => Call.Outcome.response head
@@ -837,7 +853,7 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
 /--
 Makes a call whose response body may be read up to `maxBody` bytes, and hands the response to `k`.
 -/
-private def run {α : Type} (client : Client) (req : Request ByteArray) (maxBody : Nat)
+private def run {α : Type} (client : Client) (req : Request RequestBody) (maxBody : Nat)
     (k : Response BodyStream → Async α) : Async (Except Error α) := do
   let config := client.config
   let started ← IO.monoMsNow
@@ -854,13 +870,20 @@ private def run {α : Type} (client : Client) (req : Request ByteArray) (maxBody
   let xcfg ← match checkConfig config *> exchangeConfig config maxBody with
     | .ok xcfg => pure xcfg
     | .error cause => return refuse cause target
-  let kind : Call.BodyKind := if req.body.isEmpty then .none else .bytes
+  let framing : Codec.RequestFraming := match req.body with
+    | .bytes data => .length data.size
+    | .stream (some size) _ => .length size
+    | .stream none _ => .chunked
+  if framing == .chunked && req.line.version != .v11 then
+    return refuse (.invalidRequest
+      "a streamed body of unknown size is sent chunked, which needs HTTP/1.1") target
+  let kind := req.body.kind
   let st ← match Call.start config.policy req.line kind seed deadline with
     | .ok st => pure st
     | .error e => return refuse (.invalidRequest s!"the planner refuses the request: {reprStr e}") target
   let number ← client.calls.modifyGet fun n => (n, n + 1)
   let spec : CallSpec := { client, req, xcfg, seed, started, deadline, number }
-  spec.observe (.start config.policy req.line kind req.body.size seed deadline xcfg.keepAlive)
+  spec.observe (.start config.policy req.line kind framing seed deadline xcfg.keepAlive)
   spec.loop st {} k
 
 /--
@@ -890,7 +913,50 @@ released.  The call's deadline (`Config.deadlineMs`) covers reading the body too
 -/
 def withResponse {α : Type} (client : Client) (req : Request ByteArray)
     (k : Response BodyStream → Async α) : Async (Except Error α) :=
+  client.run { req with body := .bytes req.body } (2 ^ 62) k
+
+/--
+Like `withResponse`, for a request whose body may be a stream the caller produces while the request
+is sent (`RequestBody.stream`).  The stream is pulled one chunk at a time, each once everything
+before it has been written, never before the request head is out, and it goes on being pulled while
+`k` reads the response.  It is never sent again once any of the request was written: no retry, no
+re-dispatch, and a 307 or 308 redirect, which would send the body again, is delivered to `k`
+instead of followed.  A producer that raises an error, or gives more or fewer bytes than the size it
+declared, fails the call with `Cause.requestBody`.
+-/
+def withUpload {α : Type} (client : Client) (req : Request RequestBody)
+    (k : Response BodyStream → Async α) : Async (Except Error α) :=
   client.run req (2 ^ 62) k
+
+/--
+Like `request`, for a request whose body may be a stream the caller produces while the request is
+sent (`RequestBody.stream`; see `withUpload`).  Reads the whole response, up to
+`Config.maxBodyBytes`, and never throws.
+
+```
+let body ← LeanHttp.RequestBody.ofChunks #["first ".toUTF8, "second".toUTF8]
+let req := Std.Http.Request.put (.parse! "http://127.0.0.1:8080/upload") |>.body body
+match ← client.upload req with
+| .ok response => ...
+| .error err => ...
+```
+-/
+def upload (client : Client) (req : Request RequestBody) :
+    Async (Except Error (Response ByteArray)) := do
+  let started ← IO.monoMsNow
+  let read (response : Response BodyStream) : Async (Response ByteArray) := do
+    let body ← response.body.readAll
+    let elapsedMs := (← IO.monoMsNow) - started
+    let extensions := match response.extensions.get CallInfo with
+      | some info => response.extensions.insert { info with elapsedMs }
+      | none => response.extensions
+    return { response with body, extensions }
+  -- `readAll` raises only the stream's own errors, which `run` returns as the call's error; should
+  -- anything else escape, it is reported as an error too.
+  try client.run req client.config.maxBodyBytes read
+  catch e =>
+    return .error {
+      cause := .peerClosed, delivery := .maybeDelivered, detail := s!"the client failed: {e}" }
 
 /--
 Sends `req` and reads the whole response, up to `Config.maxBodyBytes`.  The request's target must be
@@ -911,21 +977,8 @@ match ← client.request req with
 Never throws: every failure is an `Error`, which says how far the call got.
 -/
 def request (client : Client) (req : Request ByteArray) :
-    Async (Except Error (Response ByteArray)) := do
-  let started ← IO.monoMsNow
-  let read (response : Response BodyStream) : Async (Response ByteArray) := do
-    let body ← response.body.readAll
-    let elapsedMs := (← IO.monoMsNow) - started
-    let extensions := match response.extensions.get CallInfo with
-      | some info => response.extensions.insert { info with elapsedMs }
-      | none => response.extensions
-    return { response with body, extensions }
-  -- `readAll` raises only the stream's own errors, which `run` returns as the call's error; should
-  -- anything else escape, it is reported as an error too.
-  try client.run req client.config.maxBodyBytes read
-  catch e =>
-    return .error {
-      cause := .peerClosed, delivery := .maybeDelivered, detail := s!"the client failed: {e}" }
+    Async (Except Error (Response ByteArray)) :=
+  client.upload { req with body := .bytes req.body }
 
 /--
 Like `request`, but throws the error as an `IO.Error` (its message says how far the call got).

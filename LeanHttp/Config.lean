@@ -24,8 +24,9 @@ answers) needs `deadlineMs` and `readGapMs` raised.
 structure Config where
   /--
   Deadline for the whole call, across name resolution, connects, redirects, retries and the
-  exchanges, including the time a streamed body is read (default: 5 minutes).  Must be positive:
-  a call refuses zero as an invalid request.
+  exchanges, including the time a streamed response body is read and a streamed request body made
+  and written (default: 5 minutes).  It alone bounds the wait for a request body's producer.  Must
+  be positive: a call refuses zero as an invalid request.
   -/
   deadlineMs : Nat := 5 * 60 * 1000
 

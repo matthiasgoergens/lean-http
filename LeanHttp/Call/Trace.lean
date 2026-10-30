@@ -46,18 +46,18 @@ One thing the client did in a call, in order.
 -/
 inductive Event where
   /--
-  The call started: the planner's inputs, the size of the call's body, and whether requests ask
-  for the connection to be kept alive.
+  The call started: the planner's inputs, how the call's body is framed (its size, or chunked for a
+  stream of unknown size), and whether requests ask for the connection to be kept alive.
   -/
-  | start (policy : Policy) (head : Request.Head) (kind : BodyKind) (bodySize : Nat) (seed : UInt64)
-      (deadline : Timestamp) (keepAlive : Bool)
+  | start (policy : Policy) (head : Request.Head) (kind : BodyKind) (body : Codec.RequestFraming)
+      (seed : UInt64) (deadline : Timestamp) (keepAlive : Bool)
 
   /--
   The request of a hop went out (the client began taking a connection for it) at monotonic time
   `time`: the planner's head `head` (its target absolute), the origin the client connects to
-  (`host:port`), the head it encoded (`wire`) and the size of the body after it.
+  (`host:port`), the head it encoded (`wire`) and how the body after it is framed.
   -/
-  | send (head : Request.Head) (target : String) (wire : ByteArray) (bodySize : Nat)
+  | send (head : Request.Head) (target : String) (wire : ByteArray) (body : Codec.RequestFraming)
       (time : Timestamp)
 
   /--
@@ -90,13 +90,20 @@ inductive Event where
 instance : Inhabited Event := ⟨.deliver⟩
 
 /--
+How a body framed by `framing` is described in messages: its size, or `chunked`.
+-/
+def framingText : Codec.RequestFraming → String
+  | .length size => toString size
+  | .chunked => "chunked"
+
+/--
 A one-line description of an event, for messages.
 -/
 def Event.describe : Event → String
-  | .start _ head _ size _ deadline _ =>
-    s!"start {head.method} {head.uri} body={size} deadline={deadline}"
-  | .send head target _ size time =>
-    s!"send {head.method} {head.uri} to {target} body={size} at={time}"
+  | .start _ head _ body _ deadline _ =>
+    s!"start {head.method} {head.uri} body={framingText body} deadline={deadline}"
+  | .send head target _ body time =>
+    s!"send {head.method} {head.uri} to {target} body={framingText body} at={time}"
   | .redispatch reused _ reason => s!"redispatch reused={reused} {reprStr reason}"
   | .decide clock outcome step =>
     let o := match outcome with
@@ -147,22 +154,22 @@ def errorMatches (reason : FailReason) (e : Error) : Bool :=
   | .deadline => reprStr e.cause == reprStr (Cause.timeout .deadline) && e.notRetried.isNone
 
 /--
-The body size the request of `hop` carries, when the call's body has `size` bytes.
+How the body of the request of `hop` is framed, when the call's body is framed by `body`.
 -/
-def hopBodySize (hop : Hop) (size : Nat) : Nat :=
+def hopBody (hop : Hop) (body : Codec.RequestFraming) : Codec.RequestFraming :=
   match hop.body with
-  | .original => size
-  | .empty => 0
+  | .original => body
+  | .empty => .length 0
 
 /--
 Where the request of `hop` goes and the head it is encoded with, as the client must write it: the
-origin (`host:port`) of `Client.plan` and the head of the request serialiser, for a body of `size`
-bytes; or why the client cannot send it.
+origin (`host:port`) of `Client.plan` and the head of the request serialiser, for a body framed by
+`body`; or why the client cannot send it.
 -/
-def expectedWire (hop : Hop) (size : Nat) (keepAlive : Bool) :
+def expectedWire (hop : Hop) (body : Codec.RequestFraming) (keepAlive : Bool) :
     Except String (String × ByteArray) := do
   let plan ← Client.plan hop.head
-  return (plan.target, (Codec.encodeHead keepAlive plan.head size).1)
+  return (plan.target, (Codec.encodeHeadWith keepAlive plan.head body).1)
 
 /--
 How far an exchange that began as `first` may have got: a response means request bytes were
@@ -184,7 +191,7 @@ Replays `events` through the planner, and returns the first place where the clie
 the planner did not say, or `ok` with the number of steps checked.
 -/
 def validate (events : Array Event) : Except String Nat := do
-  let some (Event.start policy head kind size seed deadline keepAlive) := events[0]?
+  let some (Event.start policy head kind body seed deadline keepAlive) := events[0]?
     | throw "the trace does not begin with the call's start"
   let mut st ← match Call.start policy head kind seed deadline with
     | .ok st => pure st
@@ -198,12 +205,12 @@ def validate (events : Array Event) : Except String Nat := do
     let event := events[i]
     let here := s!"event {i} ({event.describe})"
     match expect, event with
-    | .send notBefore _, .send sent target wire bodySize time =>
+    | .send notBefore _, .send sent target wire sentBody time =>
       if reprStr sent != reprStr st.current.head then
         throw s!"{here}: the client sent {reprStr sent}, the planner's request is {reprStr st.current.head}"
-      if bodySize != hopBodySize st.current size then
-        throw s!"{here}: the client sent {bodySize} body bytes, the hop carries {hopBodySize st.current size}"
-      match expectedWire st.current bodySize keepAlive with
+      if sentBody != hopBody st.current body then
+        throw s!"{here}: the client sent a body of {framingText sentBody}, the hop carries {framingText (hopBody st.current body)}"
+      match expectedWire st.current sentBody keepAlive with
       | .error msg => throw s!"{here}: the client sent a request it cannot reach ({msg})"
       | .ok (t, w) =>
         if t != target then
@@ -218,14 +225,15 @@ def validate (events : Array Event) : Except String Nat := do
       -- The client could not send the planner's next request (a target it cannot reach).
       unless e.cause matches .invalidRequest _ do
         throw s!"{here}: the client failed instead of sending the next request, with {reprStr e.cause}"
-      unless (expectedWire st.current (hopBodySize st.current size) keepAlive) matches .error _ do
+      unless (expectedWire st.current (hopBody st.current body) keepAlive) matches .error _ do
         throw s!"{here}: the client refused a request it can send"
       unless e.hops == st.hops && e.retries == st.retries && e.delivery.rank ≥ furthest.rank do
         throw s!"{here}: the error's hops, retries or delivery are not the call's"
       expect := .done
     | .decide none, .redispatch reused first reason =>
       unless reused do throw s!"{here}: an exchange on a fresh connection was sent again"
-      unless Client.redispatch? st.current.head.method first == some reason do
+      unless Client.redispatch? st.current.head.method (st.current.replayable st.bodyKind) first ==
+          some reason do
         throw s!"{here}: an exchange that began as {reprStr first} was sent again for {reprStr reason}, which redispatch? does not allow"
       furthest := furthest.max (endedDelivery first)
       expect := .decide (some reason)

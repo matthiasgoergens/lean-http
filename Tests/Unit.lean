@@ -209,7 +209,7 @@ def poolChecks : Checks Unit := do
     .response (head status) interim
   let failure (cause : Cause) (delivery : Delivery) (received : Bool := false) : Client.Ended :=
     .failure { cause, delivery, written := 0 } received
-  let r := fun (m : Method) (e : Client.Ended) => Client.redispatch? m e
+  let r := fun (m : Method) (e : Client.Ended) => Client.redispatch? m true e
   checkEq "a 408 before any other response is sent again, whatever the method"
     (r .post (response .requestTimeout)) (some .requestTimeout)
   checkEq "a 408 after an interim response is not" (r .get (response .requestTimeout 1)) none
@@ -229,6 +229,13 @@ def poolChecks : Checks Unit := do
   checkEq "a deadline before anything was sent is not" (r .get (failure (.timeout .deadline) .notSent))
     none
   checkEq "an invalid response is not" (r .get (failure (.protocol "x") .maybeDelivered)) none
+  -- A body that cannot be sent again (a stream) is sent again only if nothing was written.
+  let u := fun (m : Method) (e : Client.Ended) => Client.redispatch? m false e
+  checkEq "a stream with nothing sent is sent again" (u .post (failure .peerClosed .notSent))
+    (some .notSent)
+  checkEq "a stream answered with a 408 is not" (u .put (response .requestTimeout)) none
+  checkEq "a stream closed before any response byte is not, even for a PUT"
+    (u .put (failure .peerClosed .maybeDelivered)) none
 
 /-! ## Checking what the client did against the planner -/
 
@@ -250,9 +257,9 @@ def traceChecks : Checks Unit := do
   let refused : Failure := { cause := .connect #[], delivery := .notSent, written := 0 }
   -- What the client writes for a hop's request: the origin and the encoded head.
   let send (hop : Call.Hop) (time : Nat) : Call.Event :=
-    match Call.expectedWire hop 0 true with
-    | .ok (target, wire) => .send hop.head target wire 0 time
-    | .error _ => .send hop.head "" .empty 0 time
+    match Call.expectedWire hop (.length 0) true with
+    | .ok (target, wire) => .send hop.head target wire (.length 0) time
+    | .error _ => .send hop.head "" .empty (.length 0) time
   -- A call that is refused once, retried, redirected, and answered.
   let c1 : Call.Clock := { now := 100, wallSec := 1700000000 }
   let (st1, s1) := Call.plan st0 c1 (.failure refused)
@@ -267,7 +274,7 @@ def traceChecks : Checks Unit := do
   let (_, s3) := Call.plan st2 c3 (.response ok)
   check "and delivers the answer" (s3 matches .deliver)
   let good : Array Call.Event := #[
-    .start policy headA .none 0 seed deadline true, send st0.current 10,
+    .start policy headA .none (.length 0) seed deadline true, send st0.current 10,
     .decide c1 (.failure refused) s1, .wait (100 + delay), send st1.current (100 + delay),
     .decide c2 (.response redirect) s2, send st2.current (c2.now + 1), .decide c3 (.response ok) s3,
     .deliver]
@@ -278,7 +285,7 @@ def traceChecks : Checks Unit := do
   check "a retry without its wait is caught" (rejects (good.eraseIdx! 3))
   check "the old request sent after a redirect is caught" (rejects (good.set! 6 (send st0.current (c2.now + 1))))
   check "a request sent with a body the hop does not carry is caught"
-    (rejects (good.set! 6 (.send st2.current.head "127.0.0.1:1" .empty 7 (c2.now + 1))))
+    (rejects (good.set! 6 (.send st2.current.head "127.0.0.1:1" .empty (.length 7) (c2.now + 1))))
   let wrongWire := match good[6]! with
     | .send h t w n time => Call.Event.send h t (w.push 32) n time
     | e => e
@@ -308,13 +315,44 @@ def traceChecks : Checks Unit := do
   let some sPost := (Call.start policy postHead .bytes seed deadline).toOption
     | check "the planner starts a POST" false
   let (_, sp) := Call.plan sPost c3 (.response ok)
-  let postSend := match Call.expectedWire sPost.current 5 true with
-    | .ok (target, wire) => Call.Event.send postHead target wire 5 10
+  let postSend := match Call.expectedWire sPost.current (.length 5) true with
+    | .ok (target, wire) => Call.Event.send postHead target wire (.length 5) 10
     | .error _ => Call.Event.deliver
   let postTrace : Array Call.Event := #[
-    .start policy postHead .bytes 5 seed deadline true, postSend,
+    .start policy postHead (.bytes) (.length 5) seed deadline true, postSend,
     .redispatch true closedFirst .closedBeforeResponse, .decide c3 (.response ok) sp, .deliver]
   check "a POST sent again after it may have been delivered is caught" (rejects postTrace)
+  -- A streamed PUT: sent chunked, and never sent again once anything may have been written.
+  let putHead : Request.Head := { headA with method := .put }
+  let some sPut := (Call.start policy putHead .stream seed deadline).toOption
+    | check "the planner starts a streamed PUT" false
+  let (_, sq) := Call.plan sPut c3 (.response ok)
+  let putSend := match Call.expectedWire sPut.current .chunked true with
+    | .ok (target, wire) => Call.Event.send putHead target wire .chunked 10
+    | .error _ => Call.Event.deliver
+  let putTrace : Array Call.Event := #[
+    .start policy putHead .stream .chunked seed deadline true, putSend, .decide c3 (.response ok) sq,
+    .deliver]
+  checkEq "a streamed PUT, sent chunked, replays" (Call.validate putTrace).toOption (some 1)
+  check "the chunked head carries Transfer-Encoding: chunked and no Content-Length"
+    (match putSend with
+     | .send _ _ wire _ _ =>
+       let text := ((String.fromUTF8? wire).getD "").toLower
+       (text.splitOn "transfer-encoding: chunked\r\n").length == 2 &&
+         (text.splitOn "content-length").length == 1
+     | _ => false)
+  check "a streamed PUT sent with a Content-Length it did not declare is caught"
+    (rejects (putTrace.set! 1 (match Call.expectedWire sPut.current (.length 5) true with
+      | .ok (target, wire) => Call.Event.send putHead target wire (.length 5) 10
+      | .error _ => Call.Event.deliver)))
+  check "a streamed PUT sent again after it may have been delivered is caught"
+    (rejects (#[putTrace[0]!, putSend, .redispatch true closedFirst .closedBeforeResponse] ++
+      putTrace.extract 2 putTrace.size))
+  let notSentFirst : Client.Ended :=
+    .failure { cause := .peerClosed, delivery := .notSent, written := 0 } false
+  checkEq "a streamed PUT sent again when nothing of it was written replays"
+    (Call.validate (#[putTrace[0]!, putSend, .redispatch true notSentFirst .notSent] ++
+      putTrace.extract 2 putTrace.size)).toOption (some 1)
   check "two re-dispatches of one request are caught"
     (rejects ((withRedispatch.extract 0 8).push (.redispatch true closedFirst .closedBeforeResponse)
       |>.append (withRedispatch.extract 8 withRedispatch.size)))
@@ -325,7 +363,7 @@ def traceChecks : Checks Unit := do
   let (_, sf) := Call.plan sStrict c1 (.failure refused)
   let failed : Error := { cause := .connect #[], delivery := .notSent, notRetried := some .hopLimit }
   let failing : Array Call.Event := #[
-    .start strict headA .none 0 seed deadline true, send sStrict.current 10,
+    .start strict headA .none (.length 0) seed deadline true, send sStrict.current 10,
     .decide c1 (.failure refused) sf, .fail failed]
   checkEq "a failed call replays" (Call.validate failing).toOption (some 1)
   check "an error that gives the wrong reason for not retrying is caught"
@@ -354,7 +392,7 @@ def traceChecks : Checks Unit := do
   let answered : Error := {
     cause := .connect #[], delivery := .responseReceived, retries := 1, notRetried := some .hopLimit }
   let answeredTrace : Array Call.Event := #[
-    .start lenient headA .none 0 seed deadline true, send sL.current 10, .decide c1 (.response busy) l1,
+    .start lenient headA .none (.length 0) seed deadline true, send sL.current 10, .decide c1 (.response busy) l1,
     .wait (100 + delay503), send sL1.current (100 + delay503), .decide cL (.failure refused) l2,
     .fail answered]
   checkEq "a call answered once, then refused, replays" (Call.validate answeredTrace).toOption (some 2)
@@ -396,10 +434,57 @@ def streamChecks : Checks Unit := do
   checkEq "and continued from the offset" (view (BodyStream.take [piece, other] 2 2)) (some ([3, 4], 2, 4))
   checkEq "to its end" (view (BodyStream.take [piece, other] 4 2)) (some ([5], 1, 0))
 
+/-! ## Streamed request bodies -/
+
+def uploadChecks : Checks Unit := do
+  let head : Request.Head := {
+    method := .put, version := .v11, uri := .originForm { segments := #[], absolute := true } none,
+    headers := Headers.empty.insert Header.Name.host (.mk "example.test") }
+  let text (p : PreparedRequest) : String := ((String.fromUTF8? p.bytes).getD "").toLower
+  let known := Exchange.prepareStream { keepAlive := true } head (some 5)
+  check "a stream of known size is sent with its Content-Length"
+    (((text known).splitOn "content-length: 5\r\n").length == 2)
+  check "and without Transfer-Encoding" (((text known).splitOn "transfer-encoding").length == 1)
+  checkEq "its prepared bytes are the head alone" (known.bytes.size, known.framing)
+    (known.headBytes, some (.length 5))
+  let unknown := Exchange.prepareStream { keepAlive := true } head none
+  check "a stream of unknown size is sent chunked"
+    (((text unknown).splitOn "transfer-encoding: chunked\r\n").length == 2)
+  check "and without Content-Length" (((text unknown).splitOn "content-length").length == 1)
+  let framingFields := head.headers.insert Header.Name.contentLength (.mk "99")
+    |>.insert Header.Name.transferEncoding (.mk "gzip")
+  let withFraming := { head with headers := framingFields }
+  let replaced := Exchange.prepareStream { keepAlive := true } withFraming none
+  check "the request's own framing fields are replaced"
+    (((text replaced).splitOn "content-length").length == 1 &&
+      ((text replaced).splitOn "transfer-encoding").length == 2 &&
+      ((text replaced).splitOn "gzip").length == 1)
+  checkEq "the chunk framing is the size in hex, CRLF, the data, CRLF"
+    (String.fromUTF8? (Codec.chunkFrame (ByteArray.mk (Array.replicate 26 97))))
+    (some ("1a\r\n" ++ String.ofList (List.replicate 26 'a') ++ "\r\n"))
+  checkEq "the last chunk" (String.fromUTF8? Codec.lastChunk) (some "0\r\n\r\n")
+  let next : Std.Async.Async (Option ByteArray) := pure none
+  checkEq "a stream's kind is a stream" (RequestBody.stream none next).kind .stream
+  checkEq "an empty byte array is no body" (RequestBody.bytes .empty).kind .none
+  checkEq "bytes are bytes" (RequestBody.bytes (ByteArray.mk #[1])).kind .bytes
+  -- A stream of unknown size needs HTTP/1.1: the client refuses it otherwise, without sending.
+  let client ← Client.new
+  let uri := (URI.parse? "http://127.0.0.1:1/x").get!
+  let req : Request RequestBody :=
+    { line := { method := .put, version := .v10, uri := .absoluteForm uri }, body := .stream none next }
+  let result ← (client.upload req).block
+  check "a chunked stream in HTTP/1.0 is refused, not sent"
+    (match result with
+     | .error e => e.delivery == .notSent && (e.cause matches .invalidRequest _)
+     | .ok _ => false)
+
+/-- Every check, in order. -/
+def allChecks : Checks Unit := do
+  backoffChecks; addressChecks; planChecks; errorChecks; poolChecks; traceChecks; streamChecks
+  uploadChecks
+
 def main : IO UInt32 := do
-  let ((), results) ←
-    (do backoffChecks; addressChecks; planChecks; errorChecks; poolChecks; traceChecks; streamChecks
-      : Checks Unit).run #[]
+  let ((), results) ← allChecks.run #[]
   let failed := results.filter (!·.2)
   IO.println s!"{results.size} checks, {failed.size} failing"
   return if failed.isEmpty then 0 else 1

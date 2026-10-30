@@ -116,15 +116,18 @@ deriving Repr, DecidableEq
 /--
 Whether an exchange on a reused connection that began as `ended` is sent again on a fresh
 connection, and why.  It never is when the server may have acted on a request whose method is not
-idempotent, except after a 408, which says it did not.
+idempotent, except after a 408, which says it did not.  A body that cannot be sent again
+(`replayable` false: a stream, which may have been read from once anything was written) is sent
+again only if nothing was written.
 -/
-def redispatch? (method : Method) : Ended → Option Redispatch
+def redispatch? (method : Method) (replayable : Bool) : Ended → Option Redispatch
   | .response head interim =>
-    if head.status == .requestTimeout && interim == 0 then some .requestTimeout else none
+    if replayable && head.status == .requestTimeout && interim == 0 then some .requestTimeout
+    else none
   | .failure f received =>
     if f.delivery == .notSent && (f.cause matches .peerClosed) then some .notSent
-    else if !received && f.delivery == .maybeDelivered && (f.cause matches .peerClosed) &&
-        method.isIdempotent then
+    else if replayable && !received && f.delivery == .maybeDelivered &&
+        (f.cause matches .peerClosed) && method.isIdempotent then
       some .closedBeforeResponse
     else none
 

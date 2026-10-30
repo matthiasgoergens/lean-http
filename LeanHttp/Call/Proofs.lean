@@ -37,9 +37,10 @@ What they do not cover:
   (`Config.observe`) against the planner: the steps, the requests as written, the waits and the
   errors; the real-socket tests do so for every call they make.  That the outcomes in the record are
   the true ones it cannot check.
-- A retry after a `notSent` failure may send a streamed body, which is safe only if the shell has
-  not read any of the stream before the failure; the exchange core takes the whole body as bytes
-  today, so this is an obligation on the streaming shell to come.
+- A retry after a `notSent` failure may send a streamed body again, which is safe only if nothing
+  of the stream was read before the failure.  The exchange core pulls nothing before its first
+  write (`LeanHttp.Exchange.observed_notSent_unpulled`); that the shell starts each attempt with
+  the stream as the core left it is the wiring's obligation.
 - A 307 or 308 answer to a POST is followed with the same method and body (when the body is
   replayable): that is a redirect the server asked for, not a retry, and the retry theorems do not
   speak of it.  `plan_follow_replayable` says that such a request can be sent again.
