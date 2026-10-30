@@ -1,0 +1,10 @@
+Build completed successfully (44 jobs).
+ok scripts/proof-axioms.lean: 50 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/codec-axioms.lean: 41 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/pool-axioms.lean: 31 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/call-axioms.lean: 34 theorems, none beyond Classical.choice, Quot.sound, propext
+Build completed successfully (97 jobs).
+179 checks, 0 failing
+65 traces, 0 failing
+PASS 50000 runs from seed 51: 352012 steps checked
+139 checks, 0 failing
