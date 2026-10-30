@@ -220,7 +220,7 @@ Two rounds of independent review of the shell (a fresh Claude and Gemini each ti
 
 Left open:
 
-- `https` is refused: no TLS yet.  Request bodies are bytes; streamed request bodies are not built.  A call cannot be cancelled.
+- Request bodies are bytes; streamed request bodies are not built.  A call cannot be cancelled.  (`https` was refused then; "TLS", below.)
 - `request`'s body limit applies to the bodies of redirects and retried responses too, so with `maxBodyBytes` below `drainBytes` such a body costs its connection rather than being drained.
 - The record covers the planner's steps only: the exchange and pool cores are not recorded, and the outcomes the client reports are taken as given.  A retry's real wake-up time has a lower bound in the check, not an upper one.  The record of a delivered call ends at the delivery.
 - A read in flight through a long upload gains a continuation per write slice; after an early response head the write in flight stays in the race until the upload stops (at most the write gap).
@@ -238,7 +238,7 @@ Designed on 2026-10-30 (`DESIGN.md`, "TLS").  Before anything was built, the des
 - **OpenSSL's macros and inline functions** cannot be declared by hand: they are called through the `*_ctrl` functions with named constants the check compares, and `ERR_GET_REASON` is avoided by classifying truncation from what the transport fed.
 - **Initialisation** without OpenSSL's exit handler and without its configuration file; the thread's error queue cleared before every operation.
 - **Trust store directories** are used only after every bundle file is missing, and only if they hold OpenSSL's hashed names: a directory without them loads nothing and would turn a missing trust store into a verification failure.  Empty `SSL_CERT_FILE` and `SSL_CERT_DIR` are ignored; set but unreadable is an error.
-- **Host names**: an empty name after removing the trailing dot would make `SSL_set1_host` turn the check off (Gemini), so it is refused, as is a name that reads as an IPv4 address once the dot is gone; partial wildcards must be refused explicitly (`X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS`); no fallback to the common name.
+- **Host names**: an empty name would make `SSL_set1_host` turn the check off (Gemini).  It cannot arise: `Std.Http`'s URI parser refuses empty labels, so no name has a trailing dot or is empty (the unit tests check the parser does), and the C side refuses an empty name anyway.  A name of digits and dots only is refused; partial wildcards must be refused explicitly (`X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS`); no fallback to the common name.
 - **`close_notify` only from idle connections**, sent after the pool's mutex is released: after an exchange the shell cannot tell a clean end from a write still in flight.
 - **Platforms**: only Linux toolchains pin OpenSSL 3.6.0 (Claude, from the toolchain's packaging scripts); the design now says so, and that the interpreter has no OpenSSL.
 
