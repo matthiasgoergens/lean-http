@@ -134,7 +134,7 @@ The main settings, with their defaults (times in milliseconds):
 | `tlsHandshakeTimeoutMs` | 10 s | The TLS handshake of one `https` connection. |
 | `tls.caFile` | none | A PEM file of certificates to trust instead of the system's (below). |
 
-A failure is retried only when that is safe: a failed connect, or a closed connection or a read or write timeout when nothing of the request was written, or one of those when the method is idempotent and the body can be sent again.  The call's deadline, a name that does not resolve, a malformed response and a limit are never retried.  Separately, a request whose pooled connection turns out to have been closed by the server is sent once more on a fresh connection when that is safe (`Client.redispatch?`), without counting as a retry.  `LeanHttp/Config.lean` documents every field.
+A failure is retried only when that is safe: a failed connect or a TLS handshake that the connection closing or its time limit cut short, or a closed connection or a read or write timeout when nothing of the request was written, or one of those when the method is idempotent and the body can be sent again.  The call's deadline, a name that does not resolve, a malformed response and a limit are never retried.  Separately, a request whose pooled connection turns out to have been closed by the server is sent once more on a fresh connection when that is safe (`Client.redispatch?`), without counting as a retry.  `LeanHttp/Config.lean` documents every field.
 
 ## HTTPS
 
