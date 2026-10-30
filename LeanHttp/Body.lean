@@ -15,8 +15,11 @@ public section
 started for it.  The shell drives it in pieces: until the final response head (the client then asks
 the per-call planner what to do with it), and afterwards one pull of body bytes at a time,
 for the caller, or until the end, to discard a body nobody reads.  At most one write and one read
-are in flight, the core decides everything, and the shell waits for the first operation to complete
-or the core's next deadline, whichever comes first.
+are in flight, and for a streamed request body one call of its producer, the core decides
+everything, and the shell waits for the first operation to complete or the core's next deadline,
+whichever comes first.  A streamed request body goes on being pulled and written while the response
+is read, as long as the exchange goes on; a producer still running when the exchange ends is left to
+finish, and what it returns is dropped.
 
 A `BodyStream` is a response body the caller pulls.  A `read` that finds nothing held gives the
 core credit for one more read from the socket, so the core reads only as fast as the caller does:
@@ -48,6 +51,11 @@ inductive Completion where
   -/
   | wrote (length : Nat) (result : Except IO.Error Unit)
 
+  /--
+  A call of the request body's producer ended: a chunk, the end of the body, or an error.
+  -/
+  | pulled (result : Except IO.Error (Option ByteArray))
+
 /--
 An exchange in progress on a socket.
 -/
@@ -76,6 +84,16 @@ structure Live where
   Whether any read returned bytes.
   -/
   received : Bool := false
+
+  /--
+  The producer of a streamed request body, called for each pull.
+  -/
+  produce : Async (Option ByteArray) := pure none
+
+  /--
+  The call of the producer in flight.
+  -/
+  pulling : Option (Task Completion) := none
 
 /--
 What the core handed over in one stretch of driving.
@@ -134,6 +152,9 @@ the exchange has ended, a receive still pending is cancelled.
     | .read max =>
       let task ← start (live.socket.recv? max.toUInt64)
       live := { live with reading := some (Task.map (sync := true) Completion.read task) }
+    | .pull =>
+      let task ← start live.produce
+      live := { live with pulling := some (Task.map (sync := true) Completion.pulled task) }
     | .deliverHead head => out := { out with head := some head }
     | .deliverBody bytes => out := { out with bodies := out.bodies.push bytes }
     | .finish _ | .fail _ => live ← live.cancelRead
@@ -150,7 +171,7 @@ what happened to the core.  Returns the core's actions.
   -- write still in flight, which may never complete; it is left out of the race, since every race
   -- adds a continuation to each task in it, and a long download would pile them up on that write.
   let writing := if live.ex.uploadStopped then none else live.writing
-  let pending := live.reading.toArray ++ writing.toArray
+  let pending := live.reading.toArray ++ writing.toArray ++ live.pulling.toArray
   let (event, live) ← match ← awaitFirst pending wait with
     | none => pure (ExchangeEvent.tick, live)
     | some (.read result) =>
@@ -172,6 +193,11 @@ what happened to the core.  Returns the core's actions.
         | .ok () => ExchangeEvent.written length
         | .error err => .writeFailed (toString err)
       pure (event, { live with writing := none })
+    | some (.pulled result) =>
+      let event := match result with
+        | .ok chunk => ExchangeEvent.pulled chunk
+        | .error err => .pullFailed (toString err)
+      pure (event, { live with pulling := none })
   let (ex, actions) := live.ex.step (← IO.monoMsNow) event
   return ({ live with ex }, actions)
 
@@ -200,13 +226,13 @@ partial def Live.until (live : Live) (actions : Array ExchangeAction) (stop : De
 
 /--
 Starts `prepared` on `socket` with `deadline` for the whole call, and drives it until the final
-response head arrives or the exchange ends first.  The core holds whatever body bytes come with the
+response head arrives or the exchange ends first.  `produce` gives the chunks of a streamed body.  The core holds whatever body bytes come with the
 head until the caller asks for them.
 -/
-def Live.begin (socket : TCP.Socket.Client) (prepared : PreparedRequest) (deadline : Nat) :
-    Async (Live × Option Response.Head) := do
+def Live.begin (socket : TCP.Socket.Client) (prepared : PreparedRequest) (deadline : Nat)
+    (produce : Async (Option ByteArray) := pure none) : Async (Live × Option Response.Head) := do
   let (ex, actions) := Exchange.begin prepared (← IO.monoMsNow) deadline
-  let (live, out) ← (Live.mk socket ex none none false).until actions (·.head.isSome)
+  let (live, out) ← ({ socket, ex, produce } : Live).until actions (·.head.isSome)
   return (live, out.head)
 
 /--

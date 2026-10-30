@@ -13,7 +13,10 @@ One request and its response on one connection, as a pure step function over the
 (`LeanHttp.Codec.Parser`), which parses the response, and the request serialiser
 (`LeanHttp.Codec.encodeRequest`), which encodes the request.
 
-`Exchange.prepare` encodes the request before any I/O.  `Exchange.begin` starts the exchange on an
+`Exchange.prepare` encodes the request before any I/O; `Exchange.prepareStream` encodes the head of
+a request whose body the caller produces while it is sent, and the core then pulls that body from
+the caller one chunk at a time (`ExchangeAction.pull`), frames it (`Content-Length` or chunked) and
+writes it.  `Exchange.begin` starts the exchange on an
 open connection and returns the first actions; from then on the shell reports everything that
 happens as an `ExchangeEvent` to `Exchange.step`, performs the `ExchangeAction`s it returns, and
 sleeps no later than `Exchange.nextDeadline`.  Time is an argument of `step`, deadlines are state,
@@ -28,11 +31,20 @@ What the core guarantees, by construction:
   those is the job of the idle check before a pooled connection is reused.
 - **One write in flight.**  The request goes out in slices of `ExchangeConfig.writeChunk` bytes, the
   next one only after the previous one completed.
+- **One pull in flight, and only after the request head is out.**  A streamed body is pulled from
+  the caller one chunk at a time, the next only once everything before it has been written, so the
+  core holds at most one chunk and the caller produces only as fast as the connection takes it.  No
+  chunk is pulled before the first write was issued and the request head written, so an exchange
+  that fails with nothing sent has consumed none of the stream.  A body that does not match its
+  declared size, or whose producer fails, fails the exchange (`Cause.requestBody`).  With a
+  declared size, the request is complete on the wire once that many bytes were written, and a
+  response that arrives while the producer is asked whether it has ended is not early; if the
+  exchange is still going, a producer that gives more then fails it.
 - **Reuse only when it is safe.**  The verdict of `finish` is `true` only when the parser says the
   connection could carry another exchange (`Codec.Parser.reusable`: the response ended, framed with
   certainty, with nothing after it, before the end of input, and its keep-alive verdict allowed it),
   the caller has received the whole body, the request asked for keep-alive and was written in full
-  before the response head arrived, and the peer did not close.
+  (for a streamed body, to its end) before the response head arrived, and the peer did not close.
 - **Early responses are delivered.**  The response is read while the request body is still being
   written, so a server that answers early (a 413, say) and stops reading is heard, and a write that
   fails once the request head is out only stops the upload; the connection is not reused
@@ -208,6 +220,17 @@ inductive ExchangeEvent where
   The write in flight failed.
   -/
   | writeFailed (detail : String)
+
+  /--
+  The pull in flight returned: the next chunk of a streamed body (an empty one counts as nothing),
+  or `none` at its end.
+  -/
+  | pulled (chunk : Option ByteArray)
+
+  /--
+  The pull in flight failed: the body's producer raised an error.
+  -/
+  | pullFailed (detail : String)
 deriving Inhabited
 
 /--
@@ -224,6 +247,12 @@ inductive ExchangeAction where
   is in flight; when the core asks for none, it does not want input now.
   -/
   | read (max : Nat)
+
+  /--
+  Ask the caller for the next chunk of the streamed body, and report `pulled` or `pullFailed`.  At
+  most one pull is in flight, and none while a write is.
+  -/
+  | pull
 
   /--
   Hand the final response head to the caller.
@@ -263,7 +292,7 @@ structure PreparedRequest where
   method : Method
 
   /--
-  The request as written: head, then body.
+  The request as written: head, then body; for a streamed body, the head only.
   -/
   bytes : ByteArray
 
@@ -271,6 +300,12 @@ structure PreparedRequest where
   The length of the request head at the start of `bytes`.
   -/
   headBytes : Nat
+
+  /--
+  For a body the caller streams, how it is framed after `bytes`; `none` when `bytes` is the whole
+  request.
+  -/
+  framing : Option Codec.RequestFraming := none
 
 instance : Inhabited PreparedRequest :=
   ⟨{ config := {}, method := .get, bytes := .empty, headBytes := 0 }⟩
@@ -332,14 +367,42 @@ structure Exchange where
   method : Method := .get
 
   /--
-  The request as written: head, then body.
+  The request bytes the core holds to write, which start `segStart` bytes into the request: the
+  whole request, or for a streamed body, the head and then each framed chunk in turn.
   -/
   request : ByteArray := .empty
 
   /--
-  The length of the request head at the start of `request`.
+  How many request bytes come before `request`: zero for a whole request, and for a streamed body
+  the bytes of the head and the chunks before the current one.
+  -/
+  segStart : Nat := 0
+
+  /--
+  The length of the request head at the start of the request.
   -/
   headBytes : Nat := 0
+
+  /--
+  For a streamed body, how it is framed; `none` when `request` is the whole request.
+  -/
+  framing : Option Codec.RequestFraming := none
+
+  /--
+  Whether the whole request is known: always for a whole request, and for a streamed body once its
+  producer ended and the end is framed.
+  -/
+  complete : Bool := true
+
+  /--
+  Body bytes taken from the producer of a streamed body.
+  -/
+  taken : Nat := 0
+
+  /--
+  Whether a pull is in flight.
+  -/
+  pulling : Bool := false
 
   /--
   The deadline of the whole exchange.
@@ -470,6 +533,21 @@ def prepare (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) :
     bytes := encoded.bytes, headBytes := encoded.headBytes }
 
 /--
+Encodes the head of a request whose body the caller streams: with a `Content-Length` of `size` if
+the size is known, and with `Transfer-Encoding: chunked` otherwise (which needs HTTP/1.1).  The body
+is pulled once the head is out.  Like `prepare`, the head's framing and `Connection` fields are
+replaced.
+-/
+def prepareStream (config : ExchangeConfig) (head : Request.Head) (size : Option Nat) :
+    PreparedRequest :=
+  let framing : Codec.RequestFraming := match size with
+    | some n => .length n
+    | none => .chunked
+  let (bytes, keepAlive) := Codec.encodeHeadWith config.keepAlive head framing
+  { config := { config with keepAlive }, method := head.method, bytes, headBytes := bytes.size,
+    framing := some framing }
+
+/--
 `true` once the exchange has finished or failed.
 -/
 def terminal (ex : Exchange) : Bool :=
@@ -478,10 +556,34 @@ def terminal (ex : Exchange) : Bool :=
   | _ => false
 
 /--
+The request bytes known so far: those before `request`, and `request`.
+-/
+def known (ex : Exchange) : Nat :=
+  ex.segStart + ex.request.size
+
+/--
+`true` once every byte of the request is known: the whole request, or a streamed body that ended,
+or one with a declared size whose producer has given all of it (the producer is then asked once more,
+to check that it ends there).
+-/
+def wireDone (ex : Exchange) : Bool :=
+  ex.complete ||
+    match ex.framing with
+    | some (.length size) => ex.taken == size
+    | _ => false
+
+/--
+`true` while part of the request is still to be written: it is not known in full yet, or not all
+of what is known was written.
+-/
+def unsent (ex : Exchange) : Bool :=
+  !ex.wireDone || decide (ex.written < ex.known)
+
+/--
 `true` when no more of the request will be written: all of it was, or writing stopped.
 -/
 def uploadOver (ex : Exchange) : Bool :=
-  ex.uploadStopped || ex.written ≥ ex.request.size
+  ex.uploadStopped || !ex.unsent
 
 /--
 How far the request got, as a failure now would report it.
@@ -517,8 +619,8 @@ def bodyDone (ex : Exchange) : Bool :=
 Whether the connection may be reused if the exchange ended now.
 -/
 def reusableNow (ex : Exchange) : Bool :=
-  ex.config.keepAlive && ex.parser.reusable && ex.held.isEmpty &&
-    ex.written == ex.request.size && !ex.early && !ex.inputEnded
+  ex.config.keepAlive && ex.parser.reusable && ex.held.isEmpty && ex.wireDone &&
+    ex.written == ex.known && !ex.early && !ex.inputEnded
 
 /--
 Whether the core wants input now.
@@ -627,8 +729,7 @@ Delivers the final head the parser reported.
 private def onHead (h : Codec.Head) : StepM Unit := do
   let ex ← getEx
   if ex.terminal || ex.head.isSome then return
-  setEx { ex with
-    head := some h.response, phase := .receiving, early := decide (ex.written < ex.request.size) }
+  setEx { ex with head := some h.response, phase := .receiving, early := ex.unsent }
   emit (.deliverHead h.response)
 
 /--
@@ -711,6 +812,40 @@ private def absorb (r : Codec.Parser × Array Codec.Event) : StepM Unit := do
   settle
 
 /--
+Queues `segment` as the next request bytes to write, after everything known so far.
+-/
+def enqueue (ex : Exchange) (segment : ByteArray) : Exchange :=
+  { ex with segStart := ex.known, request := segment }
+
+/--
+What a chunk the producer returned (`none` at the end of the body) does to the exchange, once
+everything before it has been written: the exchange with the chunk framed and queued, or why the
+body is refused.  With a declared size, a chunk that would exceed it, or an end before it, is
+refused; chunked framing writes each non-empty chunk with its size line and the end as the last
+chunk.  An empty chunk queues nothing.
+-/
+def accept (ex : Exchange) : Option ByteArray → Except Cause Exchange
+  | some chunk =>
+    if chunk.isEmpty then .ok ex else
+    match ex.framing with
+    | some (.length size) =>
+      if ex.taken + chunk.size ≤ size then
+        .ok { ex.enqueue chunk with taken := ex.taken + chunk.size }
+      else
+        .error (.requestBody
+          s!"the producer gave more than the declared {size} bytes ({ex.taken + chunk.size} so far)")
+    | some .chunked => .ok { ex.enqueue (Codec.chunkFrame chunk) with taken := ex.taken + chunk.size }
+    | none => .ok ex
+  | none =>
+    match ex.framing with
+    | some (.length size) =>
+      if ex.taken = size then .ok { ex with complete := true }
+      else
+        .error (.requestBody s!"the producer ended after {ex.taken} of the declared {size} bytes")
+    | some .chunked => .ok { ex.enqueue Codec.lastChunk with complete := true }
+    | none => .ok { ex with complete := true }
+
+/--
 Handles one event from the shell.
 -/
 private def handle : ExchangeEvent → StepM Unit
@@ -764,6 +899,21 @@ private def handle : ExchangeEvent → StepM Unit
   | .readFailed detail => do
     modifyEx ({ · with readInFlight := false, readBy := none })
     failOrDrop .peerClosed detail
+  | .pulled chunk => do
+    let ex ← getEx
+    -- A chunk is taken only for the pull in flight, which was issued once everything known so far
+    -- had been written, and before the body ended.
+    if ex.pulling then
+      match ex.accept chunk with
+      | .ok ex => setEx { ex with pulling := false }
+      | .error cause =>
+        setEx { ex with pulling := false }
+        failOrDrop cause
+  | .pullFailed detail => do
+    let ex ← getEx
+    if ex.pulling then
+      setEx { ex with pulling := false }
+      failOrDrop (.requestBody s!"the producer failed: {detail}")
   | .wantBody bytes => do
     let ex ← getEx
     setEx { ex with credit := ex.credit + bytes }
@@ -781,7 +931,7 @@ private def handle : ExchangeEvent → StepM Unit
       let drained := ex.held.foldl (· + ·.size) 0
       let worthDraining :=
         ex.config.keepAlive && ex.parser.head.any (·.keepAlive) && ex.parser.certain && !ex.early &&
-          ex.written == ex.request.size && !ex.inputEnded && drained ≤ ex.config.drainBytes &&
+          ex.wireDone && ex.written == ex.known && !ex.inputEnded && drained ≤ ex.config.drainBytes &&
           !ex.announcedOver drained ex.config.drainBytes
       if worthDraining then
         setEx { ex with
@@ -824,7 +974,7 @@ private def expireOne : StepM Bool := do
         stopUpload
         return true
       else
-        failNow (.timeout .write) s!"{ex.written} of {ex.request.size} request bytes accepted"
+        failNow (.timeout .write) s!"{ex.written} of {ex.known} request bytes accepted"
         return false
     | some (_, _, which) =>
       failNow (.timeout which)
@@ -839,25 +989,57 @@ private def expire : StepM Unit := do
     discard expireOne
 
 /--
-Issues the next write and read, if they are due and none is in flight.
+Issues the next write, if one is due and none is in flight: the next slice of what is known of the
+request, at most `ExchangeConfig.writeChunk` bytes.
 -/
-private def schedule : StepM Unit := do
+private def scheduleWrite : StepM Unit := do
   let ex ← getEx
-  if ex.terminal then return
-  if !ex.uploadStopped && ex.writeInFlight.isNone && ex.written < ex.request.size then
+  let offset := ex.written - ex.segStart
+  if !ex.uploadStopped && ex.writeInFlight.isNone && offset < ex.request.size then
     let size := ex.request.size
-    let stop := min size (ex.written + max 1 ex.config.writeChunk)
-    let slice :=
-      if ex.written == 0 && stop == size then ex.request else ex.request.extract ex.written stop
+    let stop := min size (offset + max 1 ex.config.writeChunk)
+    let slice := if offset == 0 && stop == size then ex.request else ex.request.extract offset stop
     setEx { ex with
-      writeInFlight := some (stop - ex.written), writeBy := some (ex.now + ex.config.gapMs),
+      writeInFlight := some (stop - offset), writeBy := some (ex.now + ex.config.gapMs),
       sentAny := true }
     emit (.write slice)
+
+/--
+Whether the next chunk of a streamed body is due: the body has not ended, everything known so far
+has been written (so no write is in flight), the request head is out, writing has not stopped, and
+no pull is in flight.
+-/
+def pullDue (ex : Exchange) : Bool :=
+  !ex.complete && !ex.pulling && !ex.uploadStopped && ex.writeInFlight.isNone && ex.sentAny &&
+    decide (ex.headBytes ≤ ex.written) && decide (ex.known ≤ ex.written)
+
+/--
+Issues the next pull, if one is due.
+-/
+private def schedulePull : StepM Unit := do
+  let ex ← getEx
+  if ex.pullDue then
+    setEx { ex with pulling := true }
+    emit .pull
+
+/--
+Issues the next read, if the core wants input and none is in flight.
+-/
+private def scheduleRead : StepM Unit := do
   let ex ← getEx
   if !ex.readInFlight && ex.wantsInput then
     let readBy := if ex.uploadOver then some (ex.now + ex.config.gapMs) else none
     setEx { ex with readInFlight := true, readBy }
     emit (.read ex.config.readChunk)
+
+/--
+Issues the next write, pull and read, if they are due and none is in flight.
+-/
+private def schedule : StepM Unit := do
+  unless (← getEx).terminal do
+    scheduleWrite
+    schedulePull
+    scheduleRead
 
 /--
 Starts `req` on an open connection at time `now`, with `deadline` for the whole exchange.  Returns
@@ -866,7 +1048,8 @@ the exchange and the first actions: the first write, or a failure if the deadlin
 def begin (req : PreparedRequest) (now deadline : Timestamp) : Exchange × Array ExchangeAction :=
   let ex : Exchange := {
     config := req.config, parser := Codec.Parser.start req.config.codec req.method,
-    method := req.method, request := req.bytes, headBytes := req.headBytes, deadline, now }
+    method := req.method, request := req.bytes, headBytes := req.headBytes, framing := req.framing,
+    complete := req.framing.isNone, deadline, now }
   let ((), (ex, actions)) := (do expire; schedule : StepM Unit).run (ex, #[])
   (ex, actions)
 

@@ -47,12 +47,16 @@ inductive Letter where
   | tickDue
   /-- A tick after the exchange's deadline. -/
   | tickLate
+  /-- The producer answers the pull in flight as its plan says. -/
+  | pullNext
+  /-- The producer fails the pull in flight. -/
+  | pullFail
 deriving Repr, Inhabited
 
 /-- Every letter. -/
 def alphabet : List Letter :=
   [.writeAll, .writeOne, .writeFail, .piece, .rest, .eof, .readFail, .unsolicited, .wantOne,
-    .wantLots, .abandon, .tickBefore, .tickDue, .tickLate]
+    .wantLots, .abandon, .tickBefore, .tickDue, .tickLate, .pullNext, .pullFail]
 
 /-- One search: a case, and where its response is cut into pieces. -/
 structure Search where
@@ -101,6 +105,14 @@ def letterEvent (s : Search) (n : Node) : Letter → Option (Nat × ExchangeEven
   | .tickLate =>
     let t := s.case.deadline + 1
     if t > n.env.now then some (t, .tick, { n.env with now := t }) else none
+  | .pullNext => s.case.stream.bind fun p =>
+    if n.model.pullOutstanding then
+      some (n.env.now, p.answer n.env.pulls, { n.env with pulls := n.env.pulls + 1 })
+    else none
+  | .pullFail =>
+    if n.model.pullOutstanding then
+      some (n.env.now, .pullFailed "the producer failed", { n.env with pulls := n.env.pulls + 1 })
+    else none
 where
   script := scripts[s.case.script]!
   remaining := script.bytes.size - n.env.sent
@@ -117,7 +129,8 @@ def Node.key (n : Node) : String :=
   let m := n.model
   s!"{fingerprint n.ex}#{m.acked}|{m.outstanding}|{m.everWrote}|{m.readOutstanding}|" ++
     s!"{m.headDelivered}|{m.ackedAtHead}|{m.fed.size}|{m.unsolicited}|{m.eofSeen}|{m.abandoned}|" ++
-    s!"{m.ended}|{m.body.size}|{m.now}#{n.env.sent}|{n.env.closed}|{n.env.now}"
+    s!"{m.ended}|{m.body.size}|{m.now}#{n.env.sent}|{n.env.closed}|{n.env.now}" ++
+    s!"|{m.request.size}|{m.complete}|{m.pullOutstanding}|{m.everPulled}|{m.bodyBroken}|{n.env.pulls}"
 
 /-- What a search found. -/
 structure SearchResult where
@@ -199,4 +212,19 @@ def searches : List Search :=
     { name := "POST of 20 bytes in 32-byte writes, early 413, keepAlive=true"
       case := { script := scriptIndex "early 413", method := .post, bodySize := 20,
                 config := { base with writeChunk := 32 }, deadline := 300 }
-      cuts := [20, 53] } ]
+      cuts := [20, 53] },
+    { name := "POST streamed chunked in chunks of 3 and 4 bytes, content-length, keepAlive=true"
+      case := { script := scriptIndex "content-length", method := .post, bodySize := 0,
+                config := base, deadline := 300,
+                stream := some { declared := none, chunks := [3, 4] } }
+      cuts := [20, 38] },
+    { name := "POST streamed with 7 bytes declared, 3 and 4 given in 32-byte writes, early 413"
+      case := { script := scriptIndex "early 413", method := .post, bodySize := 0,
+                config := { base with writeChunk := 32 }, deadline := 300,
+                stream := some { declared := some 7, chunks := [3, 4] } }
+      cuts := [20, 53] },
+    { name := "POST streamed with 5 bytes declared and 7 given, content-length"
+      case := { script := scriptIndex "content-length", method := .post, bodySize := 0,
+                config := base, deadline := 300,
+                stream := some { declared := some 5, chunks := [3, 4] } }
+      cuts := [20, 38] } ]

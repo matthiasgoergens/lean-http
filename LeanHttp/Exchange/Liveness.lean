@@ -50,8 +50,10 @@ structure Timers (ex : Exchange) : Prop where
   inFlightPos : ∀ k, ex.writeInFlight = some k → 0 < k
   /-- The drain's deadline is set only while draining. -/
   drainBy : ex.drainBy.isSome = true → ex.phase = .draining
-  /-- While draining, the whole request has been written, -/
-  drainingWritten : ex.phase = .draining → ex.written = ex.request.size
+  /-- While draining, every byte of the request is known -/
+  drainingComplete : ex.phase = .draining → ex.wireDone = true
+  /-- and has been written, -/
+  drainingWritten : ex.phase = .draining → ex.written = ex.known
   /-- no write is in flight, -/
   drainingIdle : ex.phase = .draining → ex.writeInFlight = none
   /-- and the final head was delivered. -/
@@ -62,19 +64,27 @@ structure TAgree (a b : Exchange) : Prop where
   phase : b.phase = a.phase
   written : b.written = a.written
   request : b.request = a.request
+  segStart : b.segStart = a.segStart
+  complete : b.complete = a.complete
+  framing : b.framing = a.framing
+  taken : b.taken = a.taken
   head : b.head = a.head
   writeInFlight : b.writeInFlight = a.writeInFlight
   writeBy : b.writeBy = a.writeBy
   drainBy : b.drainBy = a.drainBy
 
 /-- `TAgree` for an update of other fields. -/
-macro "tagree_rfl" : tactic => `(tactic| exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩)
+macro "tagree_rfl" : tactic =>
+  `(tactic| exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩)
 
 theorem Timers.agree {a b : Exchange} (h : Timers a) (ha : TAgree a b) : Timers b where
   writeBy := by rw [ha.writeBy, ha.writeInFlight]; exact h.writeBy
   inFlightPos := by rw [ha.writeInFlight]; exact h.inFlightPos
   drainBy := by rw [ha.drainBy, ha.phase]; exact h.drainBy
-  drainingWritten := by rw [ha.phase, ha.written, ha.request]; exact h.drainingWritten
+  drainingComplete := by
+    rw [ha.phase, wireDone_eq ha.complete ha.framing ha.taken]; exact h.drainingComplete
+  drainingWritten := by
+    rw [ha.phase, ha.written, known_eq ha.segStart ha.request]; exact h.drainingWritten
   drainingIdle := by rw [ha.phase, ha.writeInFlight]; exact h.drainingIdle
   drainingHead := by rw [ha.phase, ha.head]; exact h.drainingHead
 
@@ -84,6 +94,7 @@ theorem Timers.stop {ex : Exchange} (h : Timers ex) {p : Phase} (hp : p = .drain
   writeBy := by simp
   inFlightPos := h.inFlightPos
   drainBy := by simp
+  drainingComplete := fun h' => absurd h' hp
   drainingWritten := fun h' => absurd h' hp
   drainingIdle := fun h' => absurd h' hp
   drainingHead := fun h' => absurd h' hp
@@ -115,7 +126,8 @@ theorem failOrDrop_timers {s : S} (c : Cause) (d : String) (h : Timers s.1) :
 theorem stopUpload_timers {s : S} (h : Timers s.1) : Timers (stopUpload.run s).2.1 := by
   obtain ⟨ex, acts⟩ := s
   simp only [stopUpload, modifyEx_run]
-  exact ⟨by simp, h.inFlightPos, h.drainBy, h.drainingWritten, h.drainingIdle, h.drainingHead⟩
+  exact ⟨by simp, h.inFlightPos, h.drainBy, h.drainingComplete, h.drainingWritten, h.drainingIdle,
+    h.drainingHead⟩
 
 /-- Delivering the final head: no head yet, so not draining, so no drain deadline. -/
 theorem Timers.receive {ex : Exchange} (h : Timers ex) (hh : ex.head.isSome = false)
@@ -128,7 +140,7 @@ theorem Timers.receive {ex : Exchange} (h : Timers ex) (hh : ex.head.isSome = fa
       rw [hh] at this
       cases this
   exact ⟨h.writeBy, h.inFlightPos, fun h' => (by simp only at h'; rw [hdb] at h'; cases h'),
-    fun h' => (by cases h'), fun h' => (by cases h'), fun h' => (by cases h')⟩
+    fun h' => (by cases h'), fun h' => (by cases h'), fun h' => (by cases h'), fun h' => (by cases h')⟩
 
 theorem release_timers {s : S} (h : Timers s.1) : Timers (release.run s).2.1 := by
   obtain ⟨ex, acts⟩ := s
@@ -146,7 +158,7 @@ theorem onHead_timers {s : S} (hd : Codec.Head) (h : Timers s.1) :
   · exact h
   · simp only [Bool.or_eq_false_iff] at hc
     simp only [bind_run, setEx_run, emit_run]
-    exact h.receive hc.2 hd.response (decide (ex.written < ex.request.size))
+    exact h.receive hc.2 hd.response ex.unsent
 
 theorem onHead?_timers {s : S} (hd : Option Codec.Head) (h : Timers s.1) :
     Timers ((onHead? hd).run s).2.1 := by
@@ -230,55 +242,57 @@ theorem expire_timers {s : S} (h : Timers s.1) : Timers (expire.run s).2.1 := by
   · simp only [↓reduceIte]
     exact expireOne_timers h1
 
+theorem scheduleWrite_timers {s : S} (h : Timers s.1) : Timers (scheduleWrite.run s).2.1 := by
+  obtain ⟨ex, acts⟩ := s
+  change Timers ex at h
+  simp only [scheduleWrite, getEx_bind_run]
+  rcases Bool.eq_false_or_eq_true (!ex.uploadStopped && ex.writeInFlight.isNone &&
+      decide (ex.written - ex.segStart < ex.request.size)) with
+    hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
+  · simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, Option.isNone_iff_eq_none,
+      decide_eq_true_eq] at hc
+    obtain ⟨⟨_, _⟩, hlt⟩ := hc
+    refine ⟨by simp, fun k hk => ?_, h.drainBy, h.drainingComplete, h.drainingWritten, fun hp => ?_,
+      h.drainingHead⟩
+    · simp only [Option.some.injEq] at hk
+      have := Nat.le_max_left 1 ex.config.writeChunk
+      omega
+    · have := h.drainingWritten hp
+      have hk : ex.known = ex.segStart + ex.request.size := rfl
+      omega
+  · exact h
+
+theorem schedulePull_timers {s : S} (h : Timers s.1) : Timers (schedulePull.run s).2.1 := by
+  obtain ⟨ex, acts⟩ := s
+  change Timers ex at h
+  simp only [schedulePull, getEx_bind_run]
+  split
+  · simp only [bind_run, setEx_run, emit_run]; exact h.agree (by tagree_rfl)
+  · exact h
+
+theorem scheduleRead_timers {s : S} (h : Timers s.1) : Timers (scheduleRead.run s).2.1 := by
+  obtain ⟨ex', acts'⟩ := s
+  change Timers ex' at h
+  simp only [scheduleRead, getEx_bind_run]
+  rcases Bool.eq_false_or_eq_true (!ex'.readInFlight && ex'.wantsInput) with hc | hc <;>
+    simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
+  · exact h.agree (by tagree_rfl)
+  · exact h
+
 theorem schedule_timers {s : S} (h : Timers s.1) : Timers (schedule.run s).2.1 := by
   obtain ⟨ex, acts⟩ := s
   change Timers ex at h
   simp only [schedule, getEx_bind_run]
   rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
-    simp only [ht, ↓reduceIte, Bool.false_eq_true]
+    simp only [ht, ↓reduceIte, Bool.false_eq_true, bind_run]
   · exact h
-  have hr : ∀ s' : S, Timers s'.1 →
-      Timers ((do
-        let ex ← getEx
-        if !ex.readInFlight && ex.wantsInput then
-          let readBy := if ex.uploadOver then some (ex.now + ex.config.gapMs) else none
-          setEx { ex with readInFlight := true, readBy }
-          emit (.read ex.config.readChunk) : StepM Unit).run s').2.1 := by
-    intro ⟨ex', acts'⟩ h'
-    simp only [getEx_bind_run]
-    rcases Bool.eq_false_or_eq_true (!ex'.readInFlight && ex'.wantsInput) with hc | hc <;>
-      simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
-    · exact h'.agree (by tagree_rfl)
-    · exact h'
-  rcases Bool.eq_false_or_eq_true
-      (!ex.uploadStopped && ex.writeInFlight.isNone && decide (ex.written < ex.request.size)) with
-    hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
-  · simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, Option.isNone_iff_eq_none,
-      decide_eq_true_eq] at hc
-    obtain ⟨⟨_, _⟩, hlt⟩ := hc
-    let stop := min ex.request.size (ex.written + max 1 ex.config.writeChunk)
-    let slice := if ex.written == 0 && stop == ex.request.size then ex.request
-      else ex.request.extract ex.written stop
-    let ex' : Exchange := { ex with
-      writeInFlight := some (stop - ex.written), writeBy := some (ex.now + ex.config.gapMs),
-      sentAny := true }
-    have key : Timers ex' := by
-      refine ⟨by simp [ex'], fun k hk => ?_, h.drainBy, h.drainingWritten, fun hp => ?_,
-        h.drainingHead⟩
-      · simp only [ex', Option.some.injEq] at hk
-        have := Nat.le_max_left 1 ex.config.writeChunk
-        simp only [stop] at hk
-        omega
-      · have := h.drainingWritten hp
-        omega
-    exact hr (ex', acts.push (.write slice)) key
-  · exact hr _ h
+  exact scheduleRead_timers (schedulePull_timers (scheduleWrite_timers h))
 
 /-- `Timers` holds where `begin` starts. -/
 theorem initial_timers (req : PreparedRequest) (now deadline : Timestamp) :
     Timers (initial req now deadline) :=
   ⟨by simp [initial], by simp [initial], by simp [initial], fun h => (by cases h),
-    fun h => (by cases h), fun h => (by cases h)⟩
+    fun h => (by cases h), fun h => (by cases h), fun h => (by cases h)⟩
 
 /-- A step's handler keeps `Timers`. -/
 theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Timers ex) :
@@ -319,7 +333,7 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
       have leaf : ∀ ex' : Exchange, ex'.writeInFlight = none → ex'.writeBy = none →
           ex'.drainBy = none → (ex'.phase = .draining → False) → Timers ex' :=
         fun ex' hw hwb hd hp => ⟨by simp [hwb], by simp [hw], by simp [hd], fun h' => absurd h' hp,
-          fun h' => absurd h' hp, fun h' => absurd h' hp⟩
+          fun h' => absurd h' hp, fun h' => absurd h' hp, fun h' => absurd h' hp⟩
       cases hp : ex.phase <;> simp only
       case draining => exact absurd hp hnd
       case sending =>
@@ -341,7 +355,8 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
     · exact h
     · simp only [bind_run, setEx_run]
       have h1 : Timers { ex with writeInFlight := none, writeBy := none } :=
-        ⟨by simp, by simp, h.drainBy, h.drainingWritten, fun _ => rfl, h.drainingHead⟩
+        ⟨by simp, by simp, h.drainBy, h.drainingComplete, h.drainingWritten, fun _ => rfl,
+          h.drainingHead⟩
       split
       · exact failNow_timers _ _ h1
       · rcases Bool.eq_false_or_eq_true ex.uploadStopped with hu | hu <;>
@@ -357,6 +372,29 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
     split
     · simp only [↓reduceIte, bind_run]; exact settle_timers (release_timers h1)
     · simp only [Bool.false_eq_true, ↓reduceIte]; exact h1
+  | pulled chunk =>
+    simp only [handle, getEx_bind_run]
+    rcases Bool.eq_false_or_eq_true ex.pulling with hp | hp <;>
+      simp only [hp, ↓reduceIte, Bool.false_eq_true]
+    · have hcomp := (hi.pullIdle hp).2.1
+      cases ha : ex.accept chunk with
+      | ok ex' =>
+        simp only [setEx_run]
+        have hdone := fun hd => accept_wireDone (h.drainingComplete hd) hcomp ha
+        obtain ⟨⟨_, _, _, _, rfl⟩, _⟩ := accept_ok ha
+        exact ⟨h.writeBy, h.inFlightPos, h.drainBy, fun hd => (hdone hd).2,
+          fun hd => (h.drainingWritten hd).trans (hdone hd).1.symm, h.drainingIdle, h.drainingHead⟩
+      | error cause =>
+        simp only [bind_run, setEx_run]
+        exact failOrDrop_timers _ _ (h.agree (by tagree_rfl))
+    · exact h
+  | pullFailed detail =>
+    simp only [handle, getEx_bind_run]
+    rcases Bool.eq_false_or_eq_true ex.pulling with hp | hp <;>
+      simp only [hp, ↓reduceIte, Bool.false_eq_true]
+    · simp only [bind_run, setEx_run]
+      exact failOrDrop_timers _ _ (h.agree (by tagree_rfl))
+    · exact h
   | tick =>
     simp only [handle]
     exact h
@@ -371,9 +409,12 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
       split
       · rename_i hw
         simp only [bind_run, setEx_run]
-        have hwr : ex.written = ex.request.size := by
+        have hwr : ex.written = ex.known := by
           simp only [Bool.and_eq_true, beq_iff_eq] at hw
           exact hw.1.1.1.2
+        have hcomp : ex.wireDone = true := by
+          simp only [Bool.and_eq_true, beq_iff_eq] at hw
+          exact hw.1.1.1.1.2
         have hidle : ex.writeInFlight = none := by
           cases hk : ex.writeInFlight with
           | none => rfl
@@ -382,8 +423,8 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
             have := h.inFlightPos k hk
             omega
         have hhd := hi.hasHead (by simp [hp', Phase.isBody])
-        exact settle_timers ⟨h.writeBy, h.inFlightPos, fun _ => rfl, fun _ => hwr, fun _ => hidle,
-          fun _ => hhd⟩
+        exact settle_timers ⟨h.writeBy, h.inFlightPos, fun _ => rfl, fun _ => hcomp, fun _ => hwr,
+          fun _ => hidle, fun _ => hhd⟩
       · exact finishNow_timers false h0
     · exact h0
 
@@ -396,7 +437,7 @@ theorem step_timers {ex : Exchange} (hi : Inv ex) (h : Timers ex) (now : Timesta
     simp only [bind_run]
     apply schedule_timers
     apply expire_timers
-    exact handle_timers e ⟨hi.headWritten, hi.hasHead, hi.writtenLe, hi.inFlightLe⟩
+    exact handle_timers e ⟨hi.headWritten, hi.hasHead, hi.writtenLe, hi.inFlightLe, hi.segLe, hi.pullIdle⟩
       (h.agree (by tagree_rfl))
 
 /-- `begin` establishes `Timers`. -/
@@ -541,17 +582,28 @@ theorem schedule_ahead {s : S} (h : Ahead s.1) : Ahead (schedule.run s).2.1 := b
   obtain ⟨ex, acts⟩ := s
   simp only [schedule, getEx_bind_run]
   rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
-    simp only [ht, ↓reduceIte, Bool.false_eq_true]
+    simp only [ht, ↓reduceIte, Bool.false_eq_true, bind_run]
   · exact h
-  have hr : ∀ s' : S, Ahead s'.1 →
-      Ahead ((do
-        let ex ← getEx
-        if !ex.readInFlight && ex.wantsInput then
-          let readBy := if ex.uploadOver then some (ex.now + ex.config.gapMs) else none
-          setEx { ex with readInFlight := true, readBy }
-          emit (.read ex.config.readChunk) : StepM Unit).run s').2.1 := by
+  have hw : ∀ s' : S, Ahead s'.1 → Ahead (scheduleWrite.run s').2.1 := by
     intro ⟨ex', acts'⟩ h'
-    simp only [getEx_bind_run]
+    simp only [scheduleWrite, getEx_bind_run]
+    split
+    · simp only [bind_run, setEx_run, emit_run]
+      refine ⟨h'.deadline, fun t ht' => ?_, h'.readBy, h'.drainBy⟩
+      simp only [Option.some.injEq] at ht'
+      subst ht'
+      exact Nat.lt_add_of_pos_right ex'.config.gapMs_pos
+    · exact h'
+  have hp : ∀ s' : S, Ahead s'.1 → Ahead (schedulePull.run s').2.1 := by
+    intro ⟨ex', acts'⟩ h'
+    simp only [schedulePull, getEx_bind_run]
+    split
+    · simp only [bind_run, setEx_run, emit_run]
+      exact ⟨h'.deadline, h'.writeBy, h'.readBy, h'.drainBy⟩
+    · exact h'
+  have hr : ∀ s' : S, Ahead s'.1 → Ahead (scheduleRead.run s').2.1 := by
+    intro ⟨ex', acts'⟩ h'
+    simp only [scheduleRead, getEx_bind_run]
     rcases Bool.eq_false_or_eq_true (!ex'.readInFlight && ex'.wantsInput) with hc | hc <;>
       simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
     · refine ⟨h'.deadline, h'.writeBy, fun t ht' => ?_, h'.drainBy⟩
@@ -560,22 +612,7 @@ theorem schedule_ahead {s : S} (h : Ahead s.1) : Ahead (schedule.run s).2.1 := b
       · cases ht'; exact Nat.lt_add_of_pos_right ex'.config.gapMs_pos
       · cases ht'
     · exact h'
-  rcases Bool.eq_false_or_eq_true
-      (!ex.uploadStopped && ex.writeInFlight.isNone && decide (ex.written < ex.request.size)) with
-    hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
-  · let stop := min ex.request.size (ex.written + max 1 ex.config.writeChunk)
-    let slice := if ex.written == 0 && stop == ex.request.size then ex.request
-      else ex.request.extract ex.written stop
-    let ex' : Exchange := { ex with
-      writeInFlight := some (stop - ex.written), writeBy := some (ex.now + ex.config.gapMs),
-      sentAny := true }
-    have key : Ahead ex' := by
-      refine ⟨h.deadline, fun t ht' => ?_, h.readBy, h.drainBy⟩
-      simp only [ex', Option.some.injEq] at ht'
-      subst ht'
-      exact Nat.lt_add_of_pos_right ex.config.gapMs_pos
-    exact hr (ex', acts.push (.write slice)) key
-  · exact hr _ h
+  exact hr _ (hp _ (hw _ h))
 
 /-- Every reachable exchange that has not ended has every deadline ahead. -/
 theorem Reachable.ahead {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = false) : Ahead ex := by
@@ -597,7 +634,8 @@ theorem Reachable.ahead {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = f
       simp only [bind_run]
       intro ht
       have hT := handle_timers e (ex := advanced ex now)
-        ⟨hr.inv.headWritten, hr.inv.hasHead, hr.inv.writtenLe, hr.inv.inFlightLe⟩
+        ⟨hr.inv.headWritten, hr.inv.hasHead, hr.inv.writtenLe, hr.inv.inFlightLe, hr.inv.segLe,
+          hr.inv.pullIdle⟩
         (hr.timers.agree (by tagree_rfl))
       generalize ((handle e).run (advanced ex now, #[])).2 = s1 at hT ht ⊢
       obtain ⟨ex1, acts1⟩ := s1
@@ -673,7 +711,7 @@ theorem Reachable.stateAt_deadline {ex : Exchange} (h : Reachable ex)
   | 0 => rfl
   | n + 1 => by
     simp only [Exchange.stateAt]
-    rw [(step_fixed (h.stateAt_reachable ev n).inv _ _).2.2]
+    rw [(step_fixed (h.stateAt_reachable ev n).inv _ _).2]
     exact h.stateAt_deadline ev n
 
 theorem stateAt_terminal {ex : Exchange} {ev : Nat → Timestamp × ExchangeEvent} {n : Nat}
@@ -692,8 +730,7 @@ theorem step_now {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : ExchangeEv
   · left; rw [hs]; exact ⟨hc, rfl⟩
   · right
     refine ⟨hc, ?_⟩
-    rw [(hg hi).fixed.now]
-    cases e <;> simp only [startOf] <;> (try split) <;> rfl
+    rw [(hg hi).fixed.now, startOf_now]
 
 theorem step_now_le {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : ExchangeEvent) :
     ex.now ≤ (ex.step now e).1.now := by
@@ -900,7 +937,7 @@ inductive ObservedMono : Exchange → Obs → Prop where
   /-- The start. -/
   | begin (req : PreparedRequest) (now deadline : Timestamp) :
       ObservedMono (Exchange.begin req now deadline).1
-        ((Exchange.begin req now deadline).2.foldl Obs.see { now })
+        ((Exchange.begin req now deadline).2.foldl Obs.see (Obs.init req now))
   /-- One more step: a tick, or an event no earlier than the model's clock. -/
   | step {ex : Exchange} {m : Obs} (now : Timestamp) (e : ExchangeEvent)
       (hm : e = .tick ∨ m.now ≤ now) : ObservedMono ex m →

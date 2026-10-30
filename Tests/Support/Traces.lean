@@ -23,6 +23,8 @@ structure Trace where
   method : Method := .get
   /-- The request body. -/
   body : String := ""
+  /-- A streamed body instead, with its declared size (`some none`: sent chunked). -/
+  stream : Option (Option Nat) := none
   /-- The deadline of the exchange, which begins at time 0. -/
   deadline : Nat := 10000
   /-- The actions `begin` must produce, given the prepared request. -/
@@ -64,8 +66,166 @@ def writtenSteps (p : PreparedRequest) (t : Nat := 1) : List (Nat × ExchangeEve
 def uploadSteps : List (Nat × ExchangeEvent × List String) :=
   [(1, .written 96, ["write 96", "read"]), (1, lots, [])]
 
+/-- A chunk the producer of a streamed body returns, from a string. -/
+def chunk (s : String) : ExchangeEvent := .pulled (some s.toUTF8)
+
+/-- The traces of streamed request bodies. -/
+def streamTraces : List Trace := [
+  { name := "a chunked upload: each chunk pulled once the bytes before it are written, then the end"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "abc", ["write 8"]),
+      (3, .written 8, ["pull"]),
+      (4, .pulled none, ["write 5"]),
+      (5, .written 5, []),
+      (6, lots, []),
+      (7, recv okResponse, okActions)] },
+  { name := "an upload of a declared size: the chunks written as they are, the end writes nothing"
+    method := .post
+    stream := some (some 5)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "hel", ["write 3"]),
+      (3, .written 3, ["pull"]),
+      (4, chunk "lo", ["write 2"]),
+      (5, .written 2, ["pull"]),
+      (6, .pulled none, []),
+      (7, lots, []),
+      (8, recv okResponse, okActions)] },
+  { name := "a chunk written in slices: the next pull only once the whole chunk is written"
+    method := .post
+    config := { keepAlive := true, writeChunk := 64 }
+    stream := some (some 100)
+    begins := fun _ => ["write 64"]
+    steps := fun p => [
+      (1, .written 64, [s!"write {p.bytes.size - 64}"]),
+      (1, .written (p.bytes.size - 64), ["pull", "read"]),
+      (2, chunk (String.ofList (List.replicate 100 'z')), ["write 64"]),
+      (3, .written 64, ["write 36"]),
+      (4, .written 36, ["pull"]),
+      (5, .pulled none, [])] },
+  { name := "a declared size given in full: a response before the producer has ended is reusable"
+    method := .post
+    stream := some (some 3)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "abc", ["write 3"]),
+      (3, .written 3, ["pull"]),
+      (4, lots, []),
+      (5, recv okResponse, okActions),
+      (6, .pulled none, [])] },
+  { name := "a declared size given in full, then more: the exchange fails while it is still going"
+    method := .post
+    stream := some (some 3)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "abc", ["write 3"]),
+      (3, .written 3, ["pull"]),
+      (4, chunk "d",
+        [s!"fail request body: the producer gave more than the declared 3 bytes (4 so far) [maybe delivered, written={p.bytes.size + 3}]"])] },
+  { name := "a body abandoned and drained while the producer fails its last pull: not reusable"
+    method := .post
+    stream := some (some 3)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "abc", ["write 3"]),
+      (3, .written 3, ["pull"]),
+      (4, recv tenHello, ["head 200"]),
+      (5, .abandon, ["read"]),
+      (6, .pullFailed "disk error", ["finish reusable=false"])] },
+  { name := "a chunk of 26 bytes goes out with its size in lower-case hex"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk (String.ofList (List.replicate 26 'q')), ["write 32"]),
+      (3, .written 32, ["pull"])] },
+  { name := "an empty chunk is skipped: the producer is asked again"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "", ["pull"]),
+      (3, .pulled none, ["write 5"])] },
+  { name := "an answer with no pull in flight is ignored"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, chunk "early", []),
+      (2, .pulled none, []),
+      (3, .written p.bytes.size, ["pull", "read"])] },
+  { name := "a producer that gives more than declared fails the exchange before the excess is written"
+    method := .post
+    stream := some (some 3)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "hello",
+        [s!"fail request body: the producer gave more than the declared 3 bytes (5 so far) [maybe delivered, written={p.bytes.size}]"])] },
+  { name := "a producer that ends short of the declared size fails the exchange"
+    method := .post
+    stream := some (some 5)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, chunk "abc", ["write 3"]),
+      (3, .written 3, ["pull"]),
+      (4, .pulled none,
+        [s!"fail request body: the producer ended after 3 of the declared 5 bytes [maybe delivered, written={p.bytes.size + 3}]"])] },
+  { name := "a producer that raises an error fails the exchange, maybe delivered"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, .pullFailed "disk error",
+        [s!"fail request body: the producer failed: disk error [maybe delivered, written={p.bytes.size}]"])] },
+  { name := "an early response while a chunk is pulled: delivered, not reusable, the answer ignored"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, lots, []),
+      (3, recv (early413 ++ "big"), ["head 413", "body \"big\"", "finish reusable=false"]),
+      (4, chunk "late", [])] },
+  { name := "an early response, then the upload ends: still not reusable"
+    method := .post
+    stream := some (some 3)
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, lots, []),
+      (3, recv early413, ["head 413", "read"]),
+      (4, chunk "abc", ["write 3"]),
+      (5, .written 3, ["pull"]),
+      (6, .pulled none, []),
+      (7, recv "big", ["body \"big\"", "finish reusable=false"])] },
+  { name := "no read gap while the producer is slow; it counts once the upload is over"
+    method := .post
+    config := { keepAlive := true, gapMs := 100 }
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (300, .tick, []),
+      (350, .pulled none, ["write 5"]),
+      (360, .written 5, []),
+      (459, .tick, []),
+      (460, .tick, [s!"fail read timeout [maybe delivered, written={p.bytes.size + 5}]"])] },
+  { name := "the deadline while a pull is in flight fails the exchange, maybe delivered"
+    method := .post
+    deadline := 500
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (500, .tick, [s!"fail deadline timeout [maybe delivered, written={p.bytes.size}]"])] },
+  { name := "a streamed request whose deadline has passed fails not sent, with nothing pulled"
+    method := .post
+    deadline := 0
+    stream := some none
+    begins := fun _ => ["fail deadline timeout [not sent, written=0]"]
+    steps := fun _ => [] }
+]
+
 /-- The traces. -/
-def traces : List Trace := [
+def traces : List Trace := streamTraces ++ [
   { name := "bytes before the request head is written are never parsed"
     steps := fun _ => [
       (1, recv okResponse,
@@ -352,7 +512,9 @@ def traces : List Trace := [
 
 /-- Runs one trace; returns the lines describing its failures (empty when it passed). -/
 def runTrace (t : Trace) : List String := Id.run do
-  let prepared := Exchange.prepare t.config (traceHead t.method) t.body.toUTF8
+  let prepared := match t.stream with
+    | some declared => Exchange.prepareStream t.config (traceHead t.method) declared
+    | none => Exchange.prepare t.config (traceHead t.method) t.body.toUTF8
   let (ex, actions) := Exchange.begin prepared 0 t.deadline
   let mut ex := ex
   let mut problems := []

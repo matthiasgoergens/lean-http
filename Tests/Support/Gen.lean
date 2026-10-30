@@ -144,6 +144,27 @@ def scripts : Array Script := #[
     (forHead := true)
 ]
 
+/-- How the producer of a streamed request body behaves in one run. -/
+structure StreamPlan where
+  /-- The size the request declares: `none` sends the body chunked. -/
+  declared : Option Nat
+  /-- The sizes of the chunks the producer gives, in order (an empty one is allowed), then the end. -/
+  chunks : List Nat
+  /-- The pull, counting from 0, at which the producer raises an error instead, if any. -/
+  failAt : Option Nat := none
+deriving Repr
+
+/-- The bytes of chunk `i` of a plan: `size` copies of a letter that differs from chunk to chunk. -/
+def StreamPlan.chunk (i size : Nat) : ByteArray :=
+  ByteArray.mk (Array.replicate size (97 + (i % 26)).toUInt8)
+
+/-- The producer's answer to pull `i` (counting from 0) of a plan. -/
+def StreamPlan.answer (p : StreamPlan) (i : Nat) : ExchangeEvent :=
+  if p.failAt == some i then .pullFailed "the producer failed"
+  else match p.chunks[i]? with
+    | some size => .pulled (some (StreamPlan.chunk i size))
+    | none => .pulled none
+
 /-- The fixed parameters of one run. -/
 structure Case where
   /-- Index into `scripts`. -/
@@ -156,6 +177,8 @@ structure Case where
   config : ExchangeConfig
   /-- The deadline; the exchange begins at time 0. -/
   deadline : Nat
+  /-- A streamed request body instead of `bodySize` bytes, if any. -/
+  stream : Option StreamPlan := none
 
 instance : Inhabited Case := ⟨{ script := 0, method := .get, bodySize := 0, config := {}, deadline := 0 }⟩
 
@@ -164,7 +187,10 @@ def Case.describe (c : Case) : String :=
   let k := c.config
   s!"script={repr scripts[c.script]!.name} method={c.method} body={c.bodySize} keepAlive={k.keepAlive} " ++
     s!"writeChunk={k.writeChunk} gap={k.gapMs} drainBytes={k.drainBytes} drainMs={k.drainMs} " ++
-    s!"maxBody={k.maxBody} maxInterim={k.maxInterim} deadline={c.deadline}"
+    s!"maxBody={k.maxBody} maxInterim={k.maxInterim} deadline={c.deadline}" ++
+    (match c.stream with
+     | some p => s!" stream: declared={p.declared} chunks={p.chunks} failAt={p.failAt}"
+     | none => "")
 
 /-- The request of a case. -/
 def Case.head (c : Case) : Request.Head :=
@@ -173,13 +199,28 @@ def Case.head (c : Case) : Request.Head :=
 
 /-- The prepared request of a case. -/
 def Case.prepare (c : Case) : Except Cause PreparedRequest :=
-  .ok (Exchange.prepare c.config c.head (ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8)))
+  match c.stream with
+  | some p => .ok (Exchange.prepareStream c.config c.head p.declared)
+  | none =>
+    .ok (Exchange.prepare c.config c.head (ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8)))
 
 /-- For drawing positive numbers with `pick`. -/
 instance : Inhabited { n : Nat // 0 < n } := ⟨⟨1, by decide⟩⟩
 
-/-- A random case. -/
-def genCase : Gen Case := do
+/-- A random plan for a streamed body: a few chunks, declared truthfully or not, or sent chunked. -/
+def genStreamPlan : Gen StreamPlan := do
+  let n ← pick [0, 1, 2, 4]
+  let mut chunks := []
+  for _ in [0:n] do
+    chunks := chunks ++ [← pick [0, 1, 7, 26, 40]]
+  let total := chunks.foldl (· + ·) 0
+  let declared ← pickWeighted [(4, some total), (3, none), (1, some (total + 1)),
+    (1, some (total - min total 1))]
+  let failAt ← pickWeighted [(6, none), (1, some (← below (n + 1)))]
+  return { declared, chunks, failAt }
+
+/-- A random case; with `streams`, a POST may stream its body instead. -/
+def genCase (streams : Bool := true) : Gen Case := do
   let script ← below scripts.size
   let s := scripts[script]!
   let method ← if s.forHead then pure .head else pick [Method.get, .post]
@@ -197,7 +238,10 @@ def genCase : Gen Case := do
     maxBody := ← pick [3, 100, 1024]
     maxInterim := ← pick [0, 1, 10] }
   let deadline ← pick [100, 500, 2000]
-  return { script, method, bodySize, config, deadline }
+  -- Drawn last, so that the cases drawn without streams are the ones drawn before they existed.
+  let stream ← if streams && method == .post && (← below 2) == 0 then some <$> genStreamPlan
+    else pure none
+  return { script, method, bodySize, config, deadline, stream }
 
 /-- What the environment has done so far. -/
 structure Env where
@@ -209,6 +253,8 @@ structure Env where
   closed : Bool := false
   /-- Whether bytes were sent when no response could be due. -/
   adversarial : Bool := false
+  /-- Pulls the producer answered. -/
+  pulls : Nat := 0
 deriving Inhabited
 
 /-- The next event, given the core's state and the checker's model. -/
@@ -225,8 +271,15 @@ def genEvent (c : Case) (ex : Exchange) (m : Model) (env : Env) : Gen (Nat × Ex
     options := options ++ [(32, pure (.written len, env)), (2, pure (.writeFailed "reset", env))]
     if len > 1 then
       options := options ++ [(4, do return (.written (← below len), env))]
+  if let some p := c.stream then
+    if m.pullOutstanding then
+      options := options ++ [(30, pure (p.answer env.pulls, { env with pulls := env.pulls + 1 }))]
+    else
+      -- An answer when no pull is in flight, which the core must ignore.
+      options := options ++ [(1, pure (.pulled none, env))]
   if m.readOutstanding && !env.closed then
-    let mayAnswer := m.acked ≥ m.headBytes && (s.early || m.acked == m.request.size)
+    let mayAnswer := m.acked ≥ m.headBytes &&
+      (s.early || (m.wireDone && m.acked == m.request.size))
     if mayAnswer && remaining > 0 then
       options := options ++ [(40, chunk)]
     if remaining == 0 && s.closeAfter then

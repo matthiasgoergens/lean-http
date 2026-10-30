@@ -793,6 +793,8 @@ private def handle : ExchangeEvent → StepM Unit
     setEx { ex with credit := ex.credit + bytes }
     if ex.phase matches .receiving then absorb
   | .tick => pure ()
+  -- The former core takes the whole request as bytes: it never pulls, and ignores answers.
+  | .pulled _ | .pullFailed _ => pure ()
   | .abandon => do
     let ex ← getEx
     match ex.phase with

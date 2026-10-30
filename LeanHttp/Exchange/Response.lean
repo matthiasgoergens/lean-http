@@ -314,34 +314,30 @@ theorem schedule_sinv {fed : ByteArray} {ab : Bool} {body : List UInt8} {s : S}
   obtain ⟨ex, acts⟩ := s
   simp only [schedule, getEx_bind_run]
   rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
-    simp only [ht, ↓reduceIte, Bool.false_eq_true]
+    simp only [ht, ↓reduceIte, Bool.false_eq_true, bind_run]
   · exact h
-  have hr : ∀ s' : S, SInv fed ab body s' →
-      SInv fed ab body ((do
-        let ex ← getEx
-        if !ex.readInFlight && ex.wantsInput then
-          let readBy := if ex.uploadOver then some (ex.now + ex.config.gapMs) else none
-          setEx { ex with readInFlight := true, readBy }
-          emit (.read ex.config.readChunk) : StepM Unit).run s').2 := by
+  have hw : ∀ s' : S, SInv fed ab body s' → SInv fed ab body (scheduleWrite.run s').2 := by
     intro ⟨ex', acts'⟩ h'
-    simp only [getEx_bind_run]
+    simp only [scheduleWrite, getEx_bind_run]
+    split
+    · simp only [bind_run, setEx_run, emit_run]
+      exact h'.keep (by cframe_rfl) rfl (by simp [bodyOf])
+    · exact h'
+  have hp : ∀ s' : S, SInv fed ab body s' → SInv fed ab body (schedulePull.run s').2 := by
+    intro ⟨ex', acts'⟩ h'
+    simp only [schedulePull, getEx_bind_run]
+    split
+    · simp only [bind_run, setEx_run, emit_run]
+      exact h'.keep (by cframe_rfl) rfl (by simp [bodyOf])
+    · exact h'
+  have hr : ∀ s' : S, SInv fed ab body s' → SInv fed ab body (scheduleRead.run s').2 := by
+    intro ⟨ex', acts'⟩ h'
+    simp only [scheduleRead, getEx_bind_run]
     rcases Bool.eq_false_or_eq_true (!ex'.readInFlight && ex'.wantsInput) with hc | hc <;>
       simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
     · exact h'.keep (by cframe_rfl) rfl (by simp [bodyOf])
     · exact h'
-  rcases Bool.eq_false_or_eq_true
-      (!ex.uploadStopped && ex.writeInFlight.isNone && decide (ex.written < ex.request.size)) with
-    hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
-  · let stop := min ex.request.size (ex.written + max 1 ex.config.writeChunk)
-    let slice := if ex.written == 0 && stop == ex.request.size then ex.request
-      else ex.request.extract ex.written stop
-    let ex' : Exchange := { ex with
-      writeInFlight := some (stop - ex.written), writeBy := some (ex.now + ex.config.gapMs),
-      sentAny := true }
-    have key : SInv fed ab body (ex', acts.push (.write slice)) :=
-      h.keep (by cframe_rfl) rfl (by simp [bodyOf])
-    exact hr _ key
-  · exact hr _ h
+  exact hr _ (hp _ (hw _ h))
 
 theorem release_sinv {fed : ByteArray} {ab : Bool} {body : List UInt8} {s : S}
     (h : SInv fed ab body s) : SInv fed ab body (release.run s).2 := by
@@ -672,6 +668,26 @@ theorem handle_sinv (e : ExchangeEvent) {ex : Exchange} {fed : ByteArray} {ab : 
       exact settle_sinv (release_sinv h1)
     · simp only [Bool.false_eq_true, ↓reduceIte]
       exact h1
+  | pulled chunk =>
+    simp only [handle, fedAfter, abAfter, getEx_bind_run]
+    rcases Bool.eq_false_or_eq_true ex.pulling with hp | hp <;>
+      simp only [hp, ↓reduceIte, Bool.false_eq_true]
+    · cases ha : ex.accept chunk with
+      | ok ex' =>
+        simp only [setEx_run]
+        obtain ⟨⟨_, _, _, _, rfl⟩, _⟩ := accept_ok ha
+        exact h0.keep (by cframe_rfl) rfl rfl
+      | error cause =>
+        simp only [bind_run, setEx_run]
+        exact failOrDrop_sinv _ _ (h0.keep (by cframe_rfl) rfl rfl)
+    · exact h0
+  | pullFailed detail =>
+    simp only [handle, fedAfter, abAfter, getEx_bind_run]
+    rcases Bool.eq_false_or_eq_true ex.pulling with hp | hp <;>
+      simp only [hp, ↓reduceIte, Bool.false_eq_true]
+    · simp only [bind_run, setEx_run]
+      exact failOrDrop_sinv _ _ (h0.keep (by cframe_rfl) rfl rfl)
+    · exact h0
   | tick =>
     simp only [handle, fedAfter, abAfter]
     exact h0
@@ -732,7 +748,7 @@ theorem Observed.cinv {ex : Exchange} {m : Obs} (h : Observed ex m) :
     simp only [bind_run] at hb
     rw [← hb] at h1
     rw [← Array.foldl_toList, see_fed, see_abandoned, see_body]
-    simpa [SInv, actBody] using h1
+    simpa [SInv, actBody, Obs.init] using h1
   | @step ex m now e hob ih =>
     have ha := hob.agrees
     rcases step_cases ex now e with ⟨hc, hs⟩ | ⟨hc, _⟩
@@ -775,8 +791,7 @@ theorem step_method {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : Exchang
     (ex.step now e).1.method = ex.method := by
   rcases step_cases ex now e with ⟨_, hs⟩ | ⟨_, hg⟩
   · rw [hs]
-  · rw [(hg hi).fixed.method]
-    cases e <;> simp only [startOf] <;> (try split) <;> rfl
+  · rw [(hg hi).fixed.method, startOf_method]
 
 theorem step_finish {ex : Exchange} (hi : Inv ex) {now : Timestamp} {e : ExchangeEvent}
     {r : Bool} (hm : .finish r ∈ (ex.step now e).2) : (ex.step now e).1.phase = .finished r := by
@@ -815,7 +830,7 @@ theorem observed_finish_codec {ex : Exchange} {m : Obs} (h : Observed ex m) {now
   have hi := h.reachable.inv
   have hc := (Observed.step now e h).cinv
   obtain ⟨hph, hre⟩ := step_finish_reusable hi hm
-  obtain ⟨hcfg, _, _⟩ := step_fixed hi now e
+  obtain ⟨hcfg, _⟩ := step_fixed hi now e
   have hme := step_method hi now e
   have hl : Live (ex.step now e).1 := by intro f hf; rw [hph] at hf; cases hf
   have hpr : (ex.step now e).1.parser = r.1 := by
@@ -879,7 +894,7 @@ theorem observed_finish_complete {ex : Exchange} {m : Obs} (h : Observed ex m) {
   have hc := hob.cinv
   have hag := hob.agrees
   have hph := step_finish hi hm
-  obtain ⟨hcfg, _, _⟩ := step_fixed hi now e
+  obtain ⟨hcfg, _⟩ := step_fixed hi now e
   have hme := step_method hi now e
   have hl : Live (ex.step now e).1 := by intro f hf; rw [hph] at hf; cases hf
   obtain ⟨hcomp, hheld⟩ := hc.finished reusable hph ha

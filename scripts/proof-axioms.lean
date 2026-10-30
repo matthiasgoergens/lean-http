@@ -54,3 +54,12 @@ open LeanHttp.Exchange
 #print axioms observed_finish_codec
 #print axioms observed_finish_complete
 #print axioms observed_body_prefix
+#print axioms step_pulls
+#print axioms PullRun.inFlight
+#print axioms observed_pull
+#print axioms observed_notSent_unpulled
+#print axioms Observed.framed
+#print axioms observed_length_written
+#print axioms observed_finish_body
+#print axioms accept_length
+#print axioms step_broken

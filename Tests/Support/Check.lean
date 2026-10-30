@@ -31,7 +31,10 @@ instance : Inhabited Oracle := ⟨{}⟩
 
 /-- The checker's model of a run, built from the events and the actions alone. -/
 structure Model where
-  /-- The request bytes the core must write, in order. -/
+  /--
+  The request bytes the core must write, in order, as far as they are known: the prepared bytes,
+  then, for a streamed body, each chunk the producer returned, framed by the model itself.
+  -/
   request : ByteArray
   /-- The length of the request head, found independently (the first blank line). -/
   headBytes : Nat
@@ -67,6 +70,20 @@ structure Model where
   body : ByteArray := .empty
   /-- The time of the latest step. -/
   now : Nat := 0
+  /-- How a streamed body is framed, if the request has one. -/
+  framing : Option Codec.RequestFraming := none
+  /-- The size of the prepared bytes: the request head, for a streamed body. -/
+  start : Nat := 0
+  /-- Whether the request is known in full: the producer of a streamed body has ended. -/
+  complete : Bool := true
+  /-- Body bytes the producer returned and the model framed. -/
+  taken : Nat := 0
+  /-- Whether a pull is in flight. -/
+  pullOutstanding : Bool := false
+  /-- Whether any pull was issued. -/
+  everPulled : Bool := false
+  /-- Whether the producer's answer broke the declared size, or the producer failed. -/
+  bodyBroken : Bool := false
 deriving Inhabited
 
 /-- A broken property. -/
@@ -92,7 +109,48 @@ def ByteArray.isPrefixOf (a b : ByteArray) : Bool :=
 /-- A model for a run of `prepared` with `deadline`. -/
 def Model.init (prepared : PreparedRequest) (deadline now : Nat) : Model :=
   { request := prepared.bytes, headBytes := requestHeadLength prepared.bytes, deadline,
-    keepAlive := prepared.config.keepAlive, now }
+    keepAlive := prepared.config.keepAlive, now, framing := prepared.framing,
+    start := prepared.bytes.size, complete := prepared.framing.isNone }
+
+/--
+Whether every byte of the request is known: it is complete, or a streamed body's declared size has
+been given in full (the producer is then asked once more whether it has ended).
+-/
+def Model.wireDone (m : Model) : Bool :=
+  m.complete ||
+    match m.framing with
+    | some (.length size) => m.taken == size
+    | _ => false
+
+/-- The ASCII hex digits of `n`, lower case, written here independently of the codec. -/
+def hexBytes (n : Nat) : ByteArray :=
+  (String.ofList (Nat.toDigits 16 n)).toUTF8
+
+/--
+The model's own framing of what the producer returned to the pull in flight: a chunk is appended
+as it is after a `Content-Length` (unless it would exceed the declared size), or with its size line
+and CRLF when chunked; the end appends the last chunk when chunked.  A chunk beyond the declared
+size, an end short of it, or a producer error marks the body broken, which the core must answer by
+failing the exchange.
+-/
+def Model.take (m : Model) : Option ByteArray → Model
+  | some chunk =>
+    if chunk.isEmpty then m else
+    match m.framing with
+    | some (.length size) =>
+      if m.taken + chunk.size ≤ size then
+        { m with request := m.request ++ chunk, taken := m.taken + chunk.size }
+      else { m with bodyBroken := true }
+    | some .chunked =>
+      { m with request := m.request ++ hexBytes chunk.size ++ "\r\n".toUTF8 ++ chunk ++ "\r\n".toUTF8,
+               taken := m.taken + chunk.size }
+    | none => m
+  | none =>
+    match m.framing with
+    | some (.length size) =>
+      if m.taken == size then { m with complete := true } else { m with bodyBroken := true }
+    | some .chunked => { m with request := m.request ++ "0\r\n\r\n".toUTF8, complete := true }
+    | none => { m with complete := true }
 
 /-- Updates the model with an event the environment reported. -/
 def Model.observe (m : Model) (event : ExchangeEvent) : Model :=
@@ -112,6 +170,9 @@ def Model.observe (m : Model) (event : ExchangeEvent) : Model :=
   | .endOfInput => { m with readOutstanding := false, eofSeen := true }
   | .readFailed _ => { m with readOutstanding := false }
   | .abandon => { m with abandoned := true }
+  | .pulled c => if m.pullOutstanding then { m.take c with pullOutstanding := false } else m
+  | .pullFailed _ =>
+    if m.pullOutstanding then { m with pullOutstanding := false, bodyBroken := true } else m
   | .wantBody _ | .tick => m
 
 /-- A comparable summary of the core's state, for "a stale tick changes nothing". -/
@@ -121,12 +182,14 @@ def fingerprint (ex : Exchange) : String :=
   s!"us={ex.uploadStopped}|sa={ex.sentAny}|rf={ex.readInFlight}|rb={ex.readBy}|ie={ex.inputEnded}|" ++
   s!"h={ex.head.map (·.status.toCode)}|e={ex.early}|c={ex.credit}|held={ex.held.map (·.size)}|" ++
   s!"ab={ex.abandoned}|d={ex.drained}|db={ex.drainBy}|" ++
+  s!"seg={ex.segStart}+{ex.request.size}|co={ex.complete}|tk={ex.taken}|pl={ex.pulling}|" ++
   s!"pp={reprStr p.phase}|ph={p.head.map (·.code)}|pd={p.delivered}|px={p.extra}|pe={p.inputEnded}"
 
 /-- A short rendering of an action, for traces and reports. -/
 def renderAction : ExchangeAction → String
   | .write bytes => s!"write {bytes.size}"
   | .read _ => "read"
+  | .pull => "pull"
   | .deliverHead head => s!"head {head.status.toCode}"
   | .deliverBody bytes => s!"body {repr (String.fromUTF8? bytes |>.getD s!"<{bytes.size} bytes>")}"
   | .finish reusable => s!"finish reusable={reusable}"
@@ -147,6 +210,9 @@ def renderEvent : ExchangeEvent → String
   | .abandon => "abandon"
   | .readFailed d => s!"readFailed {repr d}"
   | .writeFailed d => s!"writeFailed {repr d}"
+  | .pulled (some b) => s!"pulled {b.size}"
+  | .pulled none => "pulled end"
+  | .pullFailed d => s!"pullFailed {repr d}"
 
 /--
 Checks one step: the core was in `pre`, the environment reported `event` at time `now`, and the core
@@ -178,6 +244,15 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
         (bytes.isEmpty || bytes != m.request.extract m.acked (m.acked + bytes.size))
         fun _ => s!"write {bytes.size} at {m.acked}"
       m := { m with outstanding := some bytes.size, everWrote := true }
+    | .pull =>
+      found := flag found "one pull in flight" m.pullOutstanding fun _ => "pull while a pull is in flight"
+      found := flag found "no pull before the request head is written"
+        (!m.everWrote || m.acked < m.headBytes)
+        fun _ => s!"pull with {m.acked} of {m.headBytes} head bytes written, wrote={m.everWrote}"
+      found := flag found "pull only when the request so far is written"
+        (m.acked != m.request.size || m.outstanding.isSome || m.complete)
+        fun _ => s!"pull at {m.acked} of {m.request.size}, write in flight {m.outstanding}, complete={m.complete}"
+      m := { m with pullOutstanding := true, everPulled := true }
     | .read _ =>
       found := flag found "one read in flight" m.readOutstanding
         fun _ => "read while a read is in flight"
@@ -214,6 +289,7 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
       if reusable then
         let reasons := [
           (m.keepAlive, "keep-alive is off"),
+          (m.wireDone, "the streamed body was not known in full"),
           (m.acked == m.request.size, s!"only {m.acked} of {m.request.size} request bytes written"),
           (m.ackedAtHead == m.request.size, s!"the head arrived after {m.ackedAtHead} bytes"),
           (!m.eofSeen, "the peer closed"),
@@ -235,7 +311,21 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
       found := flag found "a failure carries the status of the delivered head"
         (f.status.map (·.toCode.toNat) != m.headStatus)
         fun _ => s!"{f.status.map (·.toCode)}, model {m.headStatus}"
+      found := flag found "a failure that says not sent pulled nothing"
+        (f.delivery == .notSent && m.everPulled) fun _ => "a pull was issued"
   -- Properties of the state after the step.
+  -- While an abandoned body is drained, nobody waits for an error: the exchange finishes instead,
+  -- with a connection that is not reusable.
+  found := flag found "a broken streamed body fails the exchange"
+    (!before.bodyBroken && m.bodyBroken && !wasEnded &&
+      !(actions.any fun a => match a with
+        | .fail f => (match f.cause with | .requestBody _ => true | _ => false)
+        | .finish false => (match pre.phase with | .draining => true | _ => false)
+        | _ => false))
+    fun _ => s!"{actions.map renderAction}"
+  if let some (.length size) := m.framing then
+    found := flag found "the body written stays within its declared size" (m.acked > m.start + size)
+      fun _ => s!"{m.acked} request bytes written, {m.start} of head and {size} of body declared"
   found := flag found "the core ends only with an action" (post.terminal != m.ended)
     fun _ => s!"terminal={post.terminal}, ended={m.ended}"
   found := flag found "after the deadline the exchange has ended"

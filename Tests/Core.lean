@@ -65,16 +65,21 @@ def runProps (n seed : Nat) (skip : List String) : IO UInt32 := do
   let mut adversarial := 0
   let mut earlyHeads := 0
   let mut drains := 0
+  let mut streamed := 0
+  let mut pulledRuns := 0
   let mut ends : Std.HashMap String Nat := {}
   let mut perScript : Std.HashMap String Nat := {}
   for i in [0:n] do
-    let (c, r) := genCase.run rng
+    let (c, r) := (genCase).run rng
     let (res, r) := (genRun c skip).run r
     rng := r
     steps := steps + res.steps
     if res.adversarial then adversarial := adversarial + 1
     if res.earlyHead then earlyHeads := earlyHeads + 1
     if res.drained then drains := drains + 1
+    if c.stream.isSome then streamed := streamed + 1
+    if res.events.any (fun (_, e) => e matches .pulled _ | .pullFailed _) then
+      pulledRuns := pulledRuns + 1
     let e := endName res.ended
     ends := ends.insert e (ends.getD e 0 + 1)
     let sn := scripts[c.script]!.name
@@ -93,6 +98,7 @@ def runProps (n seed : Nat) (skip : List String) : IO UInt32 := do
   IO.println s!"  runs with bytes sent when no response could be due: {adversarial}"
   IO.println s!"  runs with a final head before the request was written in full: {earlyHeads}"
   IO.println s!"  runs that drained an abandoned body: {drains}"
+  IO.println s!"  runs with a streamed request body: {streamed}, of which the producer answered a pull: {pulledRuns}"
   let sorted := ends.toList.toArray.qsort (fun a b => a.2 > b.2)
   for (e, k) in sorted do
     IO.println s!"  ended {e}: {k}"
@@ -202,7 +208,7 @@ def runCompare (n seed : Nat) : IO UInt32 := do
   let mut agree := 0
   let mut classes : Std.HashMap String (Nat × Array String) := {}
   for i in [0:n] do
-    let (c, r) := genCase.run rng
+    let (c, r) := (genCase false).run rng
     let (res, r) := (genRun c).run r
     rng := r
     let a := outcome (coreActions c res.events)
@@ -225,7 +231,7 @@ def runCompare (n seed : Nat) : IO UInt32 := do
 def showCompare (k seed : Nat) : IO UInt32 := do
   let mut rng : Rng := ⟨seed.toUInt64⟩
   for i in [0:k + 1] do
-    let (c, r) := genCase.run rng
+    let (c, r) := (genCase false).run rng
     let (res, r) := (genRun c).run r
     rng := r
     if i == k then
