@@ -343,17 +343,8 @@ LEAN_EXPORT lean_obj_res lean_http_tls_handshake(b_lean_obj_arg o) {
             lh_put(&b, X509_verify_cert_error_string(verify));
             s->failed = 1;
             code = HS_VERIFY;
-        } else if (e == LH_SSL_ERROR_ZERO_RETURN || (s->eof_fed && e != LH_SSL_ERROR_SSL)) {
-            lh_collect(s->err, sizeof s->err, "the server closed the connection during the handshake");
-            s->failed = 1;
-            code = HS_CLOSED;
-        } else if (s->eof_fed) {
-            char reason[256];
-            lh_collect(reason, sizeof reason, "unexpected end of input");
-            lh_buf b = lh_buf_of(s->err, sizeof s->err);
-            lh_put(&b, "the server closed the connection during the handshake (");
-            lh_put(&b, reason);
-            lh_put(&b, ")");
+        } else if (e == LH_SSL_ERROR_ZERO_RETURN || s->eof_fed) {
+            lh_collect(s->err, sizeof s->err, "the server closed the connection");
             s->failed = 1;
             code = HS_CLOSED;
         } else {

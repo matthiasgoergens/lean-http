@@ -288,22 +288,21 @@ inductive ServerName where
 deriving Repr, BEq
 
 /--
-The name `host` must be verified against.  One trailing dot is removed from a host name.  A name
-that is then empty, still ends in a dot, holds a NUL byte, or consists of digits and dots only (an
-IPv4 address in disguise, which would otherwise be checked as a DNS name and sent as SNI) is
-refused: `SSL_set1_host` with an empty name would turn the name check off.
+The name `host` must be verified against.  `Std.Http`'s URI parser gives host names as validated,
+lowercase ASCII labels, none of them empty, so a name here has no trailing dot, no NUL byte and is
+never empty (`SSL_set1_host` with an empty name would turn the name check off; `native/tls.c`
+refuses one as well).  A name of digits and dots only is refused: it is no DNS name, the resolver
+may read it as an IPv4 address (`1.2.3` as 1.2.0.3), and it would be checked as a DNS name and
+sent as SNI.
 -/
 def serverName : URI.Host → Except String ServerName
   | .ipv4 addr => .ok (.ip (toString addr))
   | .ipv6 addr => .ok (.ip (toString addr))
   | .name n =>
     let s : String := n
-    let s := if s.endsWith "." then (s.dropEnd 1).toString else s
-    if s.isEmpty then .error s!"the host name {(n : String).quote} is empty"
-    else if s.endsWith "." then .error s!"the host name {(n : String).quote} ends in more than one dot"
-    else if s.any (· == '\x00') then .error "the host name contains a NUL byte"
+    if s.isEmpty then .error "the host name is empty"
     else if s.all (fun c => c.isDigit || c == '.') then
-      .error s!"the host name {(n : String).quote} reads as an IPv4 address; write it without the trailing dot"
+      .error s!"the host name {s.quote} is all digits: write an IPv4 address in full, a.b.c.d"
     else .ok (.host s)
 
 end LeanHttp.Tls
