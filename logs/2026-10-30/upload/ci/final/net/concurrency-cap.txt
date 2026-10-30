@@ -1,0 +1,19 @@
+$ net-client call GET http://127.0.0.1:18098/sleep?ms=200 concurrent=6 maxactive=2
+call 0 ok status=200 bytes=9 ms=206.081 rounds=1 address=127.0.0.1:18098 seed=1890091258194931156 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 1 ok status=200 bytes=9 ms=205.048 rounds=1 address=127.0.0.1:18098 seed=7542060694361116737 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 2 ok status=200 bytes=9 ms=407.737 rounds=0 address=127.0.0.1:18098 seed=6609767406730171106 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=226 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 3 ok status=200 bytes=9 ms=610.028 rounds=0 address=127.0.0.1:18098 seed=4333726371076523475 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=276 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 4 ok status=200 bytes=9 ms=408.731 rounds=0 address=127.0.0.1:18098 seed=5987106951638140640 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=247 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 5 ok status=200 bytes=9 ms=610.134 rounds=0 address=127.0.0.1:18098 seed=17991366366961973601 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=207 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+round 0 of 6 calls took ms=610.170
+summary calls n=6 min=205.048 p50=408.731 p90=610.134 max=610.134 ms ok=6
+pool idle=2 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+trace call 4 ok steps=1
+trace call 5 ok steps=1
+fds_after_calls=11
+main returning at ms=611.875
+exit status=0 wall_ms=629 exit_after_main_ms=18

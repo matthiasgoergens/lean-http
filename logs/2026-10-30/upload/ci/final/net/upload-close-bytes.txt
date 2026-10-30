@@ -1,0 +1,8 @@
+$ net-client upload PUT http://127.0.0.1:18125/close?after=100000 size=10000000 bytes=1 seed=1
+upload call 0 error delivery=maybe delivered ms=538.885 rounds=3 seed=1 reused=false redispatched=false hops=0 retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="the connection closed before a complete response" detail="a write failed earlier: resource vanished (error code: 32, broken pipe)" pulls=0 produced=0
+after upload 0: pool idle=0 checked_out=0 allocated=3
+trace call 0 ok steps=3
+trace call 0 retry delays=[15, 7] gaps=[23, 16]
+rss_peak_kb=41192 rss_kb=41192
+main returning at ms=540.207
+exit status=0 wall_ms=567 exit_after_main_ms=27

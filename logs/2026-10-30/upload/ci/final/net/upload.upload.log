@@ -1,0 +1,12 @@
+listening on 127.0.0.1:18121
+      58.1 conn0 accepted ('127.0.0.1', 38998)
+      80.3 conn0 PUT /sink framing=length received=1000000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
+      99.7 conn0 PUT /sink framing=length received=1000000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
+     101.0 conn0 EOF from client
+     213.5 conn1 accepted ('127.0.0.1', 39004)
+     271.0 conn1 POST /sink framing=chunked received=1000000 chunks=250 pattern=ok fields=['connection', 'host', 'transfer-encoding']
+     293.3 conn1 POST /sink framing=chunked received=1000000 chunks=250 pattern=ok fields=['connection', 'host', 'transfer-encoding']
+     294.4 conn1 EOF from client
+     341.0 conn2 accepted ('127.0.0.1', 39012)
+     342.1 conn2 POST /sink framing=chunked received=0 chunks=0 pattern=ok fields=['connection', 'host', 'transfer-encoding']
+     343.5 conn2 EOF from client

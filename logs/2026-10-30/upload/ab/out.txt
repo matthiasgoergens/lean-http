@@ -1,0 +1,23 @@
+### main = 7f80991
+Build completed successfully (55 jobs).
+### HEAD = ba7b2a7
+Build completed successfully (57 jobs).
+--- round 1 main, load 143.14 215.21 274.26 84/12843 1710628
+### 2026-10-30T12:21:39Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 131 passed, 0 failed, 0 known limitations, 0 skipped
+--- round 1 HEAD, load 135.32 209.98 271.60 107/12717 1733282
+### 2026-10-30T12:21:54Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 131 passed, 0 failed, 0 known limitations, 0 skipped
+--- round 2 main, load 127.15 203.32 268.10 117/12537 1756747
+### 2026-10-30T12:22:22Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 131 passed, 0 failed, 0 known limitations, 0 skipped
+--- round 2 HEAD, load 112.99 194.01 263.30 67/12166 1774137
+### 2026-10-30T12:22:35Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 131 passed, 0 failed, 0 known limitations, 0 skipped
+--- round 3 main, load 107.59 190.19 261.31 78/12079 1787880
+### 2026-10-30T12:22:49Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 131 passed, 0 failed, 0 known limitations, 0 skipped
+--- round 3 HEAD, load 99.47 184.36 258.27 57/11790 1799000
+### 2026-10-30T12:23:02Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 131 passed, 0 failed, 0 known limitations, 0 skipped
+done

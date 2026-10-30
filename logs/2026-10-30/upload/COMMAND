@@ -1,0 +1,24 @@
+Runs behind streamed request bodies (branch upload), 2026-10-30, on the build host (
+shared; load average 100 to 340 on 128 CPUs), in localhost/b8perf-lean with v4.34.1 from b8perf-elan
+unless said otherwise, uv's CPython 3.14.8 for the servers.  From the laptop, in the worktree:
+
+ci/final/   the full CI script on commit ba7b2a7 (ci/final/commit):
+            $ CTR_EXTRA='--sysctl net.ipv4.tcp_syn_retries=2' LEAN_HTTP_REMOTE_DIR=lean-http-upload scripts/remote.sh bash scripts/ci.sh
+            $ rsync -a buildhost:lean-http-upload/out/ci/ ci/final/ci/; rsync -a buildhost:lean-http-upload/out/net/ ci/final/net/
+            console.txt is the script's output.  521 real-socket checks pass, stream-drain fails
+            (a 100 ms drain limit under load), dns-timeout is the known limitation.
+ci/merge/   the console of the same script on the merge commit 9b54762 (its out/ was overwritten by
+            the final run): eight timing checks of older scenarios failed at load about 330.
+ab/         $ bash ab/run.sh 3    main (7f80991) against ba7b2a7 on those scenarios and stream-drain,
+            alternating: every check passes on both (ab/out.txt).
+v435/       $ LEAN_HTTP_TOOLCHAIN=v4.35.0 LEAN_HTTP_ELAN=b8perf-elan LEAN_HTTP_REMOTE_DIR=lean-http-upload-435 scripts/remote.sh bash -c 'lean --version; bash scripts/ci.sh vendor build axioms pure examples'
+            and then tests/net/run.sh with the upload scenarios and tls-upload (net-console.txt), on
+            ba7b2a7 with net-client's counter renamed from `given` (v4.35.0 reserves it).
+rss/        $ bash rss/run.sh    peak resident memory of a 256 MiB upload for three versions of the
+            shell's wait (rss/out.txt); rss/discarded/ holds an earlier set that built the working tree
+            in every variant, with a README saying so.
+controls/   $ bash controls/run.sh    planted defects in the core (controls/mutate.py) against the
+            core checker's traces, random runs and exploration (controls/out.txt, on 9b54762, whose
+            core is the final one).
+reviews/    a fresh Claude (claude-1*.txt) and Gemini through agy-readonly (gemini-1*, and a second
+            pass on the fixes, gemini-2*); NOTES.md says what came of each finding.

@@ -3,3 +3,5 @@ build/
 vendor/
 .build-host
 out/
+# Keys and certificates the TLS tests generate in their output directory, never to be committed.
+tls-certs/

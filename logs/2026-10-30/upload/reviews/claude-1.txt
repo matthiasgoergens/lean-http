@@ -1,0 +1,55 @@
+A fresh Claude (a general-purpose subagent with no context of the work), 2026-10-30, reading the
+review worktree at commit d26bd56 (branch upload-wip): the diff from db37391, the core, the shell,
+the theorem statements and the tests.  It built and ran nothing.  Its report, as returned:
+
+## 1. Memory still grows with the number of chunks while a read is pending (medium; confidence medium)
+Where: LeanHttp/Wait.lean (awaitFirst), LeanHttp/Body.lean (Live.next, the pending array).
+The core asks for a read as soon as the request head is written; that read normally stays pending for
+the whole upload.  Every Live.next races [read, write, pull], and awaitFirst adds one continuation to
+each task in a race.  The pending read therefore collects at least two continuations per chunk, each
+holding a promise, until the server answers.  The change (resolving with the winner's index) made each
+smaller; it did not stop them piling up.  Scenario: the README's producer makes chunks of about 1 KB;
+10 GB that way is about 10^7 races.  The 100 MB RSS check uses 16 KiB chunks and 256 MiB (about 32k
+races).  Suggested fix: attach one continuation to each operation when it starts (a per-exchange
+promise or channel), rather than one per race.
+
+## 2. A checker property flags behaviour the design documents (medium-low)
+Tests/Support/Check.lean, "a broken streamed body fails the exchange" demands a fail with cause
+requestBody, but while draining failOrDrop emits finish false, as DESIGN.md describes.  Reachable:
+declared body given in full (wireDone), final pull in flight, a non-early head with an incomplete
+body, abandon passes the drain checks, then pullFailed or an extra chunk.
+
+## 3. How wireDone behaves when a producer misbehaves after its declared size (low-medium; design)
+Wire safety is sound (observed_finish_reusable with Framed.length gives acked = start.length + size
+on a reusable finish).  The final "does it end here?" check is racy: if the response completes first
+the call succeeds and a producer that would give more is never caught; if the pull returns first with
+an extra chunk, the call fails even while the caller reads a valid response.  The README overclaims
+("A stream that gives more fails the call"); Exchange.lean qualifies it.  Alternative: pull once more
+before writing the chunk that reaches the size.
+
+## 4. Nothing ties the encoded head to the declared framing (low)
+Obs.init and Model.init take framing from PreparedRequest.framing; no theorem relates encodeHeadWith's
+output to it; the observed_length_written docstring ("as prepareStream encodes it") suggests more.
+codec-diff compares only Content-Length heads.
+
+## 5. Weaker spots in the theorems and the checker (low)
+- No theorem says a broken body or a failing producer fails the exchange; only the checker does.
+- "the body written stays within its declared size" can never fire on its own: "writes follow the
+  request" against Model.take already implies it.
+- observed_pull states ex.headBytes <= m'.acked with the core's field.
+- No chunk size in the tests has a hex letter.
+- observed_write with Observed.framed does pin what the core writes; Obs.take is a model separate
+  from accept.
+
+## 6. Minor test gaps and nits (low)
+- No real-socket scenario re-dispatches a streamed exchange on a stale pooled connection.
+- pulls=246 in the upload expectations counts the final end-check pull; timing-dependent in
+  principle.
+- With withUpload, a callback that waits before reading stalls an early-answered upload until the
+  deadline; the README does not say so.
+
+## Where it found nothing
+Pull timing (no pull before a write and the head; no notSent failure after a pull); size limits;
+chunked framing; write and pull exclusion; retries, re-dispatches, redirects (no partly consumed
+stream sent again, 307/308 refused); awaitFirst's index version correct apart from item 1; a pull in
+flight at the end left running and harmless; HTTP/1.0 chunked refused before the planner starts.

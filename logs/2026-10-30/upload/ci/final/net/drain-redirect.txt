@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18120/redir/302?to=/echo&pad=200000
+call 0 ok status=200 bytes=64 ms=8.759 rounds=2 address=127.0.0.1:18120 seed=15785930846311728763 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=1 retries=0 uri=http://127.0.0.1:18120/echo tls=none body_start="GET /echo auth=None cookie=None host=['1"
+pool idle=1 checked_out=0 allocated=2
+trace call 0 ok steps=2
+fds_after_calls=11
+main returning at ms=10.007
+exit status=0 wall_ms=26 exit_after_main_ms=16

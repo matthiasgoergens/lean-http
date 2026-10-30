@@ -1,0 +1,185 @@
+### Ranked Findings
+
+---
+
+#### 1. [Medium] `wireDone` allows the exchange to finish before the final producer check (`complete`) resolves, bypassing `Cause.requestBody` on over-length or failing producers
+* **Locations**:
+  * [`Exchange.wireDone`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L516-L520), [`Exchange.unsent`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L524-L525), [`Exchange.reusableNow`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L620-L622), [`settle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L797-L801)
+  * [`Live.next`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L174), [`BodyStream.readAll`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L512-L515)
+  * Contract claimed in [`DESIGN.md`](file:///home/matthias/prog/lean-http-wt-upload-review/DESIGN.md#L82-L83), [`RequestBody.stream`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody.lean#L31-L32), and [`Client.upload`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L924-L925)
+* **Confidence**: High
+* **Scenario / Counterexample**:
+  [`DESIGN.md`](file:///home/matthias/prog/lean-http-wt-upload-review/DESIGN.md#L82) states: *"once the producer has given the whole size, the request is complete on the wire, and the core asks once more, to check that the producer ends there"*, and [`Client.upload`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L924-L925) states: *"A producer that raises an error, or gives more or fewer bytes than the size it declared, fails the call with `Cause.requestBody`."*
+
+  However, [`Exchange.wireDone`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L516-L520) becomes `true` as soon as `ex.taken == size` (while `ex.complete` is still `false`), and [`settle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L797-L801) finishes the exchange (`finishNow true`) as soon as `ex.bodyDone` holds—without waiting for `ex.complete` or an in-flight `ex.pulling`:
+
+  1. Call [`Client.upload`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L927-L931) with `RequestBody.stream (some 5) produce`, where `produce` yields `"hello"` (5 bytes) on pull 1 and `"extra"` (or throws an `IO.Error`) on pull 2.
+  2. After `"hello"` is pulled (`taken = 5 = size`), `ex.wireDone` is `true` and `ex.complete` is `false`.
+  3. `"hello"` is written (`written = known = headBytes + 5`). At `written 5`, [`schedulePull`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L1018-L1023) emits the final `.pull` (`ex.pulling = true`) to check that `produce` returns `none`.
+  4. Because all 5 `Content-Length` bytes are now on the wire, the server immediately replies with `HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok`.
+  5. Even if `produce` resolves synchronously, in [`Live.next`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L174):
+     ```lean
+     let pending := live.reading.toArray ++ writing.toArray ++ live.pulling.toArray
+     ```
+     `live.reading` is at index `0` and `live.pulling` is at index `1`. If both are ready, [`awaitFirst`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Wait.lean#L47-L48) resolves `winner` synchronously on index `0` (`reading`).
+  6. `.received` delivers the response head (`ex.early` is `false` because `ex.unsent` uses `ex.wireDone`, which is `true`) and buffers `"ok"` in `ex.held`. [`Live.begin`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L235) returns because `out.head.isSome`.
+  7. [`Client.upload`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L930) runs `r.body.readAll`, which calls `s.live.stepNow (.wantBody (2 ^ 62))` ([`LeanHttp/Body.lean:514`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L514)). That step synchronously drains `ex.held` and calls [`settle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L797-L801) $\to$ `finishNow true` (`reusable = true`).
+  8. `ex.terminal` is now `true`, so [`BodyStream.collect`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L474) returns immediately without calling [`Live.next`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L167) again. The second pull (`some "extra"` or thrown exception) is never observed, and `upload` returns `.ok` (and reuses the connection).
+  9. **Degenerate case (`size = some 0`)**: With `RequestBody.stream (some 0) produce`, `ex.wireDone` is `true` at [`Exchange.begin`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L653-L686) (`taken = 0 == 0`) before a single pull has occurred. As soon as the request head is written, the server can respond; if the response arrives before the first pull is processed, `produce` is never checked at all even if it yields non-empty chunks or fails on the very first pull.
+
+---
+
+#### 2. [Medium] Broken producer during `.draining` emits `.finish false` instead of `.fail`, violating the checker invariant `"a broken streamed body fails the exchange"`
+* **Locations**:
+  * [`handle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L902-L916), [`failOrDrop`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L789-L793), [`handle .abandon`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L931-L941)
+  * [`Tests/Support/Check.lean:317-322`](file:///home/matthias/prog/lean-http-wt-upload-review/Tests/Support/Check.lean#L317-L322)
+* **Confidence**: High
+* **Scenario / Counterexample**:
+  In [`handle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L902-L916), when `.pulled chunk` fails `ex.accept chunk` or when `.pullFailed detail` arrives, the core calls [`failOrDrop`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L789-L793):
+  ```lean
+  def failOrDrop (cause : Cause) : StepM Unit := do
+    match (← getEx).phase with
+    | .draining => finishNow false
+    | _ => failNow cause
+  ```
+  Can `ex.phase` be `.draining` while `ex.pulling = true`? Yes, because [`worthDraining`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L932-L936) checks `ex.wireDone && ex.written == ex.known`, not `ex.complete`:
+  1. Start a streamed request with `framing = some (.length 5)`.
+  2. Write the head, pull 5 bytes (`taken = 5`, so `wireDone = true`, `complete = false`), and write those 5 bytes (`written = known`).
+  3. At `.written 5`, the core emits the final `.pull` (`ex.pulling = true`).
+  4. Receive a response head `200 OK` with `Content-Length: 10` (`phase = .receiving`, `early = false`).
+  5. Step `.abandon`: every guard in `worthDraining` is `true` (`wireDone = true`, `written == known`, `!early`), so `ex.phase` transitions to `.draining` while `ex.pulling` is still `true`.
+  6. Now step `.pulled (some "extra")` (non-empty chunk exceeding `size = 5`) or `.pullFailed "err"`.
+  7. `handle` calls `failOrDrop`, which sees `ex.phase = .draining` and emits `.finish false` instead of `.fail (.requestBody ...)`.
+  8. In [`Tests/Support/Check.lean:317-322`](file:///home/matthias/prog/lean-http-wt-upload-review/Tests/Support/Check.lean#L317-L322), `before.bodyBroken` is `false`, `m.bodyBroken` becomes `true`, `wasEnded` is `false`, and `actions` is `#[.finish false]`, which triggers the checker failure `"a broken streamed body fails the exchange"`.
+
+---
+
+#### 3. [Low / Verification Gap] `Obs.take` filters out invalid producer events in the model, so `Framed` holds by construction of `Obs` and no theorem proves that a broken producer fails the exchange
+* **Locations**:
+  * [`Obs.take`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2170-L2188), [`Framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3155-L3169), [`take_framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3178-L3225), [`Observed.framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3264-L3265)
+* **Confidence**: High
+* **Scenario / Counterexample**:
+  Look at how [`Obs.take`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2170-L2188) updates the observation model `m : Obs` on `.pulled chunk`:
+  ```lean
+  | some chunk =>
+    if m.complete then m
+    else match m.framing with
+      | none => m
+      | some (.length size) =>
+        if m.taken + chunk.size ≤ size then
+          { m with wire := m.wire ++ chunk.data.toList, taken := m.taken + chunk.size,
+                   chunks := m.chunks ++ [chunk.data.toList] }
+        else m
+  ...
+  | none =>
+    match m.framing with
+    | none => m
+    | some (.length size) => if m.taken = size then { m with complete := true } else m
+  ```
+  And on `.pullFailed _`, [`Obs.observe`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2208-L2209) only sets `pullOutstanding := false`.
+  * **Why `Framed` is nearly a model tautology**: [`Framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3155-L3169) states a relationship solely between fields of `m : Obs` (`m.wire`, `m.start`, `m.chunks`, `m.taken`, `m.complete`). Because `Obs.take` itself discards any chunk with `m.taken + chunk.size > size` (`else m`) and ignores `none` when `m.taken ≠ size` (`else m`), [`take_framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3178) is proved on `Obs` alone without referencing `Exchange` at all (the only link to `Exchange` in [`observe_framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3243-L3256) is `h.agrees.complete` to establish `m.pullOutstanding = true → m.complete = false`).
+  * **Missing soundness theorem for broken streams**: Unlike [`Tests/Support/Check.lean:317-322`](file:///home/matthias/prog/lean-http-wt-upload-review/Tests/Support/Check.lean#L317-L322) (which tracks `m.bodyBroken` and checks `"a broken streamed body fails the exchange"`), [`Obs`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2136-L2164) has no `bodyBroken` field and [`LeanHttp/Exchange/Proofs.lean`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean) has no theorem proving that an over-size chunk, premature `none`, or `.pullFailed` terminates/fails the exchange. If [`Exchange.handle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L902-L916) silently ignored bad chunks (`| .error _ => setEx { ex with pulling := false }`) instead of calling `failOrDrop`, every theorem in `LeanHttp/Exchange/Proofs.lean` (`Observed.framed`, `observed_write`, `observed_length_written`, `observed_finish_body`, `observed_finish_reusable`) would still compile unchanged.
+
+---
+
+#### 4. [Low] `observed_finish_body` and `observed_finish_reusable` docstrings overstate that the whole body was pulled ("ending the stream") on `Content-Length` requests
+* **Locations**:
+  * [`observed_finish_reusable`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2843-L2875)
+  * [`observed_finish_body`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3306-L3323)
+* **Confidence**: High
+* **Scenario / Counterexample**:
+  * The docstring of [`observed_finish_body`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3306-L3310) states: *"When a step finishes the exchange as reusable, or finishes it without an early response head or an abandoned response body, the whole request is on the wire (`m'.acked = m'.wire.length`) and its whole body was pulled (`m'.wireDone = true`)..."*
+  * The docstring of [`observed_finish_reusable`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2847-L2848) states: *"the request is complete on the wire (`m'.wireDone = true`: a fixed body from the start, a sized stream once `size` bytes were pulled, a chunked stream once the producer returned `none`)..."*
+  * For `m'.framing = some (.length size)`, `m'.wireDone = true` is `m'.complete || decide (m'.taken == size)` ([`Obs.wireDone`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2167-L2168)), NOT `m'.complete = true`. Thus `observed_finish_body` only proves that `size` bytes were pulled (and for `framing = some .chunked`, that `m'.complete = true`), not that the producer returned `none` to end a sized stream.
+  * Similarly, in [`observed_finish_body`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3316), the hypothesis `hok : reusable = true ∨ (ex.early = false ∧ m'.abandoned = false)` does NOT hold when the server sends an early complete response (`ex.early = true`, so `reusable = false` even when `m'.abandoned = false`). In that early-response case, the exchange finishes normally (`.finish false`) and [`Client.upload`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L927) returns `.ok response` even though the `Content-Length` request body ended short on the wire (which matches [`DESIGN.md:83`](file:///home/matthias/prog/lean-http-wt-upload-review/DESIGN.md#L83), though [`RequestBody.lean:31-32`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody.lean#L31-L32) doesn't mention the early-response exception).
+
+---
+
+### Answers by Review Area
+
+#### Area 1: Pulling before write / head written; `"not sent"` after a pull
+**Nothing broken found.** (Confidence: High)
+* **Can the core pull before any write is issued or before the request head is written?**
+  No. [`Exchange.pullDue`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L1012-L1014) requires:
+  ```lean
+  !ex.terminal && !ex.uploadStopped && !ex.complete && !ex.pulling &&
+    ex.sentAny && decide (ex.headBytes ≤ ex.written) && decide (ex.known ≤ ex.written)
+  ```
+  In [`Exchange.begin`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L653-L686), `sentAny` starts `false` and `written` starts `0`. Even for a hand-constructed `PreparedRequest` with `bytes = .empty` (`headBytes = 0`, `known = 0`), [`scheduleWrite`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L1000-L1009) checks `ex.written < ex.known` (`0 < 0`, false), so `sentAny` remains `false` and [`schedulePull`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L1018-L1023) cannot emit `.pull`. For any request with `headBytes > 0`, `scheduleWrite` sets `sentAny = true` and `writeInFlight = some headLen`, so `written` remains `0 < headBytes` (and `0 < known`) until `.written headBytes` arrives. This is also proved by [`step_pulls`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2941-L2966) and [`observed_pull`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3125-L3132).
+* **Can a failure reported as `.notSent` follow a pull?**
+  No, neither in the core nor in the shell:
+  * In the core, `Failure.delivery` is computed by [`Exchange.delivery`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L556-L558), which returns `.notSent` iff `!ex.sentAny`. Since `.pull` requires `ex.sentAny = true`, and `sentAny` is monotonic (`step_sentAny_mono`), no `.fail f` with `f.delivery = .notSent` can ever follow a `.pull` (proved in [`observed_notSent_unpulled`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3139-L3151)).
+  * In the shell ([`Attempt.run`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L626-L639)), `live.produce` is only invoked by [`Live.perform`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L155-L157) when the core emits `.pull`, and any uncaught exception in `Live.begin` is wrapped with `delivery := .maybeDelivered`.
+
+---
+
+#### Area 2: Declared size bounds & RFC 9112 §7.1 chunked framing
+* **Can more bytes than a declared size reach the wire?**
+  **No.** (Confidence: High)
+  In [`Exchange.accept`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L583-L588), when `ex.framing = some (.length size)`, a chunk is only enqueued into `ex.request` if `ex.taken + chunk.size ≤ size` (and `!ex.complete`). Otherwise `accept` returns `.error`, and [`handle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L906-L911) does not enqueue the chunk and terminates the exchange via `failOrDrop`. Proved in [`observed_length_written`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3282-L3299).
+* **Can a `Content-Length` request end short without failing?**
+  * If the producer returns `none` when `ex.taken < size` while the exchange is still in `.sending` or `.receiving`, [`Exchange.accept`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L597-L600) returns `.error (.requestBody ...)` and [`handle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L911) fails the exchange before any further write.
+  * If the server sends a complete response early (`ex.early = true`) and the caller finishes reading that response body before the upload completes, [`settle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L797-L801) finishes the exchange with `.finish false` (`reusable = false`) and the call returns `.ok response` with fewer than `size` request body bytes written (by design per [`DESIGN.md:83`](file:///home/matthias/prog/lean-http-wt-upload-review/DESIGN.md#L83)).
+  * For a producer that yields **more** than `size` bytes (or errors after yielding `size` bytes), see **Finding 1** above.
+* **Is the chunked framing RFC 9112 §7.1 compliant?**
+  **Yes.** (Confidence: High)
+  * [`Codec.Request.chunkFrame`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Codec/Request.lean#L149-L150) is only called by [`Exchange.accept`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L581-L593) when `!chunk.isEmpty` (`chunk.size > 0`).
+  * [`Codec.hexDigits`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Codec/Chunked.lean#L87-L96) encodes `n > 0` as minimal non-empty lowercase hexadecimal ASCII (`0-9`, `a-f`) with no leading zeroes (`1*HEXDIG`).
+  * `chunkFrame` formats `<hex(data.size)>\r\n<data>\r\n` (`chunk = chunk-size CRLF chunk-data CRLF`).
+  * [`Codec.Request.lastChunk`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Codec/Request.lean#L155-L156) is `#[48, 13, 10, 13, 10]` = `"0\r\n\r\n"` (`last-chunk` `"0\r\n"` + empty `trailer-section` + `"\r\n"`).
+  * Empty chunks (`chunk.isEmpty`) are skipped in [`Exchange.accept`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L581-L582) so an interior chunk never emits a bogus `"0\r\n\r\n"`.
+
+---
+
+#### Area 3: Connection reuse & soundness of the `wireDone` rule
+**Connection reuse is safe; no framing corruption or desynchronization found.** (Confidence: High)
+* **Can a connection be marked reusable when the request body was not fully written, or when the server answered early?**
+  No. Both [`Exchange.reusableNow`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L620-L622) and [`worthDraining`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L932-L936) require `ex.wireDone && ex.written == ex.known && !ex.early`. When the final response head arrives in [`onHead`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange.lean#L728-L735), `ex.early` is latched once to `ex.unsent` (`!ex.wireDone || decide (ex.written < ex.known)`). If the server answered before `wireDone` and `written == known`, `ex.early` is `true` for the rest of the exchange and `reusableNow` is `false`. Proved in [`observed_finish_reusable`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2851-L2875).
+* **Is the `wireDone` rule sound for connection reuse?**
+  Yes, for **wire framing and connection reuse** it is sound:
+  * When `framing = some (.length size)`, `ex.wireDone` (`ex.taken == size`) plus `ex.written == ex.known` guarantees that the socket has received the request head (`Content-Length: <size>`) followed by `size` body bytes—the exact byte count the HTTP/1.1 framing on the wire expects.
+  * Even if the exchange finishes (`ex.terminal = true`) while the final `none`-check pull is still in flight, the shell stops stepping `ex` and never calls [`Live.perform`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L144) on that `Live` again, so even if the orphaned pull task later resolves with `some chunk`, nothing can ever write those bytes to the pooled socket.
+  * The only downside of `wireDone` is the producer-validation race in **Finding 1** and the `.draining` transition in **Finding 2**, not connection corruption.
+
+---
+
+#### Area 4: Shell (`Live.next`, pull in flight at end, producer exceptions, retry/redispatch, 307/308, `awaitFirst`)
+* **Races in `Live.next` between pull, write, and read**:
+  * In the core, `pulling` and `writeInFlight` are mutually exclusive (`Inv.pullIdle`: `ex.pulling = true → ex.writeInFlight = none`), so at most one of `writing` and `live.pulling` is `some` at any time.
+  * Similarly, `ex.uploadStopped` can only become `true` when a write fails or times out while `writeInFlight.isSome`, so `live.pulling` is always `none` when `ex.uploadStopped` is `true`.
+  * The only race issue between `reading` and `pulling` is the one detailed in **Finding 1**: when `size` bytes have been written and the final `.pull` races against `.read`, `.read` can finish the entire exchange before the final `.pull` is awaited.
+* **What happens to a pull in flight when the exchange ends?**
+  When `live.ex.terminal` becomes `true`, [`Live.until`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L222), [`BodyStream.drive`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L375), and [`BodyStream.collect`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L474) stop calling [`Live.next`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L167), and [`BodyStream.settle`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L317-L328) closes or returns the socket. Because Lean's `AsyncTask` has no cooperative cancellation token, an in-flight `live.pulling : Option (Task Completion)` continues running in the background until `produce` returns, and its `Completion.pulled` result is simply garbage-collected without touching the socket or `Exchange`.
+* **Producer exceptions**:
+  `live.produce` has type `Async (Option ByteArray)` (`EAsync IO.Error (Option ByteArray)`). [`Live.perform`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L156) launches it via `start` (`EAsync.toBaseIO`), which catches any `IO.Error` inside the task and resolves the task to `.error err`. [`Live.next`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Body.lean#L196-L199) translates `.pulled (.error err)` into `ExchangeEvent.pullFailed (toString err)`, which fails the exchange with `Cause.requestBody`. (Like any Lean 4 code, a fatal runtime panic / uncatchable foreign exit isn't an `IO.Error`, which is standard.)
+* **Can a retry or re-dispatch ever send a partly consumed stream?**
+  **No.** (Confidence: High)
+  * **Connection-level `redispatch?`**: [`CallSpec.loop`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L774) passes `body.isReplayable` (`false` for `.stream`) to [`Wire.redispatch?`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Wire.lean#L387-L396). When `replayable = false`, `redispatch?` returns `none` on `.maybeDelivered` and only allows `.freshAfterPooledLoss` when `f.delivery = .notSent`—which by `observed_notSent_unpulled` guarantees `.pull` was never emitted and `produce` was never called.
+  * **Planner-level retry (`Call.Machine.step`)**: [`RequestBody.kind`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody.lean#L70-L72) maps `.stream` to `.stream`. In [`Call.Machine.onFailure`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Call.lean#L254), `sentOk` requires `st.hop.body.replayable st.bodyKind` (`false` when `hop.body = .original` and `bodyKind = .stream`) whenever `mayHaveSent` (`f.delivery ≠ .notSent || f.written > 0`) is `true`. In [`Call.Machine.onResponse`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Call.lean#L223), retrying 408/429/502/503/504 requires `st.hop.body.replayable st.bodyKind` unconditionally.
+  * **After a 301/302/303 redirect changes the method to `GET`**: `hop.body` becomes `.empty` ([`LeanHttp/Call/Redirect.lean:405`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Call/Redirect.lean#L405)), and [`CallSpec.loop`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Client.lean#L754-L756) replaces `body` with `.bytes .empty`, so subsequent hops or retries never touch `spec.body`.
+* **Can 307/308 be followed with a stream?**
+  **No.** (Confidence: High)
+  In [`Redirect.resolve`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Call/Redirect.lean#L397-L400), when `keepMethod` is `true` (307/308, or 301/302 with a non-`POST` method), if `!hop.body.replayable bodyKind` (`hop.body = .original` and `bodyKind = .stream`), `resolve` returns `.deliver` instead of following the redirect. Proved in [`streamed_no_follow_same_method`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody/Proofs.lean#L97-L115).
+* **Does the `awaitFirst` change preserve semantics and avoid retaining results?**
+  **Yes.** (Confidence: High)
+  In [`awaitFirst`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Wait.lean#L43-L58):
+  * `winner : IO.Promise (Option Nat)` is resolved inside `BaseIO.chainTask (sync := true) tasks[i] fun _ => winner.resolve (some i)`. Because the `chainTask` callback only fires after `tasks[i]` has completed, `tasks[i]?.map Task.get` on line 53 is guaranteed to read an already-completed task and never blocks a thread.
+  * Each `chainTask` closure now captures only `winner` and `i : Nat` (ignoring the task's result value), and `winner` stores `Option Nat` rather than `Option β` (which previously retained the winning `Completion`, including any `ByteArray` chunk, on every losing task's continuation list for the life of a long-lived `reading` task).
+  * Note: as acknowledged in [`NOTES.md:226`](file:///home/matthias/prog/lean-http-wt-upload-review/NOTES.md#L226), a `live.reading` task that stays pending across $N$ upload chunks still accumulates $2N$ lightweight `chainTask` continuations (`fun _ => winner.resolve (some 0)`), each holding a resolved `IO.Promise (Option Nat)` (~a few dozen bytes per chunk, vs. retaining payload `ByteArray`s previously).
+
+---
+
+#### Area 5: Theorem statements
+* **Vacuity check**:
+  None of the new or modified theorems ([`step_pulls`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2941), [`PullRun.inFlight`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3055), [`observed_pull`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3125), [`observed_notSent_unpulled`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3139), [`Observed.framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3264), [`observed_length_written`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3282), [`observed_finish_body`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3313), [`observed_write`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2653), [`observed_finish_reusable`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2851), [`streamed_no_resend`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody/Proofs.lean#L55), [`streamed_follow_empty`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody/Proofs.lean#L74), [`streamed_no_follow_same_method`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody/Proofs.lean#L97), [`redispatch?_unreplayable`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody/Proofs.lean#L123)) have contradictory hypotheses; [`Observed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2547) and [`ReachableWith`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/RequestBody/Proofs.lean#L28) have base constructors (`Observed.begin`, `ReachableWith.init`) and step preservation lemmas (`Observed.step`).
+* **Do `observed_write` + `Observed.framed` really imply that what the core writes is the declared framing of the producer's chunks?**
+  * **For valid chunks, yes**:
+    1. [`observed_write`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2653-L2658) proves that every `.write b` emitted on event `e` has `b.data.toList = ((m.observe e).wire.drop (m.observe e).acked).take b.size`, and `m.acked` advances only on `.written n` by `n` (when a write of size `n` was in flight).
+    2. [`Observed.step`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2566) + [`Observed.framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3264) (via [`observe_framed`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3243)) prove that `(m.observe e).wire` equals:
+       * `m.start` (`req.bytes.data.toList`) when `framing = none`,
+       * `m.start ++ (m.observe e).chunks.flatten` when `framing = some (.length size)`,
+       * `m.start ++ (m.observe e).chunks.flatMap Codec.encodeChunk ++ (if (m.observe e).complete then [48, 13, 10, 13, 10] else [])` when `framing = some .chunked`.
+    3. Together with [`observed_pull`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L3125) (pulling stays in lockstep, one chunk at a time, only when `m.pullOutstanding = true`), this genuinely proves that every byte the core emits in `.write` actions is the contiguous slice of the request head followed by the declared framing of the accepted producer chunks (`m.chunks`), and for `.chunked` the terminating `"0\r\n\r\n"` is appended only after the producer returns `none` while a pull is outstanding.
+  * **What is missing / proved about the model rather than the core**:
+    See **Finding 3** (because [`Obs.take`](file:///home/matthias/prog/lean-http-wt-upload-review/LeanHttp/Exchange/Proofs.lean#L2170-L2188) filters out over-size chunks and early `none` in the model itself, `Framed` is guaranteed by `Obs.take` by construction, and there is no theorem stating that the core fails when a chunk is rejected by `Obs.take` or when `.pullFailed` occurs) and **Finding 4** (`observed_finish_body` and `observed_finish_reusable` prove `m'.wireDone = true`, which for `.length size` is `m'.taken = size`, not that the final `none` pull completed).
+exit 0
