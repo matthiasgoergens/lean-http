@@ -1,6 +1,7 @@
 module
 
 import all LeanHttp.Call.Proofs
+import all LeanHttp.RequestBody.Proofs
 
 /-!
 Prints the axioms of the main theorems about the per-call planner.  Each must depend on no more than
@@ -39,3 +40,9 @@ open LeanHttp.Call
 #print axioms plan_no_retry
 #print axioms plan_follow_cross_origin
 #print axioms Reachable.scheme
+#print axioms LeanHttp.RequestBody.kind_stream
+#print axioms ReachableWith.bodyKind
+#print axioms streamed_no_resend
+#print axioms streamed_follow_empty
+#print axioms streamed_no_follow_same_method
+#print axioms redispatch?_unreplayable
