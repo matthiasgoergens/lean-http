@@ -3374,63 +3374,65 @@ theorem accept_length {ex : Exchange} {size : Nat} (hf : ex.framing = some (.len
     · simp only [hs, ↓reduceIte]
       exact ⟨fun _ => hs, fun _ => ⟨_, rfl⟩⟩
 
-/-- The phase after a step whose handler ended the exchange with `failOrDrop cause`. -/
+/-- What a handler that ends the exchange with `failOrDrop cause` leaves and emits. -/
 theorem failOrDrop_phase (ex : Exchange) (cause : Cause) (d : String) (ht : ex.terminal = false) :
-    let ex' := ((failOrDrop cause d).run (ex, #[])).2.1
-    ex'.terminal = true ∧
-      ((∃ f, ex'.phase = .failed f ∧ f.cause = cause) ∨
-        (ex.phase = .draining ∧ ex'.phase = .finished false)) := by
-  intro ex'
-  simp only [ex', failOrDrop, bind_run, getEx_run]
+    let s := ((failOrDrop cause d).run (ex, #[])).2
+    s.1.terminal = true ∧
+      ((∃ f, s.1.phase = .failed f ∧ f.cause = cause ∧ s.2 = #[.fail f]) ∨
+        (ex.phase = .draining ∧ s.1.phase = .finished false ∧ s.2 = #[.finish false])) := by
+  intro s
+  simp only [s, failOrDrop, bind_run, getEx_run]
   split
   · rename_i hp
     rw [finishNow_run]
     simp only [ht, Bool.false_eq_true, ↓reduceIte]
-    exact ⟨by simp [terminal], Or.inr ⟨hp, by simp⟩⟩
+    exact ⟨by simp [terminal], Or.inr ⟨hp, by simp, by simp⟩⟩
   · rw [failNow_run]
     simp only [ht, Bool.false_eq_true, ↓reduceIte]
-    exact ⟨by simp [terminal], Or.inl ⟨_, rfl, rfl⟩⟩
+    exact ⟨by simp [terminal], Or.inl ⟨_, rfl, rfl, by simp⟩⟩
 
 /-- The handler's part of `step_broken`. -/
 theorem handle_broken {ex : Exchange} (ht : ex.terminal = false) (hp : ex.pulling = true)
     {e : ExchangeEvent}
     (he : (∃ c cause, e = .pulled c ∧ ex.accept c = .error cause) ∨ ∃ d, e = .pullFailed d) :
-    let ex' := ((handle e).run (ex, #[])).2.1
-    ex'.terminal = true ∧
-      ((∃ f d, ex'.phase = .failed f ∧ f.cause = .requestBody d) ∨
-        (ex.phase = .draining ∧ ex'.phase = .finished false)) := by
-  intro ex'
+    let s := ((handle e).run (ex, #[])).2
+    s.1.terminal = true ∧
+      ((∃ f d, s.1.phase = .failed f ∧ f.cause = .requestBody d ∧ s.2 = #[.fail f]) ∨
+        (ex.phase = .draining ∧ s.1.phase = .finished false ∧ s.2 = #[.finish false])) := by
+  intro s
   rcases he with ⟨c, cause, rfl, ha⟩ | ⟨d, rfl⟩
   · obtain ⟨d', hc⟩ := accept_error_cause ha
-    simp only [ex', handle, getEx_run, hp, ↓reduceIte, ha, bind_run, setEx_run]
+    simp only [s, handle, getEx_run, hp, ↓reduceIte, ha, bind_run, setEx_run]
     obtain ⟨h1, h2⟩ := failOrDrop_phase { ex with pulling := false } cause "" ht
     refine ⟨h1, ?_⟩
-    rcases h2 with ⟨f, hf, hfc⟩ | ⟨hd, hfin⟩
-    · exact Or.inl ⟨f, d', hf, hfc.trans hc⟩
-    · exact Or.inr ⟨hd, hfin⟩
-  · simp only [ex', handle, getEx_run, hp, ↓reduceIte, bind_run, setEx_run]
+    rcases h2 with ⟨f, hf, hfc, hacts⟩ | ⟨hd, hfin, hacts⟩
+    · exact Or.inl ⟨f, d', hf, hfc.trans hc, hacts⟩
+    · exact Or.inr ⟨hd, hfin, hacts⟩
+  · simp only [s, handle, getEx_run, hp, ↓reduceIte, bind_run, setEx_run]
     obtain ⟨h1, h2⟩ := failOrDrop_phase { ex with pulling := false }
       (.requestBody s!"the producer failed: {d}") "" ht
     refine ⟨h1, ?_⟩
-    rcases h2 with ⟨f, hf, hfc⟩ | ⟨hd, hfin⟩
-    · exact Or.inl ⟨f, _, hf, hfc⟩
-    · exact Or.inr ⟨hd, hfin⟩
+    rcases h2 with ⟨f, hf, hfc, hacts⟩ | ⟨hd, hfin, hacts⟩
+    · exact Or.inl ⟨f, _, hf, hfc, hacts⟩
+    · exact Or.inr ⟨hd, hfin, hacts⟩
 
 /--
 **A broken streamed body ends the exchange** (checker: "a broken streamed body fails the
 exchange").  When the producer answers the pull in flight with a chunk or an end that the body's
 framing refuses (`accept_length`: a chunk beyond the declared size, an end short of it), or raises an
-error, the step ends the exchange: it fails with `Cause.requestBody`, or, while an abandoned body is
-being drained, finishes with a connection that is not reusable.
+error, the step ends the exchange and emits that end and nothing else: it fails with
+`Cause.requestBody`, or, while an abandoned body is being drained, finishes with a connection that is
+not reusable.
 -/
 theorem step_broken {ex : Exchange} (ht : ex.terminal = false) (hp : ex.pulling = true)
     (now : Timestamp) {e : ExchangeEvent}
     (he : (∃ c cause, e = .pulled c ∧ ex.accept c = .error cause) ∨ ∃ d, e = .pullFailed d) :
     let ex' := (ex.step now e).1
+    let acts := (ex.step now e).2
     ex'.terminal = true ∧
-      ((∃ f d, ex'.phase = .failed f ∧ f.cause = .requestBody d) ∨
-        (ex.phase = .draining ∧ ex'.phase = .finished false)) := by
-  intro ex'
+      ((∃ f d, ex'.phase = .failed f ∧ f.cause = .requestBody d ∧ acts = #[.fail f]) ∨
+        (ex.phase = .draining ∧ ex'.phase = .finished false ∧ acts = #[.finish false])) := by
+  intro ex' acts
   have hs : (ex.terminal || stale ex now e) = false := by
     rcases he with ⟨c, _, rfl, _⟩ | ⟨d, rfl⟩ <;> simp [ht, stale]
   have he' : (∃ c cause, e = .pulled c ∧ (advanced ex now).accept c = .error cause) ∨
@@ -3439,7 +3441,7 @@ theorem step_broken {ex : Exchange} (ht : ex.terminal = false) (hp : ex.pulling 
     · exact Or.inl ⟨c, cause, rfl, accept_error_now _ ha⟩
     · exact Or.inr ⟨d, rfl⟩
   obtain ⟨h1, h2⟩ := handle_broken (ex := advanced ex now) ht hp he'
-  simp only [ex', step_run hs, bind_run]
+  simp only [ex', acts, step_run hs, bind_run]
   rw [expire_terminal h1, schedule_terminal h1]
   exact ⟨h1, h2⟩
 
