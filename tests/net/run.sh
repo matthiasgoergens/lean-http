@@ -174,18 +174,18 @@ NOREAD=18087    # accepts and never reads
 LARGE=18088     # onewrite.py, for a large POST
 EARLY=18089     # early.py: answers 413 after the head, then reads no more
 # 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
-# 18110-18120: the planner's and the streaming scenarios
+# 18110-18120: the planner's and the streaming scenarios; 18130-18173: the TLS scenarios
 
 # Scenarios the environment cannot run, with the reason.
 declare -A unavailable=()
 
 # Names for the resolver tests (tests/net/hosts).  getaddrinfo without a socket type returns each of
 # these addresses once per socket type, three times in all.
-if ! grep --quiet 'dual\.test' /etc/hosts; then
+if ! grep --quiet 'dual\.test' /etc/hosts || ! grep --quiet 'wild\.lh\.test' /etc/hosts; then
   if [ -w /etc/hosts ]; then
     cat "$here/hosts" >> /etc/hosts || exit 1
   else
-    for s in dns-dup dns-dual blackhole-first; do
+    for s in dns-dup dns-dual blackhole-first tls-names; do
       unavailable[$s]="/etc/hosts lacks the names of tests/net/hosts and cannot be written"
     done
   fi
@@ -202,7 +202,8 @@ syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)
 # The TLS scenarios need the openssl command-line tool to make their certificates.
 certs=$out/tls-certs
 if ! command -v openssl > /dev/null; then
-  for s in tls-get tls-reuse tls-verify tls-trust tls-close tls-stray tls-redirect tls-handshake tls-idle; do
+  for s in tls-get tls-reuse tls-verify tls-trust tls-close tls-stray tls-redirect tls-handshake tls-idle \
+      tls-latched tls-12 tls-names tls-stream; do
     unavailable[$s]="the openssl command-line tool, which makes the test certificates, is not installed"
   done
 elif ! { mkdir --parents "$certs" && bash "$here/tls-certs.sh" "$certs" > "$certs/made.out" 2>&1; }; then
@@ -931,6 +932,13 @@ if scenario tls-get; then
   else
     result FAIL tls-localhost "the server did not log the request to localhost"
   fi
+  # SNI: the host name for localhost, nothing for the IP literals (RFC 6066 section 3).
+  if [ "$(grep --count 'sni=localhost$' "$out/tls-get.tls.log")" -eq 1 ] &&
+      [ "$(grep --count 'sni=None$' "$out/tls-get.tls.log")" -eq 3 ]; then
+    result PASS tls-localhost "SNI carried localhost, and nothing for the three calls to 127.0.0.1"
+  else
+    result FAIL tls-localhost "the server's log of SNI: $(grep --only-matching 'sni=.*' "$out/tls-get.tls.log" | tr '\n' ' ')"
+  fi
   if grep --quiet "alpn=http/1.1" "$out/tls-get.tls.log"; then
     result PASS tls-get "the client offered ALPN http/1.1"
   else
@@ -991,6 +999,12 @@ if scenario tls-trust; then
   expect tls-trust-badfile 'call 0 error delivery=not sent .*cause="TLS setup failed: .*cannot load the CA file /nonexistent\.pem' \
     "a caFile that cannot be loaded is a setup error"
   tls_conns tls-trust 1 "setup errors open no connection"
+  # A directory with OpenSSL's hashed names, as SSL_CERT_DIR.
+  mkdir --parents "$certs/dir" && cp "$certs/ca.pem" "$certs/dir/" && openssl rehash "$certs/dir" > /dev/null 2>&1
+  export SSL_CERT_DIR="$certs/dir"
+  client tls-trust-dir call GET "https://127.0.0.1:18140/hello"
+  unset SSL_CERT_DIR
+  expect tls-trust-dir 'call 0 ok status=200 .*tls=TLSv1\.3' "SSL_CERT_DIR names a directory holding the test CA"
   client tls-trust-leaf call GET "https://127.0.0.1:18140/hello" ca="$certs/good.pem"
   expect tls-trust-leaf 'call 0 ok status=200 .*tls=TLSv1\.3' "the server's own certificate may anchor its chain"
 fi
@@ -1087,6 +1101,81 @@ if scenario tls-idle; then
     result FAIL tls-idle-expire "the server did not see the expired connection end with close_notify"
   fi
   for s in tls-idle-notify tls-idle-abrupt tls-idle-nocheck tls-idle-expire; do trace_ok $s; done
+fi
+
+if scenario tls-latched; then
+  # The response and the server's close_notify arrive in one read: the exchange finishes, reusable
+  # as far as HTTP goes, but the session has seen close_notify, so the connection is not pooled.
+  # With the idle check off, a pooled connection would be used and fail, and the GET be sent again.
+  tls_server tls-latched 18172 good || exit 1
+  client tls-latched call GET "https://127.0.0.1:18172/close-after" ca="$certs/ca.pem" repeat=2 idlecheck=off
+  expect tls-latched 'call 0 ok status=200 bytes=4 ' "a response followed by close_notify in the same read"
+  expect tls-latched 'call 1 ok status=200 bytes=4 .*conn=\(some 1\) reused=false discarded=0 .*redispatched=false ' \
+    "the connection was not pooled: the next call opened its own, and nothing was sent again"
+  tls_conns tls-latched 2 "two connections"
+  trace_ok tls-latched
+fi
+
+if scenario tls-12; then
+  tls_server tls-12 18170 good --mode tls12 || exit 1
+  client tls12-get call GET "https://127.0.0.1:18170/hello" ca="$certs/ca.pem" repeat=3
+  expect tls12-get 'call 0 ok status=200 bytes=15 .*tls=TLSv1\.2 ' "a GET over TLS 1.2"
+  expect tls12-get 'call 2 ok status=200 .*conn=\(some 0\) reused=true .*tls=TLSv1\.2 ' "with the connection reused"
+  client tls12-post call POST "https://127.0.0.1:18170/echo" body=100000 ca="$certs/ca.pem"
+  expect tls12-post 'call 0 ok status=200 bytes=100000 .*tls=TLSv1\.2' "a POST of 100 KB over TLS 1.2"
+  client tls12-close-delimited call GET "https://127.0.0.1:18170/close-delimited" ca="$certs/ca.pem"
+  expect tls12-close-delimited 'call 0 ok status=200 bytes=100000 ' "a body ended by close_notify, over TLS 1.2"
+  client tls12-truncated call GET "https://127.0.0.1:18170/truncate" ca="$certs/ca.pem"
+  expect tls12-truncated 'call 0 error delivery=response received .*detail=".*without close_notify' \
+    "and a truncated one fails"
+  for s in tls12-get tls12-post tls12-close-delimited tls12-truncated; do trace_ok $s; done
+fi
+
+if scenario tls-names; then
+  # A certificate naming the host only in its common name is refused: no fallback to it.
+  tls_server tls-cn 18164 cn-only || exit 1
+  client tls-cn-only call GET "https://localhost:18164/hello" ca="$certs/ca.pem"
+  expect tls-cn-only 'call 0 error delivery=not sent .*cause="TLS certificate verification failed: hostname mismatch"' \
+    "a certificate with the name only in its common name is refused"
+  # A partial wildcard (w*.lh.test) is refused; a whole-label one (*.lh.test) is accepted.
+  tls_server tls-wild 18166 partial-wild || exit 1
+  client tls-partial-wild call GET "https://wild.lh.test:18166/hello" ca="$certs/ca.pem"
+  expect tls-partial-wild 'call 0 error delivery=not sent .*cause="TLS certificate verification failed: hostname mismatch"' \
+    "a partial wildcard is refused"
+  tls_server tls-fullwild 18168 full-wild || exit 1
+  client tls-full-wild call GET "https://wild.lh.test:18168/hello" ca="$certs/ca.pem"
+  expect tls-full-wild 'call 0 ok status=200 .*tls=TLSv1\.3' "a whole-label wildcard is accepted"
+  if grep --quiet "sni=wild.lh.test" "$out/tls-fullwild.tls.log"; then
+    result PASS tls-full-wild "SNI carried the name"
+  else
+    result FAIL tls-full-wild "the server saw no SNI wild.lh.test"
+  fi
+  for s in tls-cn-only tls-partial-wild tls-full-wild; do trace_ok $s; done
+fi
+
+if scenario tls-stream; then
+  # Streamed bodies over TLS: a body left early, a read in another task when the callback ends,
+  # an exception in the callback, and a whole body in small pulls.
+  tls_server tls-stream 18162 good || exit 1
+  client tls-stream-abandon stream GET "https://127.0.0.1:18162/big?n=10000000" ca="$certs/ca.pem" stop=1 repeat=2
+  expect tls-stream-abandon 'stream 0 ok status=200 read=[0-9]+ .*conn=\(some 0\) reused=false ' "the first call reads one piece and leaves"
+  expect tls-stream-abandon '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  expect tls-stream-abandon 'stream 1 ok status=200 .*conn=\(some 1\) reused=false ' "the next call opens a new one"
+  client tls-stream-race stream GET "https://127.0.0.1:18162/trickle?ms=500" ca="$certs/ca.pem" race=100 pull=1
+  expect tls-stream-race 'stream 0 ok status=200 read=0 ' "the callback leaves while the other task reads"
+  expect tls-stream-race '^when withResponse returned: pool checked_out=0$' "the connection was released first"
+  expect tls-stream-race 'the racing reader raised ".*used after the callback of Client.withResponse ended"' \
+    "and the other task's read fails"
+  within tls-stream-race 90 400 "without waiting for the next byte of the body"
+  client tls-stream-throw stream GET "https://127.0.0.1:18162/big?n=10000000" ca="$certs/ca.pem" stop=1 throw=1
+  expect tls-stream-throw 'stream 0 threw "thrown inside the callback"' "the callback's exception reaches the caller"
+  client tls-stream-pulls stream GET "https://127.0.0.1:18162/big?n=1000000" ca="$certs/ca.pem" pull=4096
+  expect tls-stream-pulls 'stream 0 ok status=200 read=1000000 ' "a 1 MB body in 4 KiB pulls"
+  client tls-stream-deadline stream GET "https://127.0.0.1:18162/trickle?ms=100" ca="$certs/ca.pem" deadline=1000 pull=1
+  expect tls-stream-deadline 'stream call 0 error delivery=response received .*cause="deadline timeout"' \
+    "a body still coming at the deadline fails the call"
+  within tls-stream-deadline 990 1400 "at the 1 s deadline"
+  for s in tls-stream-abandon tls-stream-race tls-stream-throw tls-stream-pulls tls-stream-deadline; do trace_ok $s; done
 fi
 
 # Last, because it points the resolver at a name server that never answers.

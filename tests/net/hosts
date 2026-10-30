@@ -1,3 +1,4 @@
 127.0.0.1 dup.test
 ::1 dual.test
 127.0.0.1 dual.test
+127.0.0.1 wild.lh.test

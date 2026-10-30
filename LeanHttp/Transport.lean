@@ -11,16 +11,18 @@ public section
 
 A connection's bytes travel over a `Transport`: a TCP socket, or a TCP socket with a TLS session.
 The exchange core sees plaintext either way.  TLS has no task of its own: the task driving the
-connection (`Live`, in `LeanHttp.Body`) does the TLS work in its own steps, so a session is only
-ever touched by one task at a time, in sequence.
+connection (`Live`, in `LeanHttp.Body`) does the TLS work in its own steps, so a session is driven
+by one task at a time, in sequence.  (Another task may mark it failed, `cancelRecv`, when the callback
+of `withResponse` ends during a read; the C side's lock makes that safe.)
 
 - A write is encrypted at once and its ciphertext handed to the TCP socket (`startSend`); it
   completes when that TCP write does.
 - A read is answered at once from what the session already holds, or else becomes a TCP receive of
   ciphertext (`startRead`).  When that completes, `absorb` feeds the bytes to the session and
   decrypts: plaintext, a clean end (`close_notify`), a failure (an end without `close_notify` is a
-  truncation), or nothing yet, in which case the driver registers the next receive with `startRead`,
-  as a step of its own, so that its checks before every wait apply to it as to any receive.
+  truncation), or nothing yet, in which case the driver tells the exchange core the time and
+  registers the next receive with `startRead`, as a step of its own, so that its checks before every
+  wait apply to it as to any receive.
 - Cancelling the pending receive is the TCP socket's `cancelRecv` for both.
 
 The handshake (`handshake`) and the idle check (`idleClean`) are short loops in the calling task.
@@ -162,6 +164,12 @@ def absorb (t : Transport) (max : Nat) (result : Except IO.Error (Option ByteArr
         | .ok none => session.feedEof
         let step ← session.read max
         discard <| flush s session
+        -- After the end of input OpenSSL reports an end or a failure; should it ask for more
+        -- anyway, the reader fails rather than waiting on a socket that has ended.
+        if result matches .ok none then
+          if step matches .wantRead then
+            session.poison
+            return some (Except.error (IO.userError "TLS: the connection ended within a record"))
         return ofStep step : IO (Option (Except IO.Error (Option ByteArray)))).toBaseIO
     match r with
     | .ok r => return r
@@ -249,9 +257,12 @@ written, or it fails, or `timeoutAt` or `deadline` (values of `IO.monoMsNow`) pa
 time-out the pending receive is cancelled; no receive is pending when this returns.
 -/
 partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (timeoutAt deadline : Nat)
-    (lastWrite : Option (AsyncTask Unit) := none) : Async (Except HandshakeFailure Unit) := do
+    (lastWrite : Option (AsyncTask Unit) := none) (ended : Bool := false) :
+    Async (Except HandshakeFailure Unit) := do
+  -- A timer may fire up to a millisecond early by `IO.monoMsNow`: when the deadline came first, the
+  -- wait was for the deadline.
   let late : BaseIO HandshakeFailure := do
-    return if deadline ≤ (← IO.monoMsNow) then .deadline else .timedOut
+    return if deadline ≤ timeoutAt || deadline ≤ (← IO.monoMsNow) then .deadline else .timedOut
   let step ← try session.handshake catch e => pure (.failed (toString e))
   let written ← try Transport.flush socket session catch e => return .error (.closed (toString e))
   let lastWrite := written <|> lastWrite
@@ -266,6 +277,9 @@ partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (time
     | some (.error e) => return .error (.closed s!"writing the handshake: {e}")
     | some (.ok ()) => return .ok ()
   | .wantRead =>
+    -- After the end of input OpenSSL reports a failure; should it ask for more anyway, the
+    -- connection has closed.
+    if ended then return .error (.closed "the server closed the connection")
     let left := Nat.min timeoutAt deadline - (← IO.monoMsNow)
     if left == 0 then return .error (← late)
     let recv ← start (socket.recv? (Transport.cipherReadBytes 0).toUInt64)
@@ -279,6 +293,6 @@ partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (time
         | some bytes => session.feed bytes
         | none => session.feedEof).toBaseIO
       if let .error e := fed then return .error (.failed (toString e))
-      handshake socket session timeoutAt deadline lastWrite
+      handshake socket session timeoutAt deadline lastWrite input.isNone
 
 end LeanHttp

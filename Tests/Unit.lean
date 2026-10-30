@@ -442,6 +442,8 @@ def tlsChecks : Checks Unit := do
     (trustText { ubuntu with envFile := some "/missing.pem" } |>.startsWith "error: SSL_CERT_FILE names /missing.pem")
   check "likewise SSL_CERT_DIR"
     (trustText { ubuntu with envDir := some "/missing" } |>.startsWith "error: SSL_CERT_DIR names /missing")
+  check "an SSL_CERT_DIR of separators only is an error"
+    (trustText { ubuntu with envDir := some "::" } |>.startsWith "error: SSL_CERT_DIR is")
   checkEq "empty variables count as unset" (trustText { ubuntu with envFile := some "", envDir := some "" })
     "file=/etc/ssl/certs/ca-certificates.crt dirs=[]"
   checkEq "Debian and Ubuntu's bundle" (trustText ubuntu) "file=/etc/ssl/certs/ca-certificates.crt dirs=[]"
@@ -468,6 +470,14 @@ def tlsChecks : Checks Unit := do
   checkEq "an IPv4 literal" (nameText "https://127.0.0.1:8443/") "ip 127.0.0.1"
   checkEq "an IPv6 literal, without brackets" (nameText "https://[::1]:8443/") "ip ::1"
   check "a name of digits and dots is refused" (nameText "https://1.2.3/" |>.startsWith "error:")
+  check "a hexadecimal IPv4 address is refused" (nameText "https://0x7f000001/" |>.startsWith "error:")
+  check "a name whose last label is hexadecimal is refused" (nameText "https://a.0x1f/" |>.startsWith "error:")
+    (nameText "https://a.0x1f/")
+  check "127.0.0.0x1 is refused, by the URI parser or as a name"
+    ((nameText "https://127.0.0.0x1/").startsWith "error:" || (hostOf "https://127.0.0.0x1/").isNone)
+    (nameText "https://127.0.0.0x1/")
+  checkEq "a name with a digit in its last label is a name" (nameText "https://a.b2c/") "host a.b2c"
+  checkEq "a name with digits before its last label is a name" (nameText "https://1.2.example/") "host 1.2.example"
   -- The URI parser already refuses the names `SSL_set1_host` must never see.
   checkEq "the URI parser refuses a trailing dot" (hostOf "https://example.com./").isNone true
   checkEq "and an empty label" (hostOf "https://a..b/").isNone true

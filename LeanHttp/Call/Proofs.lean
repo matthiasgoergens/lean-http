@@ -1004,9 +1004,10 @@ theorem plan_off_delivered {st : State} {clock : Clock} {head : Response.Head}
 
 /--
 **What is never retried.**  A failure is never retried when its cause is not one that can be
-retried (anything but a connect failure, the connection closing, or a read or write timeout: so
-never `localClose`, the call's deadline, name resolution, an invalid request, a malformed response or
-a limit), nor when the response head had arrived.
+retried (anything but a connect failure, the connection closing, a read or write timeout, or a TLS
+handshake cut short by the connection closing or its time limit: so never `localClose`, the call's
+deadline, name resolution, an invalid request, a malformed response, a limit, a TLS setup failure, a
+refused certificate or a failed handshake), nor when the response head had arrived.
 -/
 theorem plan_no_retry {st : State} {clock : Clock} {f : Failure}
     (h : retryableCause f.cause = false ∨ f.delivery = .responseReceived) :

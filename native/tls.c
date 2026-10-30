@@ -6,13 +6,14 @@
  * produced (lean_http_tls_take_output) and sends it with the socket's own asynchronous operations.
  * Every function returns at once: OpenSSL either has the bytes it needs or says it wants more.
  *
- * One task drives a session at a time (LeanHttp.Transport); the lock of each session only guards
- * OpenSSL against misuse.  It is held within one call, which never calls back into Lean or the
+ * One task drives a session at a time (LeanHttp.Transport).  Another task may mark it failed while
+ * it is driven (lean_http_tls_poison, when a body stream ends during a read), and the lock of each
+ * session makes that safe; it is held within one call, which never calls back into Lean or the
  * event loop.  Every OpenSSL operation starts with the thread's error queue cleared and leaves it
  * empty, since tasks move between threads and SSL_get_error reads that queue.
  *
  * The toolchain's C compiler has only the freestanding headers, no libc ones: the lock is a spin
- * lock on a C11 atomic flag (it is never contended in practice), messages are put together by the
+ * lock on a C11 atomic flag (held only for the length of one call), messages are put together by the
  * helpers below, and the two libc functions used are declared here with their standard prototypes.
  */
 #include <lean/lean.h>
@@ -271,6 +272,7 @@ LEAN_EXPORT lean_obj_res lean_http_tls_session_new(b_lean_obj_arg ctx_obj, b_lea
         /* BIO_free is not declared; SSL_set_bio hands the BIOs to the session, which frees them. */
         SSL_set_bio(ssl, rbio, wbio);
         SSL_free(ssl);
+        ERR_clear_error();
         return lh_error("cannot allocate memory BIOs");
     }
     SSL_set_bio(ssl, rbio, wbio);
@@ -365,10 +367,16 @@ LEAN_EXPORT lean_obj_res lean_http_tls_feed(b_lean_obj_arg o, b_lean_obj_arg byt
     if (n == 0) return lean_io_result_mk_ok(lean_box(0));
     if (n > INT_MAX) return lh_error("TLS input too large");
     lh_lock(&s->mu);
+    ERR_clear_error();
     int rc = BIO_write(SSL_get_rbio(s->ssl), lean_sarray_cptr(bytes), (int)n);
+    if (rc != (int)n && !s->failed) {
+        s->failed = 1;
+        lh_buf b = lh_buf_of(s->err, sizeof s->err);
+        lh_put(&b, "TLS: cannot buffer the input");
+    }
     ERR_clear_error();
     lh_unlock(&s->mu);
-    if (rc != (int)n) return lh_error("cannot buffer TLS input");
+    if (rc != (int)n) return lh_error("TLS: cannot buffer the input");
     return lean_io_result_mk_ok(lean_box(0));
 }
 
@@ -483,12 +491,17 @@ LEAN_EXPORT lean_obj_res lean_http_tls_read(b_lean_obj_arg o, size_t max) {
     lh_session *s = lh_sess(o);
     if (max == 0) max = 1;
     if (max > INT_MAX) max = INT_MAX;
-    lean_object *out = lean_alloc_sarray(1, 0, max);
-    uint8_t *buf = lean_sarray_cptr(out);
     size_t total = 0;
     uint32_t status = RD_WANT_READ;
     lh_lock(&s->mu);
-    if (s->latched != 0) {
+    /* Nothing buffered and the input not ended: no buffer is allocated for a read that would wait. */
+    int idle = s->latched == 0 && !s->failed && !s->eof_fed && !SSL_has_pending(s->ssl)
+        && BIO_ctrl_pending(SSL_get_rbio(s->ssl)) == 0;
+    lean_object *out = lean_alloc_sarray(1, 0, idle ? 0 : max);
+    uint8_t *buf = lean_sarray_cptr(out);
+    if (idle) {
+        /* status stays RD_WANT_READ */
+    } else if (s->latched != 0) {
         status = (uint32_t)s->latched;
         s->latched = 0;
     } else if (s->failed) {

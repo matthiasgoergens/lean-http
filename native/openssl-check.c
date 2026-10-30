@@ -6,7 +6,7 @@
  * Each prototype of openssl-min.h redeclares one of OpenSSL's, so a prototype that differs is a
  * "conflicting types" error; each typedef must name the same type; and each constant is compared
  * with OpenSSL's.  The macros native/tls.c reaches through *_ctrl functions are checked by their
- * control numbers below; their expansions were read from OpenSSL's headers (bio.h, ssl.h, tls1.h).
+ * control numbers only; their expansions were read from OpenSSL's headers (bio.h, ssl.h, tls1.h).
  */
 #include <openssl/bio.h>
 #include <openssl/crypto.h>
@@ -51,7 +51,9 @@ SAME(LH_SSL_RECEIVED_SHUTDOWN, SSL_RECEIVED_SHUTDOWN);
 SAME(LH_BIO_CTRL_PENDING, BIO_CTRL_PENDING);
 SAME(LH_BIO_C_SET_BUF_MEM_EOF_RETURN, BIO_C_SET_BUF_MEM_EOF_RETURN);
 
-/* The macros tls.c replaces, expanded the way tls.c calls them: these must compile to the same calls. */
+/* The macros tls.c replaces, next to the calls tls.c makes instead.  This only shows that both
+   compile; that they are the same calls rests on the control numbers asserted above and on the
+   macros' definitions in OpenSSL's headers (bio.h, ssl.h, tls1.h), which were read for this. */
 static void same_expansions(SSL_CTX *ctx, SSL *ssl, BIO *bio) {
     (void)SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
     (void)SSL_CTX_ctrl(ctx, LH_SSL_CTRL_SET_MIN_PROTO_VERSION, LH_TLS1_2_VERSION, NULL);

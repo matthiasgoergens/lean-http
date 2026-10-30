@@ -21,7 +21,7 @@ target tls.o pkg : System.FilePath := do
   let header := pkg.dir / "native" / "openssl-min.h"
   let lean ← getLeanInstall
   buildO (pkg.buildDir / "native" / "tls.o") src #["-I", lean.includeDir.toString]
-    (lean.ccFlags ++ #["-O2", "-Wall", "-Werror"]) (compiler := lean.cc)
+    (lean.ccFlags ++ #["-O2", "-Wall"]) (compiler := lean.cc)
     (extraDepTrace := computeTrace (TextFilePath.mk header))
 
 @[default_target]

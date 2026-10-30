@@ -173,8 +173,15 @@ what happened to the core.  Returns the core's actions.
   let completed ← match completed with
     | .inl c => pure c
     | .inr () =>
+      -- The core still has its read in flight, and hears of no progress (bytes that make no
+      -- plaintext do not reset the read gap), but it is told the time, so that its deadlines fire
+      -- even while a peer keeps the socket busy with them.  The next receive starts only if the
+      -- exchange goes on.
+      let (ex, actions) := live.ex.step (← IO.monoMsNow) .tick
+      let live := { live with ex, reading := none }
+      if ex.terminal then return (live, actions)
       let task ← live.transport.startRead live.readMax
-      return ({ live with reading := some (Task.map (sync := true) Completion.read task) }, #[])
+      return ({ live with reading := some (Task.map (sync := true) Completion.read task) }, actions)
   let (event, live) ← match completed with
     | none => pure (ExchangeEvent.tick, live)
     | some (.read (.cipher _)) =>

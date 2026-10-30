@@ -8,6 +8,9 @@
 #   expired.pem, expired.key  one from it for localhost and 127.0.0.1 that expired in 2020
 #   rogue-ca.pem            another CA, which the client does not trust
 #   untrusted.pem, untrusted.key  a certificate from it for localhost and 127.0.0.1
+#   cn-only.pem, cn-only.key  one from the test CA naming localhost only in its common name
+#   partial-wild.pem, partial-wild.key  one for w*.lh.test, a partial wildcard
+#   full-wild.pem, full-wild.key  one for *.lh.test
 #
 # Usage: tests/net/tls-certs.sh <dir>
 dir=${1:?usage: tls-certs.sh <dir>}
@@ -37,6 +40,14 @@ ca rogue-ca "lean-http rogue CA" || exit 1
 leaf good ca "DNS:localhost,IP:127.0.0.1,IP:::1" || exit 1
 leaf wrong ca "DNS:other.example" || exit 1
 leaf untrusted rogue-ca "DNS:localhost,IP:127.0.0.1" || exit 1
+leaf partial-wild ca "DNS:w*.lh.test" || exit 1
+leaf full-wild ca "DNS:*.lh.test" || exit 1
+# A certificate with no subjectAltName, naming localhost only in its common name.
+key cn-only.key || exit 1
+openssl req -new -key cn-only.key -out cn-only.csr -subj "/CN=localhost" || exit 1
+printf 'basicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n' > cn-only.ext
+openssl x509 -req -in cn-only.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out cn-only.pem -days 2 \
+  -extfile cn-only.ext 2>/dev/null || exit 1
 
 # The expired certificate needs a validity in the past, which `openssl ca` can set.
 key expired.key || exit 1
@@ -64,7 +75,7 @@ EOF
 openssl ca -batch -config ca.cnf -keyfile ca.key -cert ca.pem -in expired.csr -out expired.pem \
   -startdate 20200101000000Z -enddate 20200102000000Z -notext 2>/dev/null || exit 1
 
-for c in good wrong untrusted expired; do
+for c in good wrong untrusted expired cn-only partial-wild full-wild; do
   openssl x509 -in "$c.pem" -noout -subject -ext subjectAltName -dates | tr '\n' ' '
   echo
 done

@@ -77,8 +77,9 @@ structure Config where
   /--
   Most retries of one request (default: 2): of one hop of the call, counting from its first
   attempt.  The per-call planner retries a failure only when that is safe (`Call.plan`): a failed
-  connect, or a closed connection or a read or write timeout when nothing was sent, or when the
-  method is idempotent and the body can be sent again.  A connection from the pool that turns out
+  connect or a TLS handshake cut short (the connection closed, or its time limit), or a closed
+  connection or a read or write timeout when nothing was sent, or when the method is idempotent and
+  the body can be sent again.  A connection from the pool that turns out
   to be closed is sent again without counting here (`Client.redispatch?`).
   -/
   maxRetriesPerHop : Nat := 2

@@ -604,7 +604,8 @@ def genOutcome : Gen (Nat × Outcome) := do
   else
     let cause ← pickWeighted [(5, Cause.connect #[]), (5, .peerClosed), (3, .timeout .read),
       (2, .timeout .write), (1, .timeout .deadline), (3, .localClose), (1, .protocol "x"),
-      (1, .limit .body), (1, .resolve "a.test" "x"), (1, .invalidRequest "x")]
+      (1, .limit .body), (1, .resolve "a.test" "x"), (1, .invalidRequest "x"), (1, .tls (.closed "x")),
+      (1, .tls .timeout), (1, .tls (.verify "x")), (1, .tls (.handshake "x")), (1, .tls (.setup "x"))]
     let delivery ← pick [Delivery.notSent, .notSent, .maybeDelivered, .responseReceived]
     let written ← pick [0, 0, 7]
     return (dt, .failure (failureOf cause delivery written))

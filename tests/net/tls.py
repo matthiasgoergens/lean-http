@@ -17,11 +17,14 @@ TLS event is logged with a connection number and a monotonic timestamp.
   GET  /truncate-midbody   200 with Content-Length: 100000, 50 KB of it, closed without close_notify
   GET  /stray              200 with Content-Length, then 5 stray bytes in a TLS record of their own
   GET  /big?n=N            200 with a body of N bytes
+  GET  /trickle?ms=M       200 with Content-Length: 20, one byte of it every M milliseconds
+  GET  /close-after        200 with Content-Length, and close_notify in the same TCP segment
   GET  /redirect-http      302 to http://127.0.0.1:<plain port>/plain
   GET  /plain (plain port) 200 over plain HTTP
 
 Modes (--mode) for the TLS port: normal; hang (accept TCP and never answer the handshake);
-close-handshake (read the ClientHello, then close); tls11 (offer TLS 1.1 at most).
+close-handshake (read the ClientHello, then close); tls11 (offer TLS 1.1 at most); tls12 (offer
+TLS 1.2 at most).  The server name each client sent (SNI) is logged as sni=<name>, or sni=None.
 
 --idle-close MS closes a kept connection that has been idle for MS milliseconds, with close_notify
 (--idle-notify 1) or without it (0).
@@ -144,6 +147,32 @@ def serve_tls(conn, n):
             while n > 0:
                 conn.sendall(chunk[:n])
                 n -= min(n, len(chunk))
+        elif target.startswith("/trickle?ms="):
+            ms = int(target.split("=", 1)[1])
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 20\r\n\r\n")
+            try:
+                for _ in range(20):
+                    time.sleep(ms / 1000)
+                    conn.sendall(b"t")
+            except (OSError, ssl.SSLError) as e:
+                log(f"conn{n} trickle stopped: {e!r}")
+                conn.close()
+                return
+        elif target == "/close-after":
+            # Cork the socket, so that the response and the close_notify after it leave in one
+            # segment and reach the client in one read; uncork once both are queued.
+            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 1)
+            conn.sendall(response("200 OK", b"bye\n"))
+
+            def uncork():
+                try:
+                    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_CORK, 0)
+                except OSError:
+                    pass
+
+            threading.Timer(0.05, uncork).start()
+            notify(conn, n)
+            return
         elif target == "/redirect-http":
             conn.sendall(response("302 Found", b"", f"Location: http://127.0.0.1:{ARGS.plain_bound}/plain\r\n"))
         else:
@@ -203,13 +232,16 @@ def main():
     p.add_argument("--key", required=True)
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--plain-port", type=int, default=0)
-    p.add_argument("--mode", default="normal", choices=["normal", "hang", "close-handshake", "tls11"])
+    p.add_argument("--mode", default="normal", choices=["normal", "hang", "close-handshake", "tls11", "tls12"])
     p.add_argument("--idle-close", type=int, default=0)
     p.add_argument("--idle-notify", type=int, default=1)
     ARGS = p.parse_args()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(ARGS.cert, ARGS.key)
     ctx.set_alpn_protocols(["http/1.1"])
+    ctx.sni_callback = lambda sslobj, name, c: log(f"sni={name}")
+    if ARGS.mode == "tls12":
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
     if ARGS.mode == "tls11":
         ctx.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
         with warnings.catch_warnings():

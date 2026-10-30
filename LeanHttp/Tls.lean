@@ -210,7 +210,7 @@ structure TrustProbe where
   envDir : Option String := none
   /-- Whether a file exists at this path. -/
   isFile : String → Bool := fun _ => false
-  /-- Whether a directory exists at this path. -/
+  /-- Whether a directory that can be read exists at this path. -/
   isDir : String → Bool := fun _ => false
   /-- Whether a directory holds at least one of OpenSSL's hashed names. -/
   hasHashed : String → Bool := fun _ => false
@@ -225,11 +225,13 @@ def chooseTrust (p : TrustProbe) : Except String Trust := do
     return { file }
   let envFile := p.envFile.filter (!·.isEmpty)
   let envDirs := (p.envDir.getD "").splitOn ":" |>.filter (!·.isEmpty)
+  if let some d := p.envDir then
+    if !d.isEmpty && envDirs.isEmpty then throw s!"SSL_CERT_DIR is {d.quote}, which names no directory"
   if envFile.isSome || !envDirs.isEmpty then
     if let some f := envFile then
       unless p.isFile f do throw s!"SSL_CERT_FILE names {f}, which is not a file"
     for d in envDirs do
-      unless p.isDir d do throw s!"SSL_CERT_DIR names {d}, which is not a directory"
+      unless p.isDir d do throw s!"SSL_CERT_DIR names {d}, which is not a directory that can be read"
     return { file := envFile.getD "", dirs := envDirs.toArray }
   if let some f := wellKnownFiles.find? p.isFile then
     return { file := f }
@@ -253,24 +255,32 @@ def isHashedName (name : String) : Bool :=
 
 /--
 `chooseTrust` on this machine: reads `SSL_CERT_FILE` and `SSL_CERT_DIR` and looks at the file
-system.
+system, as far as the choice needs: the well-known directories are listed only if no well-known
+bundle file exists.  A directory counts only if it can be read.
 -/
 def discoverTrust (caFile : Option System.FilePath) : IO (Except String Trust) := do
   let envFile ← IO.getEnv "SSL_CERT_FILE"
   let envDir ← IO.getEnv "SSL_CERT_DIR"
+  let isFile (f : String) : IO Bool := do
+    let path := System.FilePath.mk f
+    return !f.isEmpty && (← path.pathExists) && !(← path.isDir)
+  -- A readable directory's entries, or `none`.
+  let listing (d : String) : IO (Option (Array IO.FS.DirEntry)) := do
+    if !(← (System.FilePath.mk d).isDir) then return none
+    match ← (System.FilePath.mk d).readDir.toBaseIO with
+    | .ok entries => return some entries
+    | .error _ => return none
   let mut files : List String := []
+  for f in envFile.toList ++ wellKnownFiles do
+    if ← isFile f then files := f :: files
+  let envDirs := (envDir.getD "").splitOn ":" |>.filter (!·.isEmpty)
+  let probeWellKnown := caFile.isNone && !wellKnownFiles.any (files.contains ·)
   let mut dirs : List String := []
   let mut hashed : List String := []
-  let envDirs := (envDir.getD "").splitOn ":" |>.filter (!·.isEmpty)
-  for f in envFile.toList ++ wellKnownFiles do
-    if !f.isEmpty && (← (System.FilePath.mk f).pathExists) && !(← (System.FilePath.mk f).isDir) then
-      files := f :: files
-  for d in envDirs ++ wellKnownDirs do
-    if ← (System.FilePath.mk d).isDir then
+  for d in envDirs ++ (if probeWellKnown then wellKnownDirs else []) do
+    if let some entries ← listing d then
       dirs := d :: dirs
-      let entries ← try (System.FilePath.mk d).readDir catch _ => pure #[]
-      if entries.any (isHashedName ·.fileName) then
-        hashed := d :: hashed
+      if entries.any (isHashedName ·.fileName) then hashed := d :: hashed
   return chooseTrust {
     caFile := caFile.map (·.toString), envFile, envDir,
     isFile := (files.contains ·), isDir := (dirs.contains ·), hasHashed := (hashed.contains ·) }
@@ -288,12 +298,23 @@ inductive ServerName where
 deriving Repr, BEq
 
 /--
+Whether `name` ends in a number, in the WHATWG URL standard's sense: its last label is decimal
+digits, or `0x` and hexadecimal digits.  Such a name is no DNS name (no top-level domain is
+numeric), and resolvers read it as an IPv4 address: `1.2.3` as 1.2.0.3, `0x7f000001` as 127.0.0.1.
+-/
+def endsInNumber (name : String) : Bool :=
+  let last := (name.splitOn ".").getLast?.getD ""
+  let hex := last.startsWith "0x" || last.startsWith "0X"
+  let digits := if hex then (last.drop 2).toString else last
+  if hex then digits.all Char.isHexDigit
+  else !digits.isEmpty && digits.all Char.isDigit
+
+/--
 The name `host` must be verified against.  `Std.Http`'s URI parser gives host names as validated,
 lowercase ASCII labels, none of them empty, so a name here has no trailing dot, no NUL byte and is
 never empty (`SSL_set1_host` with an empty name would turn the name check off; `native/tls.c`
-refuses one as well).  A name of digits and dots only is refused: it is no DNS name, the resolver
-may read it as an IPv4 address (`1.2.3` as 1.2.0.3), and it would be checked as a DNS name and
-sent as SNI.
+refuses one as well).  A name that ends in a number (`endsInNumber`) is refused: the resolver
+would read it as an IPv4 address, and it would be checked as a DNS name and sent as SNI.
 -/
 def serverName : URI.Host → Except String ServerName
   | .ipv4 addr => .ok (.ip (toString addr))
@@ -301,8 +322,8 @@ def serverName : URI.Host → Except String ServerName
   | .name n =>
     let s : String := n
     if s.isEmpty then .error "the host name is empty"
-    else if s.all (fun c => c.isDigit || c == '.') then
-      .error s!"the host name {s.quote} is all digits: write an IPv4 address in full, a.b.c.d"
+    else if endsInNumber s then
+      .error s!"the host name {s.quote} reads as an IPv4 address: write the address in full, a.b.c.d"
     else .ok (.host s)
 
 end LeanHttp.Tls
