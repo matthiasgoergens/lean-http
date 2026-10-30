@@ -31,6 +31,17 @@ net-client stream <METHOD> <URL> [key=value ...]
                   that read is in progress
   whole=1         a control: `Client.request`, which reads the whole body into memory
   Prints the peak resident memory of the process at the end.
+net-client upload <METHOD> <URL> [key=value ...]
+  Calls `Client.upload` with a streamed body that a producer makes as it is pulled: byte k of the
+  body is k % 251.  The options of `call` (repeat, deadline, gap, retries, ...), and
+  size=N          bytes the producer gives in all (default 0)
+  chunk=N         bytes per chunk (default 16384)
+  declare=N|none  the size declared (default: size); none sends the body chunked
+  fail=K          the producer raises an error at pull K, counting from 0
+  delay=MS        the producer waits MS before each chunk
+  bytes=1         a control: the same body as one byte array, through `Client.request`
+  Prints, per call, the outcome as `call` does with the producer's pulls and the bytes it gave,
+  and at the end the peak resident memory of the process.
 net-client idlecheck <PORT> [key=value ...]
   Measures `Client.idleClean` on fresh connections to tests/net/idle.py, after it sent bytes, closed
   or reset the connection, or did nothing (scenario=data|fin|rst|none).
@@ -360,6 +371,64 @@ def runStream (args : List String) : IO Unit := do
   reportTraces kv traces
   IO.println s!"rss_peak_kb={← procStatusKb "VmHWM"} rss_kb={← procStatusKb "VmRSS"}"
 
+/-- `n` bytes of the upload pattern from offset `o`: byte k of the body is k % 251. -/
+def patternBytes (o n : Nat) : ByteArray := Id.run do
+  let mut out := ByteArray.emptyWithCapacity n
+  for j in [0:n] do
+    out := out.push ((o + j) % 251).toUInt8
+  return out
+
+/--
+A producer of `size` bytes of the pattern in chunks of `chunk`, counting its pulls and the bytes it
+gave in `pulls` and `given`; it raises an error at pull `fail` and waits `delay` ms before each chunk.
+-/
+def producer (size chunk : Nat) (fail : Option Nat) (delay : Nat) (pulls given : IO.Ref Nat) :
+    Async (Option ByteArray) := do
+  let k ← pulls.modifyGet fun k => (k, k + 1)
+  if fail == some k then throw (IO.userError "the producer failed on purpose")
+  if delay > 0 then Std.Async.sleep (.ofNat delay)
+  let o ← given.get
+  if o ≥ size then return none
+  let n := min (max 1 chunk) (size - o)
+  given.set (o + n)
+  return some (patternBytes o n)
+
+def runUpload (args : List String) : IO Unit := do
+  let (methodName, url, rest) ← match args with
+    | m :: u :: rest => pure (m, u, rest)
+    | _ => throw (.userError "usage: net-client upload <METHOD> <URL> [key=value ...]")
+  let kv := parseKV rest
+  let req ← requestOf methodName url kv
+  let traces : Traces ← IO.mkRef {}
+  let client ← Client.new (withTraces (configOf kv) kv traces)
+  let size := getNat kv "size" 0
+  let chunk := getNat kv "chunk" 16384
+  let declared : Option Nat := match kv.lookup "declare" with
+    | some "none" => none
+    | some v => v.toNat?
+    | none => some size
+  let fail := kv.lookup "fail" >>= String.toNat?
+  let delay := getNat kv "delay" 0
+  for i in [0:getNat kv "repeat" 1] do
+    if i > 0 then IO.sleep (getNat kv "pause" 0).toUInt32
+    let pulls ← IO.mkRef 0
+    let given ← IO.mkRef 0
+    let t0 ← IO.monoNanosNow
+    let result ← if getNat kv "bytes" 0 == 1 then
+        (client.request { req with body := patternBytes 0 size }).block
+      else
+        let body := RequestBody.stream declared (producer size chunk fail delay pulls given)
+        (client.upload { req with body }).block
+    let ns := (← IO.monoNanosNow) - t0
+    let response := match result with
+      | .ok resp => s!" response={repr ((String.fromUTF8? resp.body).getD "<binary>")}"
+      | .error _ => ""
+    IO.println s!"upload {describeCall i ns result} pulls={← pulls.get} produced={← given.get}{response}"
+    let stats ← client.stats
+    IO.println s!"after upload {i}: pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
+  reportTraces kv traces
+  IO.println s!"rss_peak_kb={← procStatusKb "VmHWM"} rss_kb={← procStatusKb "VmRSS"}"
+
 /--
 Measures the idle check on `n` fresh connections to `tests/net/idle.py`: each sends `ping`, reads
 `pong`, waits `wait` ms (the server acts 50 ms after `pong`: sends bytes, closes, resets, or does
@@ -438,6 +507,7 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | "call" :: rest => runCalls rest
   | "stream" :: rest => runStream rest
+  | "upload" :: rest => runUpload rest
   | "rawpost" :: port :: rest => rawPost port.toNat!.toUInt16 (parseKV rest)
   | "idlecheck" :: port :: rest => idleCheck port.toNat!.toUInt16 (parseKV rest)
   | "backoff" :: seed :: rest =>
@@ -447,7 +517,7 @@ def main (args : List String) : IO UInt32 := do
       seed.toNat!.toUInt64 (getNat kv "n" d.maxRetriesPerHop)
     IO.println s!"backoff seed={seed} schedule={s}"
   | _ =>
-    IO.eprintln "usage: net-client call|stream|rawpost|idlecheck|backoff ..."
+    IO.eprintln "usage: net-client call|stream|upload|rawpost|idlecheck|backoff ..."
     return 2
   let now ← IO.monoNanosNow
   IO.println s!"main returning at ms={fmtMs (now - start)}"

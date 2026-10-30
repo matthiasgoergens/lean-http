@@ -107,7 +107,7 @@ expect() {
 
 # call_ms <scenario>: the time of the first call, in whole milliseconds.
 call_ms() {
-  sed --quiet 's/^\(stream \)\{0,1\}\(call\|stream\) 0 .* ms=\([0-9]*\)\..*/\3/p' "$out/$1.txt" | head --lines=1
+  sed --quiet 's/^\(stream \|upload \)\{0,1\}\(call\|stream\) 0 .* ms=\([0-9]*\)\..*/\3/p' "$out/$1.txt" | head --lines=1
 }
 
 # within <scenario> <lo> <hi> <description>: the first call took between lo and hi ms.
@@ -174,7 +174,7 @@ NOREAD=18087    # accepts and never reads
 LARGE=18088     # onewrite.py, for a large POST
 EARLY=18089     # early.py: answers 413 after the head, then reads no more
 # 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
-# 18110-18120: the planner's and the streaming scenarios
+# 18110-18120: the planner's and the streaming scenarios; 18121-18128: the upload scenarios
 
 # Scenarios the environment cannot run, with the reason.
 declare -A unavailable=()
@@ -881,6 +881,188 @@ if scenario stream-abandon; then
     "a body still coming at the deadline fails the call"
   within stream-deadline 990 1400 "at the 1 s deadline"
   for s in stream-abandon stream-drain stream-drain-late stream-unread-big stream-unread stream-throw stream-throw-big stream-escape stream-error stream-badchunk stream-redirect stream-race stream-deadline; do trace_ok $s; done
+fi
+
+ulogged() { # ulogged <scenario> <extended regex> <description>: check the upload server's log
+  if grep --quiet --extended-regexp "$2" "$out/$1.upload.log"; then
+    result PASS "$1" "$3"
+  else
+    result FAIL "$1" "$3 (no match in the server log for: $2)"
+  fi
+}
+
+ucount() { # ucount <scenario> <extended regex> <n> <description>: lines of the server's log that match
+  local k
+  k=$(grep --count --extended-regexp "$2" "$out/$1.upload.log")
+  if [ "$k" -eq "$3" ]; then
+    result PASS "$1" "$4 ($k)"
+  else
+    result FAIL "$1" "$4: $k, expected $3"
+  fi
+}
+
+uploads() { # uploads <scenario> <port>: an upload.py for one scenario
+  start "$1" upload "listening" "$PY" -I "$here/upload.py" "$2"
+}
+
+if scenario upload; then
+  uploads upload 18121 || exit 1
+  # A body of known size, streamed in 4 KiB chunks: sent with a Content-Length, read in full by the
+  # server, and the connection kept for the next call.
+  client upload upload PUT "http://127.0.0.1:18121/sink" size=1000000 chunk=4096 repeat=2
+  expect upload 'upload call 0 ok status=200 .*conn=\(some 0\) reused=false .* pulls=246 produced=1000000 response="pattern=ok received=1000000 framing=length chunks=0"' \
+    "a 1 MB body in 4 KiB chunks, Content-Length: every byte arrives in order"
+  expect upload 'upload call 1 ok status=200 .*conn=\(some 0\) reused=true ' "the connection is reused after the upload"
+  ulogged upload "PUT /sink framing=length received=1000000 .*'content-length'" "the server read a Content-Length body"
+  # Of unknown size: sent chunked, one chunk on the wire per chunk produced (4000 bytes, fa0 in hex).
+  client upload-chunked upload POST "http://127.0.0.1:18121/sink" size=1000000 chunk=4000 declare=none repeat=2
+  expect upload-chunked 'upload call 0 ok status=200 .* pulls=251 produced=1000000 response="pattern=ok received=1000000 framing=chunked chunks=250"' \
+    "a 1 MB body of unknown size in 4000-byte chunks, chunked: 250 chunks on the wire, every byte in order"
+  expect upload-chunked 'upload call 1 ok status=200 .*conn=\(some [0-9]+\) reused=true ' "the connection is reused after a chunked upload"
+  ulogged upload "POST /sink framing=chunked received=1000000 chunks=250 .*'transfer-encoding'" "the server decoded a chunked body"
+  # An empty body of unknown size is the last chunk alone.
+  client upload-empty upload POST "http://127.0.0.1:18121/sink" size=0 declare=none
+  expect upload-empty 'upload call 0 ok status=200 .* pulls=1 produced=0 response="pattern=ok received=0 framing=chunked chunks=0"' \
+    "an empty streamed body: the last chunk alone"
+  for s in upload upload-chunked upload-empty; do trace_ok $s; done
+fi
+
+if scenario upload-big; then
+  uploads upload-big 18122 || exit 1
+  # 256 MiB in 16 KiB chunks: the client holds one chunk at a time.
+  client upload-big upload PUT "http://127.0.0.1:18122/sink" size=268435456 chunk=16384 deadline=600000
+  expect upload-big 'upload call 0 ok status=200 .* produced=268435456 response="pattern=ok received=268435456 framing=length' \
+    "a 256 MiB body in 16 KiB chunks arrives whole and in order"
+  rss=$(rss_kb upload-big)
+  if [ -n "$rss" ] && [ "$rss" -lt 102400 ]; then
+    result PASS upload-big "peak resident memory ${rss} kB, under 100 MB"
+  else
+    result FAIL upload-big "peak resident memory ${rss:-?} kB, expected under 100 MB"
+  fi
+  client upload-big-chunked upload PUT "http://127.0.0.1:18122/sink" size=268435456 chunk=16384 declare=none deadline=600000
+  expect upload-big-chunked 'upload call 0 ok status=200 .* produced=268435456 response="pattern=ok received=268435456 framing=chunked chunks=16384"' \
+    "and chunked"
+  rss=$(rss_kb upload-big-chunked)
+  if [ -n "$rss" ] && [ "$rss" -lt 102400 ]; then
+    result PASS upload-big-chunked "peak resident memory ${rss} kB, under 100 MB"
+  else
+    result FAIL upload-big-chunked "peak resident memory ${rss:-?} kB, expected under 100 MB"
+  fi
+  # The control: the same body as one byte array is held in memory, which the measurement must see.
+  client upload-big-bytes upload PUT "http://127.0.0.1:18122/sink" size=268435456 bytes=1 deadline=600000
+  expect upload-big-bytes 'upload call 0 ok status=200 .*response="pattern=ok received=268435456 framing=length' \
+    "the control sends the body as bytes"
+  rss=$(rss_kb upload-big-bytes)
+  if [ -n "$rss" ] && [ "$rss" -gt 262144 ]; then
+    result PASS upload-big-bytes "control: as bytes, peak resident memory ${rss} kB"
+  else
+    result FAIL upload-big-bytes "control: peak resident memory ${rss:-?} kB; the measurement cannot see the body"
+  fi
+  for s in upload-big upload-big-chunked upload-big-bytes; do trace_ok $s; done
+fi
+
+if scenario upload-early; then
+  start upload-early early "listening" "$PY" -I "$here/early.py" 18123 || exit 1
+  # A server that answers 413 after the head and reads no more: the response is delivered while the
+  # upload is stalled, and the producer is not asked for the rest.
+  client upload-early upload POST "http://127.0.0.1:18123/" size=32000000 chunk=65536 gap=1000
+  expect upload-early 'upload call 0 ok status=413 bytes=3 .*body_start="big"' \
+    "an early 413 during a streamed upload is delivered"
+  within upload-early 0 900 "before the 1 s write gap"
+  produced=$(sed --quiet 's/^upload call 0 .* produced=\([0-9]*\).*/\1/p' "$out/upload-early.txt")
+  if [ -n "$produced" ] && [ "$produced" -lt 32000000 ]; then
+    result PASS upload-early "the upload stopped: ${produced} of 32000000 bytes produced"
+  else
+    result FAIL upload-early "produced ${produced:-?} bytes"
+  fi
+  trace_ok upload-early
+fi
+
+if scenario upload-fail; then
+  uploads upload-fail 18124 || exit 1
+  # A producer that raises an error fails the call: maybe delivered, not retried.
+  client upload-throw upload PUT "http://127.0.0.1:18124/sink" size=1000000 chunk=4096 fail=3
+  expect upload-throw 'upload call 0 error delivery=maybe delivered .*retries=0 not_retried=LeanHttp.Call.NoRetry.cause .*cause="request body: the producer failed: the producer failed on purpose".* pulls=4 produced=12288' \
+    "a producer that raises at its fourth pull fails the call, maybe delivered, not retried"
+  # More than declared: refused before the excess is written.
+  client upload-long upload PUT "http://127.0.0.1:18124/sink" size=3000 chunk=1000 declare=2500
+  expect upload-long 'upload call 0 error delivery=maybe delivered .*cause="request body: the producer gave more than the declared 2500 bytes \(3000 so far\)".* pulls=3 produced=3000' \
+    "a producer that gives more than it declared fails the call"
+  # Fewer than declared.
+  client upload-short upload PUT "http://127.0.0.1:18124/sink" size=2000 chunk=1000 declare=3000
+  expect upload-short 'upload call 0 error delivery=maybe delivered .*cause="request body: the producer ended after 2000 of the declared 3000 bytes".* pulls=3 produced=2000' \
+    "a producer that ends short of what it declared fails the call"
+  ucount upload-fail 'framing=length received=2500 ' 0 "the server never received more than the declared size"
+  ulogged upload-fail 'EOF from client' "the server sees the connections of the failed calls closed"
+  for s in upload-throw upload-long upload-short; do trace_ok $s; done
+fi
+
+if scenario upload-close; then
+  uploads upload-close 18125 || exit 1
+  # A server that closes mid-upload: maybe delivered, and not retried, though PUT is idempotent,
+  # because the body cannot be sent again.
+  client upload-close upload PUT "http://127.0.0.1:18125/close?after=100000" size=10000000 chunk=16384
+  expect upload-close 'upload call 0 error delivery=maybe delivered .*retries=0 not_retried=LeanHttp.Call.NoRetry.delivered ' \
+    "a PUT whose server closes mid-upload: maybe delivered, not retried"
+  ucount upload-close 'PUT /close ' 1 "the server saw the request once"
+  # The same PUT with its body as bytes is retried: the control for the rule above.
+  client upload-close-bytes upload PUT "http://127.0.0.1:18125/close?after=100000" size=10000000 bytes=1 seed=1
+  expect upload-close-bytes 'upload call 0 error delivery=maybe delivered .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit ' \
+    "control: the PUT with a byte-array body is sent three times"
+  for s in upload-close upload-close-bytes; do trace_ok $s; done
+fi
+
+if scenario upload-redirect; then
+  uploads upload-redirect 18126 || exit 1
+  # A 307 keeps the method and the body, which a stream cannot send again: delivered, not followed.
+  client upload-307 upload POST "http://127.0.0.1:18126/307" size=100000 chunk=8192
+  expect upload-307 'upload call 0 ok status=307 .*hops=0 ' "a 307 after a streamed POST is delivered, not followed"
+  ucount upload-redirect 'POST /sink ' 0 "the server never saw a request to the redirect's target"
+  # With the body as bytes the redirect is followed: the control.
+  client upload-307-bytes upload POST "http://127.0.0.1:18126/307" size=100000 bytes=1
+  expect upload-307-bytes 'upload call 0 ok status=200 .*hops=1 .*response="pattern=ok received=100000' \
+    "control: with a byte-array body the 307 is followed, with the body"
+  for s in upload-307 upload-307-bytes; do trace_ok $s; done
+fi
+
+if scenario upload-notsent; then
+  # A streamed POST to a port where nothing listens: retried (nothing was sent), and the producer
+  # never asked for anything.
+  client upload-notsent upload POST "http://127.0.0.1:$CLOSED/" size=1000 seed=42
+  expect upload-notsent 'upload call 0 error delivery=not sent .*retries=2 .* pulls=0 produced=0' \
+    "a streamed POST that cannot connect is retried and reads nothing of the stream"
+  trace_ok upload-notsent
+fi
+
+if scenario upload-redispatch; then
+  evil upload-redispatch 18128 || exit 1
+  # The server closes a kept-alive connection when the next request arrives: a PUT whose body is
+  # bytes goes again on a fresh connection, a streamed one does not, though PUT is idempotent.
+  client upload-race upload PUT "http://127.0.0.1:18128/die-on-next" size=1000 chunk=500 repeat=2
+  expect upload-race 'upload call 1 error delivery=maybe delivered .*reused=true redispatched=false .*not_retried=LeanHttp.Call.NoRetry.delivered ' \
+    "a streamed PUT whose pooled connection closes as it is sent is not sent again"
+  client upload-race-bytes upload PUT "http://127.0.0.1:18128/die-on-next" size=1000 bytes=1 repeat=2
+  expect upload-race-bytes 'upload call 1 ok status=200 .*redispatched=true' \
+    "control: the same PUT with a byte-array body goes again on a fresh connection"
+  # A 408 the server sent while the connection was idle, read as the response (no idle check): a
+  # byte-array body is sent again, whatever the method; a stream is not, and the 408 is delivered.
+  client upload-408 upload POST "http://127.0.0.1:18128/idle-408?ms=100&linger=2000" size=5 repeat=2 pause=400 idlecheck=off
+  expect upload-408 'upload call 1 ok status=408 .*redispatched=false' \
+    "a streamed POST answered by the 408 of an idle connection: delivered, not sent again"
+  client upload-408-bytes upload POST "http://127.0.0.1:18128/idle-408?ms=100&linger=2000" size=5 bytes=1 repeat=2 pause=400 idlecheck=off
+  expect upload-408-bytes 'upload call 1 ok status=200 .*redispatched=true' \
+    "control: with a byte-array body the POST goes again"
+  for s in upload-race upload-race-bytes upload-408 upload-408-bytes; do trace_ok $s; done
+fi
+
+if scenario upload-exit; then
+  uploads upload-exit 18127 || exit 1
+  # A producer still sleeping when the call ends at its deadline: the process still exits promptly.
+  client upload-exit upload PUT "http://127.0.0.1:18127/sink" size=1000 chunk=100 delay=30000 deadline=500
+  expect upload-exit 'upload call 0 error delivery=maybe delivered .*cause="deadline timeout"' \
+    "a producer that does not answer: the call ends at its deadline"
+  within upload-exit 490 900 "at the 500 ms deadline"
+  trace_ok upload-exit
 fi
 
 # Last, because it points the resolver at a name server that never answers.
