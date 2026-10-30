@@ -12,6 +12,8 @@ public import LeanHttp.Connect
 public import LeanHttp.Error
 public import LeanHttp.Exchange
 public import LeanHttp.Pool
+public import LeanHttp.Tls
+public import LeanHttp.Transport
 public import LeanHttp.Wait
 public import LeanHttp.Wire
 
@@ -62,8 +64,12 @@ released when the kernel gives up on the SYN), a write the peer never accepts (i
 while the peer keeps the connection), and a name lookup that timed out (it runs on in libuv's thread
 pool until the resolver gives up).  `NOTES.md` records what each costs.
 
-Only `http` targets are reached: an `https` request, or a redirect to one, fails with
-`invalidRequest` until the client has TLS.
+An `https` target is reached over TLS (`LeanHttp.Transport`, `LeanHttp.Tls`): once a round of
+connect attempts has a socket, the handshake runs on it within `Config.tlsHandshakeTimeoutMs` and
+the deadline, verifying the server's certificate and name against the trust store of the client's
+context, which the first `https` call makes.  The pool keys origins as `scheme://host:port`, so TLS
+and plain connections are never reused for each other, and a TLS connection goes back to the pool
+only if its session holds nothing.  An idle TLS connection the pool lets go sends `close_notify`.
 -/
 
 namespace LeanHttp
@@ -146,6 +152,11 @@ structure CallInfo where
   led.
   -/
   uri : String := ""
+
+  /--
+  The TLS version of the final request's connection (`TLSv1.3`, say), or `none` over plain TCP.
+  -/
+  tls : Option String := none
 deriving TypeName
 
 /--
@@ -153,9 +164,9 @@ An idle connection's socket, kept next to the pool.
 -/
 structure IdleSocket where
   /--
-  The socket, with no operation pending.
+  The connection, with no operation pending.
   -/
-  socket : TCP.Socket.Client
+  transport : Transport
 
   /--
   The address it is connected to.
@@ -172,7 +183,7 @@ every operation copies them.  They are small (a few connections per origin).
 -/
 structure PoolState where
   /--
-  The pool core, with origins as `host:port`.
+  The pool core, with origins as `scheme://host:port`.
   -/
   pool : Pool String
 
@@ -207,6 +218,12 @@ structure Client where
   -/
   calls : IO.Ref Nat
 
+  /--
+  The TLS context, with the trust store loaded, once the first `https` call has made it.  Under a
+  mutex of its own: loading the trust store reads files, which the pool's mutex must not wait for.
+  -/
+  tlsCtx : Std.Mutex (Option Tls.Context)
+
 namespace Client
 
 /--
@@ -222,7 +239,7 @@ A client with the given configuration and an empty pool.
 def new (config : Config := {}) : BaseIO Client := do
   let freed ← IO.Promise.new
   let state ← Std.Mutex.new { pool := Pool.empty (poolConfig config), freed }
-  return { config, state, calls := ← IO.mkRef 0 }
+  return { config, state, calls := ← IO.mkRef 0, tlsCtx := ← Std.Mutex.new none }
 
 /--
 Runs `f` on the pool state under the mutex.
@@ -242,10 +259,19 @@ private def wake (s : PoolState) : BaseIO PoolState := do
   return { s with freed := ← IO.Promise.new }
 
 /--
-Forgets the sockets of idle connections the pool let go, which closes them.
+Forgets the sockets of idle connections the pool let go, which closes them once released; returns
+their transports, for `release` after the mutex is let go.
 -/
-private def forget (s : PoolState) (ids : List ConnId) : PoolState :=
-  { s with idle := ids.foldl (·.erase ·) s.idle }
+private def forget (s : PoolState) (ids : List ConnId) : PoolState × Array Transport :=
+  let gone := ids.filterMap (s.idle[·]?) |>.map (·.transport) |>.toArray
+  ({ s with idle := ids.foldl (·.erase ·) s.idle }, gone)
+
+/--
+Lets go of idle connections the pool closed: a TLS connection sends `close_notify`.  Called after
+the pool's mutex is released.
+-/
+private def releaseAll (gone : Array Transport) : BaseIO Unit :=
+  gone.forM (·.release)
 
 /--
 Counts of the pool's connections, for tests and monitoring.
@@ -279,11 +305,13 @@ Closes every idle connection and the pool: calls already holding a connection fi
 connections are closed at the end; later calls fail with `Cause.localClose`, not sent (with pooling
 off too).
 -/
-def close (client : Client) : BaseIO Unit :=
-  client.withState fun s => do
+def close (client : Client) : BaseIO Unit := do
+  let gone ← client.withState fun s => do
     let (pool, _) := s.pool.closeAll
+    let gone := s.idle.fold (init := #[]) fun acc _ idle => acc.push idle.transport
     let s ← wake { s with pool, idle := {} }
-    return (s, ())
+    return (s, gone)
+  releaseAll gone
 
 /--
 A seed for the backoff jitter, from the operating system.
@@ -293,15 +321,10 @@ def osSeed : IO UInt64 := do
   return bytes.foldl (init := 0) fun acc b => (acc <<< 8) ||| b.toUInt64
 
 /--
-Whether idle connection `socket` is still clean: nothing arrived on it within `ms` milliseconds of
-starting to wait for input (no bytes, no end of input, no error).  The wait is cancelled before this
-returns, so no receive stays pending.  It does not read: a connection that is not clean is closed.
+Whether idle connection `socket`, over plain TCP, is still clean: `Transport.idleClean`.
 -/
-def idleClean (socket : TCP.Socket.Client) (ms : Nat) : Async Bool := do
-  let waiter ← try socket.native.waitReadable catch _ => return false
-  let result ← try awaitFirst #[waiter.result?] ms catch _ => pure (some none)
-  socket.native.cancelRecv
-  return result.isNone
+def idleClean (socket : TCP.Socket.Client) (ms : Nat) : Async Bool :=
+  (Transport.tcp socket).idleClean ms
 
 /--
 The exchange core's settings for one call of `config`, with a body limit of `maxBody` (by default
@@ -328,14 +351,17 @@ Checks the settings that bound a call before its exchange starts.  Fails with `i
 `deadlineMs` is zero, which no call can meet (and which would still start a name lookup, only to
 abandon it), or if `connectTimeoutMs` is zero, which lets an attempt connect only if the connection
 completes before a timer of zero milliseconds fires: on loopback it does, over any real network it
-would not.  A zero `connectStaggerMs` is accepted: it starts every attempt of a round at once.  A
-`maxActivePerOrigin` of zero is refused: every call would wait out its deadline.
+would not; likewise if `tlsHandshakeTimeoutMs` is zero.  A zero `connectStaggerMs` is accepted: it
+starts every attempt of a round at once.  A `maxActivePerOrigin` of zero is refused: every call
+would wait out its deadline.
 -/
 def checkConfig (config : Config) : Except Cause Unit := do
   if config.deadlineMs == 0 then
     throw (.invalidRequest "deadlineMs must be positive")
   if config.connectTimeoutMs == 0 then
     throw (.invalidRequest "connectTimeoutMs must be positive")
+  if config.tlsHandshakeTimeoutMs == 0 then
+    throw (.invalidRequest "tlsHandshakeTimeoutMs must be positive")
   if config.maxActivePerOrigin == some 0 then
     throw (.invalidRequest "maxActivePerOrigin must be positive: no call could take a connection")
 
@@ -383,9 +409,9 @@ A connection the call holds, from the pool or fresh.
 -/
 private structure Held where
   /--
-  The socket.
+  The connection.
   -/
-  socket : TCP.Socket.Client
+  transport : Transport
 
   /--
   The address it is connected to.
@@ -404,19 +430,22 @@ private structure Held where
 
 /--
 Gives connection `id` back to the pool with the exchange's reuse verdict, keeping its socket if the
-pool keeps it idle.
+pool keeps it idle.  A TLS connection whose session still holds anything (bytes after the response,
+a `close_notify`, a failure) is given back as not reusable, whatever the verdict.
 -/
-private def giveBack (client : Client) (id : ConnId) (socket : TCP.Socket.Client)
+private def giveBack (client : Client) (id : ConnId) (transport : Transport)
     (address : SocketAddress) (reusable : Bool) : BaseIO Unit := do
-  client.withState fun s => do
+  let reusable := reusable && (← transport.clean)
+  let gone ← client.withState fun s => do
     -- The time is read under the mutex, so that the pool sees times in the order of its operations.
     let now ← IO.monoMsNow
     let (pool, returned, closing) := s.pool.giveBack id reusable now
-    let s := forget { s with pool } closing
+    let (s, gone) := forget { s with pool } closing
     let s := match returned with
-      | .idle => { s with idle := s.idle.insert id { socket, address } }
+      | .idle => { s with idle := s.idle.insert id { transport, address } }
       | .dropped | .notOut => s
-    return (← wake s, ())
+    return (← wake s, gone)
+  releaseAll gone
 
 /--
 Lets connection `id` go: its exchange failed, its connect failed, or it failed the idle check.
@@ -433,7 +462,7 @@ when its last reference goes.
 -/
 private def settleHeld (client : Client) (held : Held) (reusable : Bool) : BaseIO Unit := do
   if let some id := held.id then
-    giveBack client id held.socket held.address reusable
+    giveBack client id held.transport held.address reusable
 
 /--
 What taking a connection from the pool came to, with the socket of a reused one.
@@ -452,14 +481,14 @@ private inductive Got where
 Takes a connection of `origin` from the pool, reusing an idle one if `reuse` holds.
 -/
 private def takeConn (client : Client) (origin : String) (reuse : Bool) : BaseIO Got := do
-  client.withState fun s => do
+  let (got, gone) ← client.withState fun s => do
     let now ← IO.monoMsNow
     let (pool, taken, closing) := s.pool.take origin now reuse
-    let s := forget { s with pool } closing
+    let (s, gone) := forget { s with pool } closing
     match taken with
     | .reuse id =>
       match s.idle[id]? with
-      | some idle => return ({ s with idle := s.idle.erase id }, .reuse id idle)
+      | some idle => return ({ s with idle := s.idle.erase id }, (.reuse id idle, gone))
       | none =>
         -- The socket table holds a socket for every idle id, so this does not happen; if it did,
         -- the connection is dropped and the call opens a new one.
@@ -467,12 +496,14 @@ private def takeConn (client : Client) (origin : String) (reuse : Bool) : BaseIO
         let (pool, taken, _) := pool.take origin now false
         let s := { s with pool }
         match taken with
-        | .fresh id => return (s, .fresh id)
-        | .atCap => return (s, .atCap s.freed)
-        | _ => return (s, .closed)
-    | .fresh id => return (s, .fresh id)
-    | .atCap => return (s, .atCap s.freed)
-    | .closed => return (s, .closed)
+        | .fresh id => return (s, (.fresh id, gone))
+        | .atCap => return (s, (.atCap s.freed, gone))
+        | _ => return (s, (.closed, gone))
+    | .fresh id => return (s, (.fresh id, gone))
+    | .atCap => return (s, (.atCap s.freed, gone))
+    | .closed => return (s, (.closed, gone))
+  releaseAll gone
+  return got
 
 /--
 One exchange of a call: its client, where it goes, what it sends, and the call's deadline.
@@ -482,7 +513,7 @@ private structure Attempt where
   client : Client
   /-- Where the request goes. -/
   plan : Plan
-  /-- The origin, as `host:port`. -/
+  /-- The origin, as `scheme://host:port`. -/
   target : String
   /-- The request, encoded. -/
   prepared : PreparedRequest
@@ -498,8 +529,63 @@ private def notSent (cause : Cause) (detail : String := "") : Failure :=
   { cause, delivery := .notSent, written := 0, detail }
 
 /--
-Opens a connection, under pool id `id` if pooling is on, with one round of connect attempts;
-drops the id if the connect fails.
+The client's TLS context, made by the first `https` call and kept: its trust store is chosen by
+`Tls.discoverTrust` from `Config.tls.caFile`, `SSL_CERT_FILE`, `SSL_CERT_DIR` and the well-known
+locations.  A failure is not kept, so a later call tries again.
+-/
+def tlsContext (client : Client) : IO (Except String Tls.Context) :=
+  client.tlsCtx.atomically (m := IO) do
+    if let some ctx ← get then return .ok ctx
+    match ← Tls.discoverTrust client.config.tls.caFile with
+    | .error msg => return .error msg
+    | .ok trust =>
+      match ← (Tls.Context.create trust.file trust.dirs).toBaseIO with
+      | .ok ctx =>
+        set (some ctx)
+        return .ok ctx
+      | .error e => return .error (toString e)
+
+/--
+A new TLS session for the plan's server: its name (`Tls.serverName`) and the client's context.  Made
+before connecting, so that a setup failure (no trust store, a name that cannot be checked) costs no
+connection.
+-/
+private def Attempt.session (a : Attempt) : IO (Except TlsFailure Tls.Session) := do
+  let ctx ← match ← (Client.tlsContext a.client).toBaseIO with
+    | .ok (.ok ctx) => pure ctx
+    | .ok (.error msg) => return .error (.setup msg)
+    | .error e => return .error (.setup (toString e))
+  let (host, isIp) ← match Tls.serverName a.plan.host with
+    | .ok (.host name) => pure (name, (0 : UInt8))
+    | .ok (.ip address) => pure (address, 1)
+    | .error msg => return .error (.setup msg)
+  match ← (Tls.Session.create ctx host isIp).toBaseIO with
+  | .ok session => return .ok session
+  | .error e => return .error (.setup (toString e))
+
+/--
+Runs the TLS handshake of `session` on a freshly connected `socket`, within
+`Config.tlsHandshakeTimeoutMs` and the call's deadline.  No receive is pending when it returns.
+-/
+private def Attempt.secure (a : Attempt) (socket : TCP.Socket.Client) (session : Tls.Session) :
+    Async (Except Failure Transport) := do
+  let timeoutAt := (← IO.monoMsNow) + a.client.config.tlsHandshakeTimeoutMs
+  let shaken ← try handshake socket session timeoutAt a.deadline
+    catch e =>
+      socket.native.cancelRecv.catchExceptions fun _ => pure ()
+      pure (.error (.failed s!"the client failed: {e}"))
+  return match shaken with
+    | .ok () => .ok (.tls socket session)
+    | .error .deadline =>
+      .error (notSent (.timeout .deadline) "the deadline passed during the TLS handshake")
+    | .error .timedOut => .error (notSent (.tls .timeout))
+    | .error (.verify detail) => .error (notSent (.tls (.verify detail)))
+    | .error (.failed detail) => .error (notSent (.tls (.handshake detail)))
+    | .error (.closed detail) => .error (notSent (.tls (.closed detail)))
+
+/--
+Opens a connection, under pool id `id` if pooling is on, with one round of connect attempts and,
+for `https`, the TLS handshake; drops the id if either fails.
 -/
 private def Attempt.connect (a : Attempt) (id : Option ConnId) (progress : Progress) :
     Async (Except Failure Held × Progress) := do
@@ -509,6 +595,14 @@ private def Attempt.connect (a : Attempt) (id : Option ConnId) (progress : Progr
   if a.deadline ≤ (← IO.monoMsNow) then
     if let some id := id then dropConn a.client id
     return (.error (notSent (.timeout .deadline)), progress)
+  let session? ← match a.plan.scheme with
+    | .http => pure none
+    | .https =>
+      match ← a.session with
+      | .ok session => pure (some session)
+      | .error f =>
+        if let some id := id then dropConn a.client id
+        return (.error (notSent (.tls f)), progress)
   -- `Connect.run` reports its failures as values; should it throw anyway, the id must not stay
   -- checked out, so the exception counts as a failed connect.
   let connected : Except String (Except ConnectError Connected) ←
@@ -516,9 +610,18 @@ private def Attempt.connect (a : Attempt) (id : Option ConnId) (progress : Progr
     catch e => pure (.error (toString e))
   match connected with
   | .ok (.ok c) =>
-    let held : Held := { socket := c.socket, address := c.address, id, reused := false }
-    return (.ok held, { progress with
-      rounds := progress.rounds + 1, attempts := progress.attempts ++ c.attempts })
+    let progress := { progress with
+      rounds := progress.rounds + 1, attempts := progress.attempts ++ c.attempts }
+    let transport ← match session? with
+      | none => pure (Transport.tcp c.socket)
+      | some session =>
+        match ← a.secure c.socket session with
+        | .ok transport => pure transport
+        | .error f =>
+          if let some id := id then dropConn a.client id
+          return (.error f, progress)
+    let held : Held := { transport, address := c.address, id, reused := false }
+    return (.ok held, progress)
   | .ok (.error e) =>
     if let some id := id then dropConn a.client id
     return match e with
@@ -563,12 +666,12 @@ private partial def Attempt.acquire (a : Attempt) (reuse : Bool) (progress : Pro
       return (.error (notSent (.timeout .deadline) "waiting for a connection failed"), progress)
   | .fresh id => a.connect (some id) progress
   | .reuse id idle =>
-    let held : Held := { socket := idle.socket, address := idle.address, id, reused := true }
+    let held : Held := { transport := idle.transport, address := idle.address, id, reused := true }
     if !config.idleCheck then
       return (.ok held, progress)
     let t0 ← IO.monoNanosNow
     let window := min config.idleCheckMs (a.deadline - (← IO.monoMsNow))
-    let clean ← try idleClean idle.socket window catch _ => pure false
+    let clean ← try idle.transport.idleClean window catch _ => pure false
     let t1 ← IO.monoNanosNow
     let progress := { progress with idleCheckUs := progress.idleCheckUs + (t1 - t0) / 1000 }
     if clean then
@@ -614,9 +717,9 @@ private partial def Attempt.run (a : Attempt) (reuse : Bool) (progress : Progres
   -- connection is dropped like after any failure, with no receive left pending, and the exchange
   -- is not sent again.
   let begun : Except Failure (Live × Option Response.Head) ←
-    try pure (.ok (← Live.begin held.socket a.prepared a.deadline))
+    try pure (.ok (← Live.begin held.transport a.prepared a.deadline))
     catch e =>
-      try held.socket.native.cancelRecv catch _ => pure ()
+      held.transport.cancelRecv true
       pure (.error {
         cause := .peerClosed, delivery := .maybeDelivered, written := 0,
         detail := s!"the client failed: {e}" })
@@ -660,7 +763,7 @@ private partial def Attempt.run (a : Attempt) (reuse : Bool) (progress : Progres
       -- An exchange that timed out before writing anything (its deadline had passed when it began)
       -- left the connection as it was.
       if f.delivery == .notSent && (f.cause matches .timeout _) then
-        giveBack a.client id held.socket held.address true
+        giveBack a.client id held.transport held.address true
       else dropConn a.client id
     if why.isSome then again else return (.failure f, progress)
   | .response _ _, none =>
@@ -746,12 +849,13 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
   let fail (e : Error) : Async (Except Error α) := do
     spec.observe (.fail e)
     return .error e
-  -- The planner follows redirects to `https` too, which the client cannot reach yet.
+  -- The planner follows only `http` and `https` redirects, which `Client.plan` accepts; should it
+  -- refuse one anyway, the call fails before sending it.
   let plan ← match Client.plan hop.head with
     | .ok plan => pure plan
     | .error msg =>
       let f := notSent (.invalidRequest s!"cannot follow the redirect to {hop.head.uri}: {msg}")
-      let target := s!"{hop.origin.host}:{hop.origin.port}"
+      let target := s!"{hop.origin.scheme.val}://{hop.origin.host}:{hop.origin.port}"
       return ← fail (spec.error st { progress with reused := false, redispatched := false } target f none)
   let target := plan.target
   let prepared := Exchange.prepare spec.xcfg plan.head body
@@ -787,7 +891,7 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
       failedAttempts := progress.attempts, elapsedMs := (← IO.monoMsNow) - spec.started,
       connection := held.id, reused := held.reused, discarded := progress.discarded,
       idleCheckUs := progress.idleCheckUs, redispatched := progress.redispatched, hops := st.hops,
-      retries := st.retries, uri := toString hop.head.uri }
+      retries := st.retries, uri := toString hop.head.uri, tls := ← held.transport.tlsVersion }
     -- The stream keeps this for the body's errors; it holds neither the request nor its body.
     let seed := spec.seed
     let errorOf (f : Failure) : Error := callError seed st progress target f none
@@ -866,7 +970,7 @@ private def run {α : Type} (client : Client) (req : Request ByteArray) (maxBody
 /--
 Sends `req` and hands the final response to `k`, whose body `k` pulls with `BodyStream.read`.
 Redirects and retries happen before `k` is entered: `k` sees only the final response.  The request's
-target must be an absolute `http` URI; its body is sent with a `Content-Length`, and
+target must be an absolute `http` or `https` URI; its body is sent with a `Content-Length`, and
 `Connection: keep-alive` is added (`Connection: close` with pooling off).
 
 ```
@@ -894,9 +998,10 @@ def withResponse {α : Type} (client : Client) (req : Request ByteArray)
 
 /--
 Sends `req` and reads the whole response, up to `Config.maxBodyBytes`.  The request's target must be
-an absolute `http` URI; its body is sent with a `Content-Length`, and `Connection: keep-alive` is
-added (`Connection: close` with pooling off).  Redirects are followed and failures retried as the
-configuration says (`Config.followRedirects`, `Config.maxRetriesPerHop` and the rest).
+an absolute `http` or `https` URI; its body is sent with a `Content-Length`, and
+`Connection: keep-alive` is added (`Connection: close` with pooling off).  Redirects are followed
+and failures retried as the configuration says (`Config.followRedirects`, `Config.maxRetriesPerHop`
+and the rest).
 
 ```
 let client ← LeanHttp.Client.new { deadlineMs := 15 * 60 * 1000, readGapMs := 15 * 60 * 1000 }

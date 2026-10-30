@@ -91,7 +91,7 @@ deriving Repr, Inhabited
 
 /--
 The pool: idle and checked-out connections per origin.  Origins are of any type with decidable
-equality; the shell uses `host:port`.
+equality; the shell uses `scheme://host:port`.
 -/
 structure Pool (κ : Type) where
   /--

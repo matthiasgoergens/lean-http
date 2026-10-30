@@ -22,9 +22,31 @@ open Std.Http
 namespace Client
 
 /--
+Whether a connection is plain or carries TLS.
+-/
+inductive Scheme where
+  /-- `http`: plain TCP. -/
+  | http
+  /-- `https`: TLS over TCP. -/
+  | https
+deriving Repr, DecidableEq, BEq
+
+/--
+The scheme's name, as in a URI.
+-/
+def Scheme.name : Scheme → String
+  | .http => "http"
+  | .https => "https"
+
+/--
 Where a request goes and what goes on the wire, worked out from its absolute-form target.
 -/
 structure Plan where
+  /--
+  Plain TCP or TLS.
+  -/
+  scheme : Scheme
+
   /--
   The host to connect to.
   -/
@@ -41,14 +63,16 @@ structure Plan where
   head : Request.Head
 
 /--
-Works out where `head` goes.  Its target must be an absolute `http` URI; the head sent carries the
-origin-form target (`/` for an empty path) and a `Host` field, unless it has one already.
+Works out where `head` goes.  Its target must be an absolute `http` or `https` URI; the head sent
+carries the origin-form target (`/` for an empty path) and a `Host` field, unless it has one already.
 -/
 def plan (head : Request.Head) : Except String Plan := do
   let .absoluteForm uri := head.uri
     | throw "the request target must be an absolute URI, such as http://host:port/path"
-  if uri.scheme.val != "http" then
-    throw s!"unsupported scheme {uri.scheme.val}: this client speaks plain HTTP only (no TLS yet)"
+  let scheme ← match uri.scheme.val with
+    | "http" => pure Scheme.http
+    | "https" => pure Scheme.https
+    | other => throw s!"unsupported scheme {other}: this client speaks http and https only"
   let some host := uri.host?
     | throw "the URI has no host"
   let port := uri.port
@@ -61,13 +85,15 @@ def plan (head : Request.Head) : Except String Plan := do
       match Header.Value.ofString? value with
       | some value => pure (head.headers.insert Header.Name.host value)
       | none => throw s!"cannot write a Host field for {value}"
-  return { host, port, head := { head with uri := .originForm path uri.query, headers } }
+  return { scheme, host, port, head := { head with uri := .originForm path uri.query, headers } }
 
 /--
-The origin of a plan, as the pool keys it: `host:port`.
+The origin of a plan, as the pool keys it and errors name it: `scheme://host:port`.  A TLS
+connection and a plain one to the same host and port are different origins, and never reused for
+each other.
 -/
 def Plan.target (plan : Plan) : String :=
-  s!"{plan.host}:{plan.port}"
+  s!"{plan.scheme.name}://{plan.host}:{plan.port}"
 
 /--
 How the exchange of a reused connection began, as far as sending it again is concerned.

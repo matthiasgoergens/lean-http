@@ -55,7 +55,7 @@ inductive Event where
   /--
   The request of a hop went out (the client began taking a connection for it) at monotonic time
   `time`: the planner's head `head` (its target absolute), the origin the client connects to
-  (`host:port`), the head it encoded (`wire`) and the size of the body after it.
+  (`scheme://host:port`), the head it encoded (`wire`) and the size of the body after it.
   -/
   | send (head : Request.Head) (target : String) (wire : ByteArray) (bodySize : Nat)
       (time : Timestamp)
@@ -156,8 +156,8 @@ def hopBodySize (hop : Hop) (size : Nat) : Nat :=
 
 /--
 Where the request of `hop` goes and the head it is encoded with, as the client must write it: the
-origin (`host:port`) of `Client.plan` and the head of the request serialiser, for a body of `size`
-bytes; or why the client cannot send it.
+origin (`scheme://host:port`) of `Client.plan` and the head of the request serialiser, for a body of
+`size` bytes; or why the client cannot send it.
 -/
 def expectedWire (hop : Hop) (size : Nat) (keepAlive : Bool) :
     Except String (String × ByteArray) := do

@@ -11,6 +11,8 @@ public import LeanHttp.Connect
 public import LeanHttp.Error
 public import LeanHttp.Exchange
 public import LeanHttp.Pool
+public import LeanHttp.Tls
+public import LeanHttp.Transport
 public import LeanHttp.Wait
 
 /-!

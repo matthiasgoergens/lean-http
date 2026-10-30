@@ -16,6 +16,20 @@ namespace LeanHttp
 set_option linter.all true
 
 /--
+How a client sets up TLS for `https` targets.  Certificate verification is always on.
+-/
+structure TlsConfig where
+  /--
+  A PEM file of the certificates to trust, in place of the system's trust store (default: none).
+  It may hold a private CA's certificate, or a server's own certificate: a trusted certificate may
+  anchor a chain without being a root.  Without it the client honours `SSL_CERT_FILE` and
+  `SSL_CERT_DIR`, as OpenSSL does, and otherwise finds the system's bundle of trusted certificates
+  in the usual places (`Tls.wellKnownFiles`, then `Tls.wellKnownDirs`).
+  -/
+  caFile : Option System.FilePath := none
+deriving Inhabited
+
+/--
 Settings for the calls of a client (`Client.request`, `Client.withResponse`).
 
 The defaults suit ordinary web APIs.  A slow upstream (a model that thinks for minutes before it
@@ -34,6 +48,17 @@ structure Config where
   a call refuses zero as an invalid request.
   -/
   connectTimeoutMs : Nat := 10 * 1000
+
+  /--
+  Time limit for the TLS handshake of an `https` connection, once TCP has connected (default:
+  10 s).  Must be positive: a call refuses zero as an invalid request.
+  -/
+  tlsHandshakeTimeoutMs : Nat := 10 * 1000
+
+  /--
+  How TLS is set up for `https` targets: the certificates to trust.
+  -/
+  tls : TlsConfig := {}
 
   /--
   Delay before the next address is tried while the current attempt is still pending (default:

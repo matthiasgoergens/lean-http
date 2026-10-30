@@ -296,14 +296,18 @@ def start (policy : Policy) (head : Request.Head) (kind : BodyKind) (seed : UInt
 
 /--
 Whether a cause can be retried at all: a connect failure, the connection closing under the request,
-or a read or write timeout.  The client closing the connection itself, the call's deadline, name
-resolution, an invalid request, a malformed response and a limit are never retried.
+a read or write timeout, or a TLS handshake that the connection closing or its time limit cut
+short.  The client closing the connection itself, the call's deadline, name resolution, an invalid
+request, a malformed response, a limit and the other TLS failures (setup, a refused certificate, a
+failed handshake), which another attempt would only repeat, are never retried.
 -/
 def retryableCause : Cause → Bool
   | .connect _ => true
   | .peerClosed => true
   | .timeout .read => true
   | .timeout .write => true
+  | .tls (.closed _) => true
+  | .tls .timeout => true
   | _ => false
 
 /--
