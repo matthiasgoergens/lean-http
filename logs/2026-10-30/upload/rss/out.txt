@@ -1,0 +1,37 @@
+HEAD 2ae0859; mailbox commit 8be4e63
+### variant result: e8b80a8f72d5aec1e25a14e52cc3f03c88c699ca90464e91f89e584028e01249  LeanHttp/Body.lean 163dfc306c4c6f11bb529ab314cadd0af2d704b2aa515da35fd091652e37fab8  LeanHttp/Wait.lean 
+Build completed successfully (52 jobs).
+e8b80a8f72d5aec1e25a14e52cc3f03c88c699ca90464e91f89e584028e01249  LeanHttp/Body.lean
+163dfc306c4c6f11bb529ab314cadd0af2d704b2aa515da35fd091652e37fab8  LeanHttp/Wait.lean
+### variant index: e8b80a8f72d5aec1e25a14e52cc3f03c88c699ca90464e91f89e584028e01249  LeanHttp/Body.lean 05aa70ba1f3a8a9fe763424cdc7e0f62a44343469636fecce8ec6d6244395e43  LeanHttp/Wait.lean 
+Build completed successfully (52 jobs).
+e8b80a8f72d5aec1e25a14e52cc3f03c88c699ca90464e91f89e584028e01249  LeanHttp/Body.lean
+05aa70ba1f3a8a9fe763424cdc7e0f62a44343469636fecce8ec6d6244395e43  LeanHttp/Wait.lean
+### variant mailbox: bbdbda22407f5a194f179dbe4f1e0a9394511845f68bb7b6309632ba8e3816d5  LeanHttp/Body.lean 05aa70ba1f3a8a9fe763424cdc7e0f62a44343469636fecce8ec6d6244395e43  LeanHttp/Wait.lean 
+Build completed successfully (52 jobs).
+bbdbda22407f5a194f179dbe4f1e0a9394511845f68bb7b6309632ba8e3816d5  LeanHttp/Body.lean
+05aa70ba1f3a8a9fe763424cdc7e0f62a44343469636fecce8ec6d6244395e43  LeanHttp/Wait.lean
+result chunk=16384 run 1: upload call 0 ok status=200 bytes=53 ms= response="pattern=ok received=268435456 framing=length chunks=0"
+result chunk=16384 run 1: rss_peak_kb=365284 rss_kb=365284
+index chunk=16384 run 1: upload call 0 ok status=200 bytes=53 ms= response="pattern=ok received=268435456 framing=length chunks=0"
+index chunk=16384 run 1: rss_peak_kb=29408 rss_kb=29408
+mailbox chunk=16384 run 1: upload call 0 ok status=200 bytes=53 ms=response="pattern=ok received=268435456 framing=length chunks=0"
+mailbox chunk=16384 run 1: rss_peak_kb=30148 rss_kb=32196
+result chunk=16384 run 2: upload call 0 ok status=200 bytes=53 ms= response="pattern=ok received=268435456 framing=length chunks=0"
+result chunk=16384 run 2: rss_peak_kb=363292 rss_kb=363292
+index chunk=16384 run 2: upload call 0 ok status=200 bytes=53 ms= response="pattern=ok received=268435456 framing=length chunks=0"
+index chunk=16384 run 2: rss_peak_kb=31452 rss_kb=31452
+mailbox chunk=16384 run 2: upload call 0 ok status=200 bytes=53 ms=response="pattern=ok received=268435456 framing=length chunks=0"
+mailbox chunk=16384 run 2: rss_peak_kb=17164 rss_kb=17164
+result chunk=1024 run 1: upload call 0 ok status=200 bytes=53 ms=56 response="pattern=ok received=268435456 framing=length chunks=0"
+result chunk=1024 run 1: rss_peak_kb=569928 rss_kb=407656
+index chunk=1024 run 1: upload call 0 ok status=200 bytes=53 ms=6 response="pattern=ok received=268435456 framing=length chunks=0"
+index chunk=1024 run 1: rss_peak_kb=210156 rss_kb=135216
+mailbox chunk=1024 run 1: upload call 0 ok status=200 bytes=53 ms=56 response="pattern=ok received=268435456 framing=length chunks=0"
+mailbox chunk=1024 run 1: rss_peak_kb=26932 rss_kb=26932
+result chunk=1024 run 2: upload call 0 ok status=200 bytes=53 ms=6 response="pattern=ok received=268435456 framing=length chunks=0"
+result chunk=1024 run 2: rss_peak_kb=548816 rss_kb=209868
+index chunk=1024 run 2: upload call 0 ok status=200 bytes=53 ms=56 response="pattern=ok received=268435456 framing=length chunks=0"
+index chunk=1024 run 2: rss_peak_kb=206664 rss_kb=112668
+mailbox chunk=1024 run 2: upload call 0 ok status=200 bytes=53 ms= response="pattern=ok received=268435456 framing=length chunks=0"
+mailbox chunk=1024 run 2: rss_peak_kb=29652 rss_kb=29652
