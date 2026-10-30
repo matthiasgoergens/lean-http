@@ -2,7 +2,7 @@
 
 An HTTP/1.1 client for Lean 4.  It speaks plain HTTP only for now: there is no TLS, so `https` URLs are refused.
 
-It is a Lake package that depends on nothing but the Lean toolchain.  Requests and responses are `Std.Http`'s types (`Request`, `Response`, `Headers`), and the library adds the client: name resolution, connects with a timeout per address, a connection pool, redirects, retries with backoff, deadlines and streamed response bodies.
+It is a Lake package that depends on nothing but the Lean toolchain.  Requests and responses are `Std.Http`'s types (`Request`, `Response`, `Headers`), and the library adds the client: name resolution, connects with a timeout per address, a connection pool, redirects, retries with backoff, deadlines, and streamed request and response bodies.
 
 ## How it is built, and what is proved
 
@@ -18,8 +18,8 @@ The shell around them (`LeanHttp.Client`, `LeanHttp.Body`, `LeanHttp.Connect`) p
 The cores' properties are proved in Lean:
 
 - **The codec** (`LeanHttp/Codec/Proofs.lean` and `LeanHttp/Codec/Proofs/`): its result does not depend on how the input is cut into reads; it never delivers more body than `Content-Length` says, nothing for HEAD, 204 or 304, and nothing beyond the body limit; and the head and body it reports are the ones received: the bytes are the interim heads, the head and a body of the kind its framing declares, and the body delivered is that body's payload.
-- **The exchange core** (`LeanHttp/Exchange/Proofs.lean`, `Liveness.lean`, `Response.lean`): no response head is delivered before the request head has been written; a connection is declared reusable only when the bytes received are exactly one complete response, framed with certainty, with nothing after it; until an exchange fails, and unless the caller abandoned the body, the body delivered is a prefix of the body decoded from the bytes received; and every exchange ends by its deadline, provided the shell keeps reporting events when they fall due.
-- **The planner** (`LeanHttp/Call/Proofs.lean`): `Authorization`, `Cookie` and `Proxy-Authorization` never go to an origin other than the first request's; once a byte of a request may have reached the server, it is retried only if its method is idempotent and its body can be replayed (a 307 or 308 redirect still sends a POST again with its body, as the server asked); a call the client gave up on itself is never retried; every retry's delay ends before the call's deadline and within its cap; a call follows at most `maxRedirects` redirects and fails on the next; a 303 turns the request into a GET (a HEAD stays a HEAD), and a method change drops the body and the content fields.
+- **The exchange core** (`LeanHttp/Exchange/Proofs.lean`, `Liveness.lean`, `Response.lean`): no response head is delivered before the request head has been written; a connection is declared reusable only when the bytes received are exactly one complete response, framed with certainty, with nothing after it; until an exchange fails, and unless the caller abandoned the body, the body delivered is a prefix of the body decoded from the bytes received; and every exchange ends by its deadline, provided the shell keeps reporting events when they fall due.  A streamed request body is pulled one chunk at a time, only once the request head and everything before the chunk have been written, so a failure that says nothing was sent has read none of it; what goes on the wire is the body framed as declared, with a `Content-Length` never more than the declared size, and chunked a well-formed chunked body that ends with the last chunk; and a connection is reusable only once all of the body was written.
+- **The planner** (`LeanHttp/Call/Proofs.lean`, `LeanHttp/RequestBody/Proofs.lean`): `Authorization`, `Cookie` and `Proxy-Authorization` never go to an origin other than the first request's; once a byte of a request may have reached the server, it is retried only if its method is idempotent and its body can be replayed (a 307 or 308 redirect still sends a POST again with its body, as the server asked), so a streamed body is never sent again, by a retry, a re-dispatch or a redirect; a call the client gave up on itself is never retried; every retry's delay ends before the call's deadline and within its cap; a call follows at most `maxRedirects` redirects and fails on the next; a 303 turns the request into a GET (a HEAD stays a HEAD), and a method change drops the body and the content fields.
 - **The pool** (`LeanHttp/Pool/Proofs.lean`): every connection is idle, checked out or gone, and only one of them; the hand-outs and returns of a connection alternate; a connection given back as not reusable, or dropped, is never handed out again; the caps on idle and active connections per origin hold; and no connection is handed out after its idle timeout.
 
 `lake build` checks every proof: the proof modules are roots of the library target.  The four scripts `scripts/proof-axioms.lean`, `codec-axioms.lean`, `call-axioms.lean` and `pool-axioms.lean` print the axioms of the main theorems, and CI requires that each depends on nothing beyond `propext`, `Classical.choice` and `Quot.sound`, so on no `sorry`.
@@ -98,6 +98,31 @@ let result ← (client.withResponse req fun response => do
 
 The call returns the callback's result, or an `Error`.  Redirects and retries happen before the callback runs: it sees only the final response.  The client reads from the socket only as fast as the callback reads, and a streamed body has no size limit, but the call's deadline covers reading it.  When the callback returns, or throws, the rest of the body is abandoned: read and discarded if it is short and arrives quickly, keeping the connection for reuse, and otherwise the connection is closed.  An error the stream raises (the connection closed early, a timeout) that leaves the callback becomes the call's `Error`; any other exception from the callback is raised again once the connection is released.  The stream must not be used after the callback ends; if it is, it raises an error.
 
+## Streaming a request body
+
+`Client.upload` sends a request whose body the caller makes while it is sent (`RequestBody.stream`), and reads the whole response as `Client.request` does; `Client.withUpload` hands the response to a callback, as `withResponse` does.  The stream is pulled: the client calls it for each chunk, one at a time, and for the next only once everything before it has been written, so the caller makes the body no faster than the connection takes it and the body is never in memory whole.  From `examples/UploadExample.lean`:
+
+```lean
+def numberedLines (count : Nat) : BaseIO RequestBody := do
+  let next ← IO.mkRef 0
+  return .stream none do
+    let first ← next.modifyGet fun n => (n, n + 100)
+    if first ≥ count then
+      return none
+    let lines := (List.range (min 100 (count - first))).map fun i => s!"line {first + i}\n"
+    return some (String.join lines).toUTF8
+```
+
+```lean
+let body ← numberedLines 10000
+let req := Request.post (.parse! s!"{base}/count") |>.body body
+match ← (client.upload req).block with
+```
+
+A stream returns `some chunk` for each chunk (an empty one is skipped) and `none` at its end.  Without a size, as here, it is sent with `Transfer-Encoding: chunked`, which needs HTTP/1.1; with one (`.stream (some n) next`, or `RequestBody.ofChunks` for chunks already in memory) it is sent with a `Content-Length` and must give exactly `n` bytes.  The stream is first called once the request head has been written, never before, and is asked once more after the last of `n` bytes, to check that it ends there.  A stream that raises an error, or gives more or fewer bytes than it declared, fails the call with the cause `requestBody`; nothing beyond the declared size goes out.
+
+A stream is read once, so a call that may have sent any of it is never sent again: not retried, whatever the method, not sent again on a fresh connection when its pooled one turns out closed, and a 307 or 308 redirect, which would have to send the body again, is delivered to the caller instead of followed (a 301, 302 or 303 that turns the request into a GET is followed without the body).  A call that failed before it wrote anything (a refused connect) has read none of the stream, and is retried as any other.  The stream goes on being pulled while the response arrives; if the server answers before the upload ends (a 413, say), the response is delivered and the connection is not reused.  A chunk the client is waiting for when the call ends is dropped when it comes.
+
 ## Configuration
 
 `Client.new` takes a `Config`; every field has a default.  From `examples/StreamExample.lean`, a client for a slow upstream:
@@ -136,7 +161,7 @@ A failure is retried only when that is safe: a failed connect, or a closed conne
 
 ## Errors
 
-`Client.request` never throws: a failure is an `Error`.  Its `cause` says what went wrong (`connect`, `resolve`, `timeout`, `peerClosed`, `protocol`, `limit`, `tooManyRedirects`, `invalidRequest`, `localClose`), and its `delivery` says how far the call got, which decides whether you can safely try again:
+`Client.request` never throws: a failure is an `Error`.  Its `cause` says what went wrong (`connect`, `resolve`, `timeout`, `peerClosed`, `protocol`, `limit`, `tooManyRedirects`, `invalidRequest`, `localClose`, `requestBody`), and its `delivery` says how far the call got, which decides whether you can safely try again:
 
 - `notSent`: no byte of any request of the call was written, so the server cannot have seen it.  Sending it again is safe whatever the method.
 - `maybeDelivered`: request bytes were written but no complete response head came back.  The server may or may not have acted on the request.
@@ -155,7 +180,6 @@ def advice (err : Error) : String :=
 ## Current limits
 
 - No TLS: an `https` request, or a redirect to one, fails with `invalidRequest`.  No HTTP/2, no proxies, no cookies and no decompression.
-- Request bodies are byte arrays; streamed request bodies are not built.
 - A call cannot be cancelled.  `Client.close` closes the idle connections and refuses later calls, but calls in flight run on.
 - Exiting the process.  On v4.34.1 a process can hang at exit when a socket receive is still pending, a bug in Lean's task manager that [leanprover/lean4#15743](https://github.com/leanprover/lean4/pull/15743) fixes (open as of 2026-10-27); the client ends every receive before a call returns, and the real-socket suite checks that processes exit promptly.  A pending connect, write or name lookup cannot be cancelled on v4.34.1: an abandoned connect attempt holds its socket until the kernel gives up on it (about two minutes with Linux's defaults), and a name lookup cut off by the deadline keeps running until the resolver gives up, which can delay exit and has crashed the process at exit.  `NOTES.md` has the measurements.
 
