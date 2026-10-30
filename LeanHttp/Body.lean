@@ -57,6 +57,29 @@ inductive Completion where
   | pulled (result : Except IO.Error (Option ByteArray))
 
 /--
+Where the operations the shell started for an exchange report when they complete.  Each operation
+gets one continuation, when it starts, that puts its completion, tagged with the operation's
+number, in `inbox` and rings `bell`; a wait listens to a fresh bell.  So a read that stays pending
+through a long upload, losing many waits, gains nothing per wait.
+-/
+structure Mailbox where
+  /--
+  Completions not yet reported, tagged with their operation's number, in the order they came.
+  -/
+  inbox : IO.Ref (Array (Nat × Completion))
+
+  /--
+  Resolved when a completion arrives; replaced before each wait.
+  -/
+  bell : IO.Ref (IO.Promise Unit)
+
+/--
+A mailbox with nothing in it.
+-/
+def Mailbox.new : BaseIO Mailbox := do
+  return { inbox := ← IO.mkRef #[], bell := ← IO.mkRef (← IO.Promise.new) }
+
+/--
 An exchange in progress on a socket.
 -/
 structure Live where
@@ -71,14 +94,24 @@ structure Live where
   ex : Exchange
 
   /--
-  The read in flight.
+  Where the operations report.
   -/
-  reading : Option (Task Completion) := none
+  mailbox : Mailbox
 
   /--
-  The write in flight.
+  The number of the next operation started.
   -/
-  writing : Option (Task Completion) := none
+  nextOp : Nat := 0
+
+  /--
+  The number of the read in flight.
+  -/
+  reading : Option Nat := none
+
+  /--
+  The number of the write in flight.
+  -/
+  writing : Option Nat := none
 
   /--
   Whether any read returned bytes.
@@ -91,9 +124,9 @@ structure Live where
   produce : Async (Option ByteArray) := pure none
 
   /--
-  The call of the producer in flight.
+  The number of the call of the producer in flight.
   -/
-  pulling : Option (Task Completion) := none
+  pulling : Option Nat := none
 
 /--
 What the core handed over in one stretch of driving.
@@ -137,8 +170,18 @@ def Live.cancelRead (live : Live) : BaseIO Live := do
   return { live with reading := none }
 
 /--
-Performs the core's actions: starts its write and its read, and collects what it delivered.  Once
-the exchange has ended, a receive still pending is cancelled.
+Arranges for operation `n` to put its completion in the mailbox and ring the bell when `task`
+finishes.
+-/
+def Mailbox.watch {α : Type} (m : Mailbox) (n : Nat) (task : Task α) (f : α → Completion) :
+    BaseIO Unit :=
+  BaseIO.chainTask (sync := true) task fun r => do
+    m.inbox.modify (·.push (n, f r))
+    (← m.bell.get).resolve ()
+
+/--
+Performs the core's actions: starts its write, its pull and its read, and collects what it
+delivered.  Once the exchange has ended, a receive still pending is cancelled.
 -/
 @[inline] def Live.perform (live : Live) (actions : Array ExchangeAction) (out : Delivered) :
     Async (Live × Delivered) := do
@@ -147,18 +190,47 @@ the exchange has ended, a receive still pending is cancelled.
   for action in actions do
     match action with
     | .write bytes =>
-      let task ← start (live.socket.send bytes)
-      live := { live with writing := some (Task.map (sync := true) (Completion.wrote bytes.size) task) }
+      let n := live.nextOp
+      live.mailbox.watch n (← start (live.socket.send bytes)) (Completion.wrote bytes.size)
+      live := { live with writing := some n, nextOp := n + 1 }
     | .read max =>
-      let task ← start (live.socket.recv? max.toUInt64)
-      live := { live with reading := some (Task.map (sync := true) Completion.read task) }
+      let n := live.nextOp
+      live.mailbox.watch n (← start (live.socket.recv? max.toUInt64)) Completion.read
+      live := { live with reading := some n, nextOp := n + 1 }
     | .pull =>
-      let task ← start live.produce
-      live := { live with pulling := some (Task.map (sync := true) Completion.pulled task) }
+      let n := live.nextOp
+      live.mailbox.watch n (← start live.produce) Completion.pulled
+      live := { live with pulling := some n, nextOp := n + 1 }
     | .deliverHead head => out := { out with head := some head }
     | .deliverBody bytes => out := { out with bodies := out.bodies.push bytes }
     | .finish _ | .fail _ => live ← live.cancelRead
   return (live, out)
+
+/--
+Takes the next completion to report from the mailbox, if there is one: a write before a pull before
+a read, since when several have completed, the core must learn that the request was written before
+it reads the response to it.  Completions of operations the exchange no longer waits for are
+dropped: a receive it cancelled, and once the upload has stopped (the response head arrived first),
+the write still in flight, of which the core makes nothing.
+-/
+def Live.takeCompletion (live : Live) : BaseIO (Option Completion) :=
+  live.mailbox.inbox.modifyGet fun inbox =>
+    let current : Nat × Completion → Bool
+      | (n, .read _) => live.reading == some n
+      | (n, .wrote ..) => live.writing == some n && !live.ex.uploadStopped
+      | (n, .pulled _) => live.pulling == some n
+    let inbox := inbox.filter current
+    let rank : Completion → Nat
+      | .wrote .. => 0
+      | .pulled _ => 1
+      | .read _ => 2
+    let best := inbox.foldl (init := none) fun best (n, c) =>
+      match best with
+      | some (_, b) => if rank c < rank b then some (n, c) else best
+      | none => some (n, c)
+    match best with
+    | some (n, c) => (some c, inbox.filter (·.1 != n))
+    | none => (none, inbox)
 
 /--
 Waits for the first operation in flight to complete, or for the core's next deadline, and reports
@@ -167,12 +239,17 @@ what happened to the core.  Returns the core's actions.
 @[inline] def Live.next (live : Live) : Async (Live × Array ExchangeAction) := do
   let now ← IO.monoMsNow
   let wait := (live.ex.nextDeadline.getD now) - now
-  -- Once the upload has stopped (the response head arrived first), the core makes nothing of the
-  -- write still in flight, which may never complete; it is left out of the race, since every race
-  -- adds a continuation to each task in it, and a long download would pile them up on that write.
-  let writing := if live.ex.uploadStopped then none else live.writing
-  let pending := live.reading.toArray ++ writing.toArray ++ live.pulling.toArray
-  let (event, live) ← match ← awaitFirst pending wait with
+  -- A fresh bell first, then a look in the inbox: a completion that arrives after the look rings
+  -- the new bell.
+  let bell ← IO.Promise.new
+  live.mailbox.bell.set bell
+  let completion ← match ← live.takeCompletion with
+    | some c => pure (some c)
+    | none =>
+      match ← awaitFirst #[bell.result?] wait with
+      | none => pure none
+      | some _ => live.takeCompletion
+  let (event, live) ← match completion with
     | none => pure (ExchangeEvent.tick, live)
     | some (.read result) =>
       -- An empty read, which a receive of a positive size should not return, is reported as a
@@ -232,7 +309,8 @@ head until the caller asks for them.
 def Live.begin (socket : TCP.Socket.Client) (prepared : PreparedRequest) (deadline : Nat)
     (produce : Async (Option ByteArray) := pure none) : Async (Live × Option Response.Head) := do
   let (ex, actions) := Exchange.begin prepared (← IO.monoMsNow) deadline
-  let (live, out) ← ({ socket, ex, produce } : Live).until actions (·.head.isSome)
+  let (live, out) ← ({ socket, ex, produce, mailbox := ← Mailbox.new } : Live).until actions
+    (·.head.isSome)
   return (live, out.head)
 
 /--
