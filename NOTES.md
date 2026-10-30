@@ -226,3 +226,25 @@ Left open:
 - A read in flight through a long upload gains a continuation per write slice; after an early response head the write in flight stays in the race until the upload stops (at most the write gap).
 - Reading a stream in small pulls costs a pull per read from the socket; a caller that wants throughput should pull large pieces or use `request`.
 - Each retry of a connect resolves the name again; a lookup cut by the deadline still holds a thread of libuv's pool and can delay exit, as before.
+
+## TLS: the design and its review
+
+Designed on 2026-10-30 (`DESIGN.md`, "TLS").  Before anything was built, the design was reviewed by a fresh Claude and by Gemini through `agy-readonly`, each looking for ways it breaks and for better alternatives (`logs/2026-10-30/tls/reviews/`, the prompt in `design-prompt.txt`).  Both endorsed the choice of a thin binding to the toolchain's static OpenSSL over memory BIOs, and both rejected the first draft's split of the work.  What changed:
+
+- **No TLS task, no Lean mutex.**  The draft made a TLS receive a task of its own that ran its TCP receives through its own continuations, with a per-connection mutex to keep ciphertext in order and a cancelled flag to stop a registration after a cancel.  The Claude review showed that the mutex deadlocks against the event loop's lock: `send` takes the loop's (recursive) lock, the loop thread holds it while it runs callbacks, and a continuation chained with `sync := true` (the shell's habit) runs inline there and would take the TLS mutex in the opposite order; `cancelRecv` resolves the dropped promise inline too, on the thread holding the TLS mutex.  Both reviews also found that a TCP receive that had completed when the cancel came would be lost or reordered.  Now the driver (`Live`) does the TLS work in its own steps, so the session is touched by one task at a time, and cancelling stays the TCP socket's `cancelRecv`.
+- **A read takes every buffered record.**  Both reviews: `SSL_read` returns one record, so a response followed in the same TCP read by stray bytes or a `close_notify` would be finished as reusable while the rest sat in the read BIO, invisible to the idle check's `waitReadable`, and be read as the next response.  The read now loops to the size asked, and a connection whose session holds anything is never pooled.
+- **The idle check does not read.**  The draft's refinement (read once, and stay clean if only a late session ticket arrived) could not tell a partial record from a consumed ticket (Gemini) and brought back the cancel race (Claude).  Any byte, or anything buffered, now makes a connection unclean; the client asks for no tickets.
+- **The deadline is the deadline's timeout**, not a TLS time-out, during the handshake as elsewhere (Gemini: otherwise the planner could retry a call whose deadline had passed).  `tlsHandshakeTimeoutMs` must be positive.  The handshake waits for its last flight to be written.
+- **OpenSSL's macros and inline functions** cannot be declared by hand: they are called through the `*_ctrl` functions with named constants the check compares, and `ERR_GET_REASON` is avoided by classifying truncation from what the transport fed.
+- **Initialisation** without OpenSSL's exit handler and without its configuration file; the thread's error queue cleared before every operation.
+- **Trust store directories** are used only after every bundle file is missing, and only if they hold OpenSSL's hashed names: a directory without them loads nothing and would turn a missing trust store into a verification failure.  Empty `SSL_CERT_FILE` and `SSL_CERT_DIR` are ignored; set but unreadable is an error.
+- **Host names**: an empty name after removing the trailing dot would make `SSL_set1_host` turn the check off (Gemini), so it is refused, as is a name that reads as an IPv4 address once the dot is gone; partial wildcards must be refused explicitly (`X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS`); no fallback to the common name.
+- **`close_notify` only from idle connections**, sent after the pool's mutex is released: after an exchange the shell cannot tell a clean end from a write still in flight.
+- **Platforms**: only Linux toolchains pin OpenSSL 3.6.0 (Claude, from the toolchain's packaging scripts); the design now says so, and that the interpreter has no OpenSSL.
+
+Rejected or corrected:
+
+- Gemini's proposal of a Lean mutex around each OpenSSL call and the send of its output is the draft's design, which the deadlock rules out.
+- Gemini said `BIO_set_mem_eof_return` expands to `BIO_ctrl(b, BIO_C_SET_FD, ...)`; OpenSSL's `bio.h` says `BIO_C_SET_BUF_MEM_EOF_RETURN` (130).
+- A process-wide cache of contexts keyed by the trust settings (Claude) is not built: a context per client, made once.
+- Reusing the upstream `session.cpp` with a Lean side of our own (Claude, as an alternative): its pending-write queue has no use with memory BIOs and its Lean side serialises reads and writes, which the exchange core's full duplex (an early response during an upload) rules out; `native/tls.c` keeps primitives of the same shape, so that it can give way to the upstream ones once a toolchain ships them.
