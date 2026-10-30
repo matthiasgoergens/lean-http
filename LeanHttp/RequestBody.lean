@@ -29,8 +29,10 @@ connection, and a 307 or 308 redirect, which would have to send the body again, 
 caller instead of followed.
 
 With a declared size the body is sent with a `Content-Length`, and a producer that gives more or
-fewer bytes fails the call (`Cause.requestBody`) before more than the declared size goes out.
-Without one it is sent with `Transfer-Encoding: chunked`, which needs HTTP/1.1.
+fewer bytes fails the call (`Cause.requestBody`) before more than the declared size goes out.  After
+the last of those bytes the producer is asked once more, to check that it ends there; if the
+response has already ended the call, that answer is not waited for.  Without a declared size the
+body is sent with `Transfer-Encoding: chunked`, which needs HTTP/1.1.
 -/
 
 namespace LeanHttp

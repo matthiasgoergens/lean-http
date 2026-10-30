@@ -149,7 +149,7 @@ Retry choices:
 - **A wait must end before the deadline**, strictly: a retry that would start at the deadline would time out at once.
 - **A 429 or 503 is retried only for a request that could be retried after bytes were sent** (idempotent, replayable), since the server has received the request.  This makes one theorem (`plan_no_resend`) cover every way a request is sent again.
 - **A `Retry-After` date is measured from the response's `Date`**, when it has one, rather than from the local clock, so that clock skew between client and server does not change the wait; a stale `Date` can only make the wait longer, and `Policy.maxRetryAfterMs` and the deadline bound it.  `Clock.wallSec` has no default, so that a shell cannot leave it at 1970.
-- A retry after a `notSent` failure may send a streamed body, which is safe only if nothing of the stream was read before the failure: an obligation on a shell with streamed request bodies, which is not built (bodies are bytes).
+- A retry after a `notSent` failure may send a streamed body, which is safe only if nothing of the stream was read before the failure: an obligation on a shell with streamed request bodies, which the exchange core meets by pulling nothing before its first write ("Streamed request bodies", below).
 
 Two things learnt while proving it:
 
@@ -220,10 +220,10 @@ Two rounds of independent review of the shell (a fresh Claude and Gemini each ti
 
 Left open:
 
-- Request bodies are bytes; streamed request bodies are not built.  A call cannot be cancelled.  (`https` was refused then; "TLS", below.)
+- Request bodies were bytes then ("Streamed request bodies", below).  A call cannot be cancelled.  (`https` was refused then; "TLS", below.)
 - `request`'s body limit applies to the bodies of redirects and retried responses too, so with `maxBodyBytes` below `drainBytes` such a body costs its connection rather than being drained.
 - The record covers the planner's steps only: the exchange and pool cores are not recorded, and the outcomes the client reports are taken as given.  A retry's real wake-up time has a lower bound in the check, not an upper one.  The record of a delivered call ends at the delivery.
-- A read in flight through a long upload gains a continuation per write slice; after an early response head the write in flight stays in the race until the upload stops (at most the write gap).
+- A read in flight through a long upload gained a continuation per write slice (the mailbox of "Streamed request bodies", below, removed that); after an early response head the write in flight stays in the race until the upload stops (at most the write gap).
 - Reading a stream in small pulls costs a pull per read from the socket; a caller that wants throughput should pull large pieces or use `request`.
 - Each retry of a connect resolves the name again; a lookup cut by the deadline still holds a thread of libuv's pool and can delay exit, as before.
 

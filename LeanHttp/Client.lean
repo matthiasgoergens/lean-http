@@ -1026,7 +1026,9 @@ before it has been written, never before the request head is out, and it goes on
 `k` reads the response.  It is never sent again once any of the request was written: no retry, no
 re-dispatch, and a 307 or 308 redirect, which would send the body again, is delivered to `k`
 instead of followed.  A producer that raises an error, or gives more or fewer bytes than the size it
-declared, fails the call with `Cause.requestBody`.
+declared, fails the call with `Cause.requestBody` (a producer asked whether it has ended after its
+whole declared size, once the response has already ended the call, is not waited for).  The upload
+goes on only while `k` reads the response body.
 -/
 def withUpload {α : Type} (client : Client) (req : Request RequestBody)
     (k : Response BodyStream → Async α) : Async (Except Error α) :=
