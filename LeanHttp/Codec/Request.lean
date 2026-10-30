@@ -1,19 +1,23 @@
 module
 
 public import Std.Http.Data
+public import LeanHttp.Codec.Chunked
 
 @[expose] public section
 
 /-!
 # Encoding a request
 
-The client's request serialiser: a request head and a body with a `Content-Length`, in HTTP/1.1.
+The client's request serialiser: a request head and a body with a `Content-Length`, or a head for a
+body of unknown size sent with `Transfer-Encoding: chunked`, in HTTP/1.1, and the chunks of such a
+body.
 It makes the same bytes as the vendored HTTP/1.1 machine's writer did for the requests the client
 sends, except for one field (`codec-diff` compares the two on generated heads), and decides the same
 request-side keep-alive:
 
 - the framing fields of the head are replaced by a `Content-Length` for the body, which is left out
-  for an empty body when the method does not anticipate content (RFC 9110 section 8.6);
+  for an empty body when the method does not anticipate content (RFC 9110 section 8.6), or by
+  `Transfer-Encoding: chunked` for a body whose size is not known in advance;
 - the head's `Connection` fields are replaced by `Connection: close`, or by `Connection: keep-alive`
   if the connection is to be kept alive, which needs keep-alive asked for and a head that allows it
   (RFC 9112 section 9.3: in HTTP/1.1 no `close` option, in HTTP/1.0 a `keep-alive` option).
@@ -77,12 +81,29 @@ structure EncodedRequest where
   keepAlive : Bool
 
 /--
-Encodes the head of a request with a body of `bodySize` bytes, and says whether it asks for the
+How a request body is framed on the wire.
+-/
+inductive RequestFraming where
+  /--
+  A `Content-Length` of `size` bytes.
+  -/
+  | length (size : Nat)
+
+  /--
+  `Transfer-Encoding: chunked` (RFC 9112 section 7.1): the size is not known in advance.  HTTP/1.1
+  only.
+  -/
+  | chunked
+deriving Repr, Inhabited, DecidableEq
+
+/--
+Encodes the head of a request whose body is framed by `framing`, and says whether it asks for the
 connection to stay open.  `keepAlive` says whether the caller wants the connection kept open; the
 head's own fields may still refuse it (`requestKeepAlive`).  The fields are changed in the order the
-vendored writer changed them, so that the bytes are the same.
+vendored writer changed them, so that the bytes are the same for a `Content-Length`.
 -/
-def encodeHead (keepAlive : Bool) (head : Request.Head) (bodySize : Nat) : ByteArray × Bool :=
+def encodeHeadWith (keepAlive : Bool) (head : Request.Head) (framing : RequestFraming) :
+    ByteArray × Bool :=
   let keepAlive := keepAlive && requestKeepAlive head
   let headers := head.headers
     |>.erase Header.Name.contentLength
@@ -91,14 +112,28 @@ def encodeHead (keepAlive : Bool) (head : Request.Head) (bodySize : Nat) : ByteA
   let headers :=
     headers.insert Header.Name.connection (if keepAlive then .mk "keep-alive" else .mk "close")
   let headers :=
-    if bodySize == 0 && !anticipatesContent head.method then headers
-    else
+    match framing with
+    | .length bodySize =>
+      if bodySize == 0 && !anticipatesContent head.method then headers
+      else
+        headers
+          |>.erase Header.Name.contentLength
+          |>.erase Header.Name.transferEncoding
+          |>.insert Header.Name.contentLength (.ofString! (toString bodySize))
+    | .chunked =>
       headers
         |>.erase Header.Name.contentLength
         |>.erase Header.Name.transferEncoding
-        |>.insert Header.Name.contentLength (.ofString! (toString bodySize))
+        |>.insert Header.Name.transferEncoding (.mk "chunked")
   ((Internal.Encode.encode (v := .v11) Internal.ChunkedBuffer.empty { head with headers }).toByteArray,
     keepAlive)
+
+/--
+Encodes the head of a request with a body of `bodySize` bytes (`encodeHeadWith` with a
+`Content-Length`).
+-/
+def encodeHead (keepAlive : Bool) (head : Request.Head) (bodySize : Nat) : ByteArray × Bool :=
+  encodeHeadWith keepAlive head (.length bodySize)
 
 /--
 Encodes `head` with `body` (`encodeHead`, then the body).
@@ -106,5 +141,18 @@ Encodes `head` with `body` (`encodeHead`, then the body).
 def encodeRequest (keepAlive : Bool) (head : Request.Head) (body : ByteArray) : EncodedRequest :=
   let (headBytes, keepAlive) := encodeHead keepAlive head body.size
   { bytes := headBytes ++ body, headBytes := headBytes.size, keepAlive }
+
+/--
+One chunk of a chunked body on the wire: its size line, its data and CRLF, as `encodeChunk` lays
+it out (`chunkFrame_data`).  Only for non-empty data, since an empty chunk would end the body.
+-/
+def chunkFrame (data : ByteArray) : ByteArray :=
+  ByteArray.mk (hexDigits data.size ++ [cr, lf]).toArray ++ data ++ ByteArray.mk #[cr, lf]
+
+/--
+The end of a chunked body: the last chunk and an empty trailer section.
+-/
+def lastChunk : ByteArray :=
+  ByteArray.mk #[48, cr, lf, cr, lf]
 
 end LeanHttp.Codec

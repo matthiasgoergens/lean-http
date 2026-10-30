@@ -179,6 +179,12 @@ inductive Cause where
   redirect's status is the error's `status`.
   -/
   | tooManyRedirects (limit : Nat)
+
+  /--
+  A streamed request body could not be sent as declared: its producer raised an error, or gave more
+  or fewer bytes than the size it declared.  This is not retried.
+  -/
+  | requestBody (detail : String)
 deriving Repr, Inhabited
 
 namespace Call
@@ -396,6 +402,7 @@ def describe : Cause → String
   | .resolve host detail => s!"could not resolve {host}: {detail}"
   | .invalidRequest detail => s!"invalid request: {detail}"
   | .tooManyRedirects n => s!"more than {n} redirects"
+  | .requestBody detail => s!"request body: {detail}"
 
 end Cause
 
