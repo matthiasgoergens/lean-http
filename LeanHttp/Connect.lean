@@ -3,6 +3,7 @@ module
 public import Std.Async.TCP
 public import Std.Async.DNS
 public import LeanHttp.Address
+public import LeanHttp.Cancel
 public import LeanHttp.Config
 public import LeanHttp.Error
 public import LeanHttp.Wait
@@ -12,8 +13,10 @@ public section
 /-!
 # Connecting
 
-Name resolution, bounded only by the call's deadline and the resolver's own timeouts, then one round
-of connect attempts.
+Name resolution (`resolve`), bounded only by the call's deadline, its cancellation and the
+resolver's own timeouts, and one round of connect attempts over the addresses found (`run`).  The
+client resolves the name for each round, as Go's dialer does for each dial, so that a retry sees a
+changed answer.
 
 Within a round the addresses are tried in order, each with its own time limit
 (`Config.connectTimeoutMs`).  The next attempt starts when the current one fails, or when it has not
@@ -22,6 +25,10 @@ attempt to connect wins.  The others are abandoned: a loser that connects later 
 dropped, which closes it.  v4.34.1 cannot cancel a pending connect, so a loser still waiting for an
 answer keeps its socket until the kernel gives up on it; it holds no worker and does not keep the
 process from exiting.
+
+Cancelling the call ends the lookup's wait or the round at once.  The lookup and any attempts still
+pending are abandoned, as the deadline abandons them, since v4.34.1 can cancel neither; an attempt
+that connects afterwards has its socket dropped.
 
 A round fails when every attempt in it has failed.  Whether to try again, and after what backoff, is
 the per-call planner's decision (`Call.plan`), which sees a failed round as a failure with nothing
@@ -72,6 +79,12 @@ inductive ConnectError where
   -/
   | deadline (attempts : Array ConnectAttempt)
 
+  /--
+  The call was cancelled while connecting: while the name was looked up (no attempts), or during the
+  round of attempts.
+  -/
+  | cancelled (reason : Std.CancellationReason) (attempts : Array ConnectAttempt)
+
 namespace Connect
 
 /--
@@ -112,6 +125,11 @@ inductive RoundResult where
   -/
   | deadline
 
+  /--
+  The call was cancelled first.
+  -/
+  | cancelled (reason : Std.CancellationReason)
+
 /--
 What one wait inside a round ended with.
 -/
@@ -132,10 +150,11 @@ private inductive Slot where
 
 /--
 One round of attempts over `addrs`, in order, staggered.  Returns the round's result and the record
-of every attempt started, except the one that won.
+of every attempt started, except the one that won.  A round cancelled before it ends returns
+`cancelled` even if an attempt connected meanwhile; that socket is dropped.
 -/
-def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (deadline : Nat) :
-    Async (RoundResult × Array ConnectAttempt) := do
+def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (deadline : Nat)
+    (cancel : Cancel) : Async (RoundResult × Array ConnectAttempt) := do
   let slot : IO.Ref Slot ← IO.mkRef .open
   -- Resolved when an attempt has put its socket in `slot`.
   let signal : IO.Promise Unit ← IO.Promise.new
@@ -156,6 +175,9 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
   for h : i in [0:addrs.size] do
     if ← signal.isResolved then
       break
+    if let some reason ← cancel.reason? then
+      result := .cancelled reason
+      break
     let left ← remainingMs deadline
     if left == 0 then
       result := .deadline
@@ -170,22 +192,29 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
       else
         pure (Task.map (sync := true) (fun _ => some Woken.attemptEnded) task.run)
     let waitMs := if isLast then left else min config.connectStaggerMs left
-    match ← awaitFirst #[signalled, ended] waitMs with
-    | some (some .won) => break
-    | some (some .allEnded) =>
+    match ← cancel.race #[signalled, ended] waitMs with
+    | .cancelled reason =>
+      result := .cancelled reason
+      break
+    | .done (some .won) => break
+    | .done (some .allEnded) =>
       result := .failed
       break
-    | some (some .attemptEnded) | some none => pure ()
-    | none =>
+    | .done (some .attemptEnded) | .done none => pure ()
+    | .timedOut =>
       if (← remainingMs deadline) == 0 then
         result := .deadline
         break
       -- Otherwise the stagger passed with the attempt still pending: start the next one.
-  -- Close the round.  Whatever the loop concluded, an attempt that connected wins.
+  -- Close the round.  Whatever the loop concluded, an attempt that connected wins, unless the call
+  -- was cancelled, which the loop may have missed if an attempt won the last wait.
+  if let some reason ← cancel.reason? then
+    result := .cancelled reason
   let won ← slot.modifyGet fun st => (st, .closed)
-  let (final, winner) := match won with
-    | .won i socket => (RoundResult.connected socket addrs[i]!, some i)
-    | _ => (result, none)
+  let (final, winner) := match won, result with
+    | _, .cancelled _ => (result, none)
+    | .won i socket, _ => (RoundResult.connected socket addrs[i]!, some i)
+    | _, _ => (result, none)
   let mut attempts := #[]
   for h : i in [0:started.size] do
     if winner == some i then
@@ -202,41 +231,45 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
   return (final, attempts)
 
 /--
-Resolves `target` to the socket addresses to try, in order.
+Resolves `target` to the addresses to try, in the order to try them: a literal as it is, a name by
+a lookup, bounded only by the call's deadline and its cancellation.
 -/
-def resolve (target : Target) (port : UInt16) (deadline : Nat) :
-    Async (Except ConnectError (Array SocketAddress)) := do
+def resolve (target : Target) (deadline : Nat) (cancel : Cancel) :
+    Async (Except ConnectError (Array IPAddr)) := do
   match target with
-  | .literal addr => return .ok #[Address.withPort addr port]
+  | .literal addr => return .ok #[addr]
   | .name host =>
-    -- Only the deadline bounds the lookup: v4.34.1 cannot cancel one, and an abandoned lookup
-    -- occupies a thread of libuv's pool, and delays the process's exit, until the resolver gives
-    -- up by its own timeouts.  So the client leaves those timeouts to decide.
-    let lookup ← start (DNS.getAddrInfo host (toString port))
-    match ← awaitWithin lookup (← remainingMs deadline) with
-    | none => return .error (.deadline #[])
-    | some (.error err) => return .error (.resolve host (toString err))
-    | some (.ok answers) =>
+    -- A lookup cannot be cancelled: none is started for a call cancelled already, or past its
+    -- deadline.
+    if let some reason ← cancel.reason? then return .error (.cancelled reason #[])
+    if (← remainingMs deadline) == 0 then return .error (.deadline #[])
+    -- Only the deadline and the call's cancellation bound the lookup: v4.34.1 cannot cancel one,
+    -- and an abandoned lookup occupies a thread of libuv's pool, and delays the process's exit,
+    -- until the resolver gives up by its own timeouts.  So the client leaves those timeouts to
+    -- decide.  The port plays no part in the answer; `round` adds it.
+    let lookup ← start (DNS.getAddrInfo host "0")
+    match ← cancel.race #[lookup] (← remainingMs deadline) with
+    | .timedOut => return .error (.deadline #[])
+    | .cancelled reason => return .error (.cancelled reason #[])
+    | .done (.error err) => return .error (.resolve host (toString err))
+    | .done (.ok answers) =>
       let addrs := Address.connectOrder answers
       if addrs.isEmpty then
         return .error (.resolve host "no addresses")
-      return .ok (addrs.map (Address.withPort · port))
+      return .ok addrs
 
 /--
-Connects to `target`: resolves it, then runs one round of attempts, numbered `roundIndex` in their
-records, within `deadline` (a value of `IO.monoMsNow`).  Each round resolves the name again, as
-Go's dialer does for each dial, so that a retry sees a changed answer; a lookup is cheap next to
-the backoff before it.
+Connects to one of `addrs` (as `resolve` ordered them) at `port`: one round of attempts, numbered
+`roundIndex` in their records, within `deadline` (a value of `IO.monoMsNow`), unless `cancel` comes
+first.  The name is looked up by the caller (`resolve`), not here.
 -/
-def run (config : Config) (target : Target) (port : UInt16) (roundIndex : Nat) (deadline : Nat) :
-    Async (Except ConnectError Connected) := do
-  let addrs ← match ← resolve target port deadline with
-    | .error err => return .error err
-    | .ok addrs => pure addrs
-  let (result, attempts) ← round config roundIndex addrs deadline
+def run (config : Config) (addrs : Array IPAddr) (port : UInt16) (roundIndex : Nat) (deadline : Nat)
+    (cancel : Cancel) : Async (Except ConnectError Connected) := do
+  let (result, attempts) ← round config roundIndex (addrs.map (Address.withPort · port)) deadline cancel
   match result with
   | .connected socket address => return .ok { socket, address, attempts }
   | .deadline => return .error (.deadline attempts)
+  | .cancelled reason => return .error (.cancelled reason attempts)
   | .failed => return .error (.exhausted attempts)
 
 end Connect

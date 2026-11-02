@@ -2,6 +2,7 @@ module
 
 public import Std.Async.TCP
 public import LeanHttp.Tls
+public import LeanHttp.Cancel
 public import LeanHttp.Wait
 
 public section
@@ -249,15 +250,18 @@ inductive HandshakeFailure where
   | timedOut
   /-- The call's deadline passed. -/
   | deadline
+  /-- The call was cancelled. -/
+  | cancelled (reason : Std.CancellationReason)
 deriving Repr
 
 /--
 Runs the handshake of `session` over `socket` until it completes and its last flight has been
-written, or it fails, or `timeoutAt` or `deadline` (values of `IO.monoMsNow`) passes.  On a
-time-out the pending receive is cancelled; no receive is pending when this returns.
+written, or it fails, or `timeoutAt` or `deadline` (values of `IO.monoMsNow`) passes, or the call is
+cancelled.  On a time-out or a cancellation the pending receive is cancelled; no receive is pending
+when this returns.  A write of the handshake still in flight is abandoned.
 -/
 partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (timeoutAt deadline : Nat)
-    (lastWrite : Option (AsyncTask Unit) := none) (ended : Bool := false) :
+    (cancel : Cancel) (lastWrite : Option (AsyncTask Unit) := none) (ended : Bool := false) :
     Async (Except HandshakeFailure Unit) := do
   -- A timer may fire up to a millisecond early by `IO.monoMsNow`: when the deadline came first, the
   -- wait was for the deadline.
@@ -272,10 +276,11 @@ partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (time
   | .closed detail => return .error (.closed detail)
   | .done =>
     let some task := lastWrite | return .ok ()
-    match ← awaitFirst #[task] (Nat.min timeoutAt deadline - (← IO.monoMsNow)) with
-    | none => return .error (← late)
-    | some (.error e) => return .error (.closed s!"writing the handshake: {e}")
-    | some (.ok ()) => return .ok ()
+    match ← cancel.race #[task] (Nat.min timeoutAt deadline - (← IO.monoMsNow)) with
+    | .timedOut => return .error (← late)
+    | .cancelled reason => return .error (.cancelled reason)
+    | .done (.error e) => return .error (.closed s!"writing the handshake: {e}")
+    | .done (.ok ()) => return .ok ()
   | .wantRead =>
     -- After the end of input OpenSSL reports a failure; should it ask for more anyway, the
     -- connection has closed.
@@ -283,16 +288,19 @@ partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (time
     let left := Nat.min timeoutAt deadline - (← IO.monoMsNow)
     if left == 0 then return .error (← late)
     let recv ← start (socket.recv? (Transport.cipherReadBytes 0).toUInt64)
-    match ← awaitFirst #[recv] left with
-    | none =>
+    match ← cancel.race #[recv] left with
+    | .timedOut =>
       socket.native.cancelRecv.catchExceptions fun _ => pure ()
       return .error (← late)
-    | some (.error e) => return .error (.closed (toString e))
-    | some (.ok input) =>
+    | .cancelled reason =>
+      socket.native.cancelRecv.catchExceptions fun _ => pure ()
+      return .error (.cancelled reason)
+    | .done (.error e) => return .error (.closed (toString e))
+    | .done (.ok input) =>
       let fed ← (match input with
         | some bytes => session.feed bytes
         | none => session.feedEof).toBaseIO
       if let .error e := fed then return .error (.failed (toString e))
-      handshake socket session timeoutAt deadline lastWrite input.isNone
+      handshake socket session timeoutAt deadline cancel lastWrite input.isNone
 
 end LeanHttp

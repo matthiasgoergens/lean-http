@@ -47,6 +47,7 @@ else
   echo "FAIL request-example.txt: no line for the refused connect"
   fails=$((fails + 1))
 fi
+expect "$out/request-example.txt" 'gave up: the call was cancelled (cancel); the server may have acted on the request: send it again only if that is harmless'
 
 "$here/.lake/build/bin/stream-example" "$base" > "$out/stream-example.txt" 2>&1 \
   || { echo "FAIL stream-example exited with status $?"; fails=$((fails + 1)); }

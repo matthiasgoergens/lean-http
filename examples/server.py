@@ -10,12 +10,14 @@
     POST /count            200, a JSON object that says how many body bytes and lines arrived and
                            how the body was framed (Content-Length or chunked)
     GET  /numbers?count=N  200, the numbers 0 to N-1, one per line, in a chunked body
+    GET  /slow?ms=N        200, after N milliseconds (default 1000)
 
 Prints "listening on PORT" once it accepts connections.  Usage: server.py [PORT] (default 8080)
 """
 
 import argparse
 import json
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -45,6 +47,9 @@ class Handler(BaseHTTPRequestHandler):
                 chunk = "".join(f"{n}\n" for n in range(start, min(start + batch, count))).encode()
                 self.wfile.write(f"{len(chunk):x}\r\n".encode() + chunk + b"\r\n")
             self.wfile.write(b"0\r\n\r\n")
+        elif url.path == "/slow":
+            time.sleep(int(parse_qs(url.query).get("ms", ["1000"])[0]) / 1000)
+            self.send_body(b"slow\n", "text/plain")
         else:
             self.send_error(404)
 

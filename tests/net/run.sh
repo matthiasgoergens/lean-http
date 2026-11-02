@@ -175,7 +175,7 @@ LARGE=18088     # onewrite.py, for a large POST
 EARLY=18089     # early.py: answers 413 after the head, then reads no more
 # 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
 # 18110-18120: the planner's and the streaming scenarios; 18121-18128: the upload scenarios;
-# 18130-18175: the TLS scenarios (18174-18175 a streamed upload)
+# 18130-18175: the TLS scenarios (18174-18175 a streamed upload); 18180-18193: cancelling
 
 # Scenarios the environment cannot run, with the reason.
 declare -A unavailable=()
@@ -204,7 +204,7 @@ syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)
 certs=$out/tls-certs
 if ! command -v openssl > /dev/null; then
   for s in tls-get tls-reuse tls-verify tls-trust tls-close tls-stray tls-redirect tls-handshake tls-idle \
-      tls-latched tls-12 tls-names tls-stream; do
+      tls-latched tls-12 tls-names tls-stream tls-upload cancel-tls; do
     unavailable[$s]="the openssl command-line tool, which makes the test certificates, is not installed"
   done
 elif ! { mkdir --parents "$certs" && bash "$here/tls-certs.sh" "$certs" > "$certs/made.out" 2>&1; }; then
@@ -849,7 +849,8 @@ if scenario stream-abandon; then
   client stream-drain-late stream GET "http://127.0.0.1:18118/stall-body?ms=400" stop=1 repeat=2
   expect stream-drain-late '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "a rest that comes too late: the connection is closed"
   expect stream-drain-late 'stream 1 ok status=200 read=3 .*conn=\(some 1\) reused=false ' "and the next call opens another"
-  within stream-drain-late 0 300 "leaving waited no more than the drain limit"
+  since stream-drain-late '^callback entered at ' '^stream 0 ok ' 0 300 \
+    "leaving waited no more than the drain limit, from the callback's start"
   # A body that arrived in full with the head, longer than the drain limit, left without a read:
   # nothing remains on the connection, which is kept.
   client stream-unread-big stream GET "http://127.0.0.1:18118/unread-body?n=30000" stop=0 drainbytes=1000 repeat=2
@@ -885,7 +886,8 @@ if scenario stream-abandon; then
   expect stream-race '^when withResponse returned: pool checked_out=0$' "the connection was released first"
   expect stream-race 'the racing reader raised ".*used after the callback of Client.withResponse ended"' \
     "and the other task's read fails"
-  within stream-race 90 400 "without waiting for the next byte of the body"
+  since stream-race '^callback entered at ' '^stream 0 ok ' 90 400 \
+    "from the callback's start, without waiting for the next byte of the body"
   # The call's deadline covers reading the body.
   client stream-deadline stream GET "http://127.0.0.1:18118/trickle?ms=100" deadline=1000 pull=1
   expect stream-deadline 'stream call 0 error delivery=response received .*status=\(some 200\) cause="deadline timeout"' \
@@ -1349,7 +1351,8 @@ if scenario tls-stream; then
   expect tls-stream-race '^when withResponse returned: pool checked_out=0$' "the connection was released first"
   expect tls-stream-race 'the racing reader raised ".*used after the callback of Client.withResponse ended"' \
     "and the other task's read fails"
-  within tls-stream-race 90 400 "without waiting for the next byte of the body"
+  since tls-stream-race '^callback entered at ' '^stream 0 ok ' 90 400 \
+    "from the callback's start, without waiting for the next byte of the body"
   client tls-stream-throw stream GET "https://127.0.0.1:18162/big?n=10000000" ca="$certs/ca.pem" stop=1 throw=1
   expect tls-stream-throw 'stream 0 threw "thrown inside the callback"' "the callback's exception reaches the caller"
   client tls-stream-pulls stream GET "https://127.0.0.1:18162/big?n=1000000" ca="$certs/ca.pem" pull=4096
@@ -1376,6 +1379,265 @@ if scenario tls-upload; then
   for s in tls-upload tls-upload-chunked; do trace_ok $s; done
 fi
 
+# --- Cancelling a call.  Each run gives its calls a token that it cancels (cancel=MS) or shuts the
+# client down (shutdown=MS), and the suite checks the error, when the call returned, what became of
+# its connection, the record of its steps and, as for every run, that the process exited promptly
+# after main.  The cancellation is placed at the stage of the call that the scenario is about, not
+# at a time from the start, which a loaded host can stretch: MS ms after a step the client reports
+# (after=send, follow, wait, deliver, read), inside the callback's or the producer's own sleep
+# (after=idle, hold, pull), or once a server's log says that the request, its body or the
+# ClientHello arrived (log=, logtext=).  Only where nothing can see the stage (a connect attempt
+# that hangs, a lookup) is it a time, from the step before.  Whether the call returned at the
+# cancellation is measured from the moment it fired (since_fired), within 1500 ms: every other way
+# the call could end (the server's answer, the end of a backoff, a timeout, the producer's stall) is
+# at least 3 s after it, and a loaded host has been seen to take 700 ms to return.
+
+# us_of <scenario> <regex>: the time ms=N.NNN of the first line matching <regex>, in microseconds.
+us_of() {
+  grep --extended-regexp "$2" "$out/$1.txt" | head --lines=1 \
+    | sed --quiet 's/.* ms=\([0-9]*\)\.\([0-9][0-9][0-9]\).*/\1\2/p'
+}
+
+# since <scenario> <from regex> <to regex> <lo> <hi> <description>: the first lines matching the two
+# regexes have times ms=F and ms=N (both from the start of the first call), with lo <= N - F <= hi.
+since() {
+  local from to d
+  from=$(us_of "$1" "$2")
+  to=$(us_of "$1" "$3")
+  if [ -z "$from" ] || [ -z "$to" ]; then
+    result FAIL "$1" "$6: no time (from: ${from:-none}, to: ${to:-none})"
+    return
+  fi
+  # Base 10: a time below 1 ms has leading zeros, which $((...)) would read as octal.
+  d=$((10#$to - 10#$from))
+  if [ "$d" -ge $(($4 * 1000)) ] && [ "$d" -le $(($5 * 1000)) ]; then
+    result PASS "$1" "$6: $((d / 1000)) ms"
+  else
+    result FAIL "$1" "$6: $((d / 1000)) ms, expected $4-$5"
+  fi
+}
+
+# since_fired <scenario> <regex> <lo> <hi> <description>: the first line matching <regex> has a time
+# between lo and hi ms after the cancellation or shutdown fired.
+since_fired() { since "$1" '^(cancel|shutdown) fired at ' "$2" "$3" "$4" "$5"; }
+
+cancelled='cause="the call was cancelled \(cancel\)"'
+first='^((stream |upload )?call|stream) 0 '
+
+if scenario cancel-before; then
+  evil cancel-before 18180 || exit 1
+  client cancel-before call GET "http://127.0.0.1:18180/ok" cancel=0
+  expect cancel-before "call 0 error delivery=not sent .*rounds=0 .*retries=0 not_retried=LeanHttp.Call.NoRetry.cause .*$cancelled detail=\"cancelled before the request was sent\"" \
+    "a call whose token was cancelled before it started fails at once, not sent"
+  conns cancel-before 0 "and opens no connection"
+  trace_ok cancel-before
+fi
+
+if scenario cancel-head; then
+  evil cancel-head 18181 || exit 1
+  # The server answers 5 s after it has the request; the call is cancelled 100 ms after that, with
+  # its receive pending.
+  client cancel-head call GET "http://127.0.0.1:18181/stall-head?ms=5000" cancel=100 \
+    log="$out/cancel-head.evil.log" logtext="GET /stall-head"
+  expect cancel-head "call 0 error delivery=maybe delivered .*not_retried=LeanHttp.Call.NoRetry.cause .*$cancelled" \
+    "a call waiting for the response head is cancelled, maybe delivered, not retried"
+  since_fired cancel-head "$first" 0 1500 "at the cancellation, not when the server answers"
+  expect cancel-head '^pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  conns cancel-head 1 "one connection, the request not sent again"
+  # The same with a body of bytes still being written to a server that does not read: the write
+  # cannot be cancelled and is abandoned.  Cancelled once the server sees the first bytes.
+  start cancel-write noread "listening" "$PY" -I "$here/noread.py" 18182 || exit 1
+  client cancel-write call POST "http://127.0.0.1:18182/" body=32000000 gap=10000 cancel=100 \
+    log="$out/cancel-write.noread.log" logtext="bytes arrived"
+  expect cancel-write "call 0 error delivery=maybe delivered .*$cancelled" \
+    "a call whose request a peer does not read is cancelled, maybe delivered"
+  since_fired cancel-write "$first" 0 1500 "at the cancellation, the pending write abandoned"
+  expect cancel-write '^pool idle=0 checked_out=0 allocated=1$' \
+    "its connection, with the request written in part, is closed, not pooled"
+  # Cancelled in the exchange after a redirect, once the server has the second hop's request.
+  client cancel-redirect call GET "http://127.0.0.1:18181/redir/302?to=/stall-head%3Fms%3D5000" cancel=100 \
+    log="$out/cancel-head.evil.log" logtext="GET /stall-head"
+  # The delivery is the furthest any request of the call got: the redirect was a response.
+  expect cancel-redirect "call 0 error delivery=response received .*hops=1 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none $cancelled" \
+    "a call cancelled at its second hop, after a redirect: response received (the redirect's), no status of its own"
+  since_fired cancel-redirect "$first" 0 1500 "at the cancellation"
+  for s in cancel-head cancel-write cancel-redirect; do trace_ok $s; done
+fi
+
+if scenario cancel-body; then
+  evil cancel-body 18183 || exit 1
+  # A body of a million bytes, one byte every 5 ms: cancelled while Client.request reads it, 300 ms
+  # after the response went to its reader.
+  client cancel-body call GET "http://127.0.0.1:18183/trickle?ms=5" cancel=300 after=deliver
+  expect cancel-body "call 0 error delivery=response received .*status=\\(some 200\\) .*$cancelled" \
+    "a call cancelled while its body is read whole: response received, with the status"
+  since_fired cancel-body "$first" 0 1500 "at the cancellation"
+  expect cancel-body '^pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  # The same while the callback of withResponse reads it in pulls, 100 ms after its first read.
+  client cancel-stream stream GET "http://127.0.0.1:18183/trickle?ms=5" cancel=100 after=read pull=1
+  expect cancel-stream "stream call 0 error delivery=response received .*$cancelled.* read_before=[1-9][0-9]*\$" \
+    "a callback reading the body when the call is cancelled: the read raises the call's error"
+  since_fired cancel-stream "$first" 0 1500 "at the cancellation"
+  expect cancel-stream '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  # A callback busy with something else when the call is cancelled, 200 ms into its 400 ms: its
+  # next read raises.
+  client cancel-callback stream GET "http://127.0.0.1:18183/trickle?ms=5" cancel=200 after=idle idle=400 pull=1
+  expect cancel-callback "stream call 0 error delivery=response received .*$cancelled.* read_before=0\$" \
+    "a callback that reads after the call was cancelled: its first read raises the call's error"
+  since_fired cancel-callback "$first" 190 1500 "when the callback read, after the rest of its 400 ms"
+  # Bytes the stream already holds are not handed out after the cancellation: a pull of one byte
+  # takes a whole read of a large body, the call is cancelled while the callback waits (200 ms into
+  # its 400 ms), and its next read raises.
+  client cancel-held stream GET "http://127.0.0.1:18183/bigbody?n=10000000" cancel=200 after=hold pull=1 stop=1 hold=400
+  expect cancel-held "stream call 0 error delivery=response received .*$cancelled.* read_before=1\$" \
+    "a read after the cancellation raises, though the stream holds bytes already read"
+  # A callback that returns without reading: its result stands, the connection is not pooled.
+  client cancel-return stream GET "http://127.0.0.1:18183/ok" cancel=200 after=idle idle=400 stop=0 repeat=2 cancelcalls=1
+  expect cancel-return 'stream 0 ok status=200 read=0 ' "a callback that returns normally after the cancellation: its result is the call's"
+  expect cancel-return '^after stream 0: pool idle=0 checked_out=0 allocated=1$' \
+    "the connection, whose body was held unread, is closed, not pooled"
+  expect cancel-return 'stream 1 ok status=200 read=0 .*conn=\(some 1\) reused=false ' \
+    "the next call, not cancelled, opens a fresh connection"
+  expect cancel-return '^after stream 1: pool idle=1 checked_out=0 allocated=2$' "and its connection goes back to the pool"
+  client cancel-return-control stream GET "http://127.0.0.1:18183/ok" idle=400 stop=0
+  expect cancel-return-control '^after stream 0: pool idle=1 checked_out=0 allocated=1$' \
+    "control: without the cancellation the same connection goes back to the pool"
+  for s in cancel-body cancel-stream cancel-callback cancel-held cancel-return cancel-return-control; do trace_ok $s; done
+fi
+
+if scenario cancel-upload; then
+  uploads cancel-upload 18184 || exit 1
+  # A producer that takes 100 ms per chunk: the call is cancelled while it makes one, 50 ms into
+  # its fourth, after which that one takes 5 s more.
+  client cancel-upload upload PUT "http://127.0.0.1:18184/sink" size=1000000 chunk=1000 delay=100 \
+    cancel=50 after=pull:4 stall=5000
+  expect cancel-upload "upload call 0 error delivery=maybe delivered .*$cancelled.* pulls=[1-9] produced=[0-9]+\$" \
+    "a streamed upload cancelled while its producer works: maybe delivered, not retried"
+  since_fired cancel-upload "$first" 0 1500 "at the cancellation, the producer abandoned"
+  expect cancel-upload '^after upload 0: pool idle=0 checked_out=0 allocated=1$' \
+    "its connection, with the request written in part, is closed, not pooled"
+  trace_ok cancel-upload
+fi
+
+if scenario cancel-tls; then
+  tls_server cancel-tls 18185 good --mode hang || exit 1
+  # Cancelled 100 ms after the server sees the ClientHello, which it never answers.
+  client cancel-tls call GET "https://127.0.0.1:18185/hello" ca="$certs/ca.pem" tlshs=5000 cancel=100 \
+    log="$out/cancel-tls.tls.log" logtext="the ClientHello arrived"
+  expect cancel-tls "call 0 error delivery=not sent .*retries=0 not_retried=LeanHttp.Call.NoRetry.cause .*$cancelled detail=\"cancelled during the TLS handshake\"" \
+    "a call cancelled during the TLS handshake: not sent, not retried"
+  since_fired cancel-tls "$first" 0 1500 "at the cancellation, its receive cancelled"
+  tls_conns cancel-tls 1 "one connection"
+  # Over TLS, a call cancelled while its body arrives: the TCP receive under the session is
+  # cancelled, and the connection is not pooled.
+  tls_server cancel-tls-body 18191 good || exit 1
+  client cancel-tls-body stream GET "https://127.0.0.1:18191/trickle?ms=100" ca="$certs/ca.pem" cancel=50 after=read pull=1
+  expect cancel-tls-body "stream call 0 error delivery=response received .*$cancelled.* read_before=[1-9][0-9]*\$" \
+    "a call over TLS cancelled while its body is read: the read raises the call's error"
+  since_fired cancel-tls-body "$first" 0 1500 "at the cancellation"
+  expect cancel-tls-body '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  for s in cancel-tls cancel-tls-body; do trace_ok $s; done
+fi
+
+if scenario cancel-backoff; then
+  # Refused at once, then a backoff of 3670 ms (seed 3): cancelled 300 ms into it.
+  client cancel-backoff call GET "http://127.0.0.1:$CLOSED/" retries=2 base=4000 cap=4000 seed=3 cancel=300 after=wait
+  expect cancel-backoff "call 0 error delivery=not sent .*rounds=1 .*retries=1 not_retried=LeanHttp.Call.NoRetry.cause .*$cancelled detail=\"cancelled while waiting to retry\"" \
+    "a call cancelled while it waits to retry fails at once, the retry not sent"
+  since_fired cancel-backoff "$first" 0 1500 "at the cancellation, not after the 3670 ms backoff"
+  trace_ok cancel-backoff
+fi
+
+if scenario cancel-connect; then
+  start cancel-connect hole "blackhole" "$PY" -I "$here/blackhole.py" 127.0.0.1 18190 || exit 1
+  # Nothing sees a connect attempt hang, so the cancellation is a time: 1 s after the request goes
+  # out, ample for the attempt to start, and 4 s before it would time out.
+  client cancel-connect call GET "http://127.0.0.1:18190/" connect=5000 cancel=1000 after=send
+  expect cancel-connect "call 0 error delivery=not sent .*$cancelled detail=\"cancelled while connecting; could not connect: 127\\.0\\.0\\.1:18190 \\(round 0\\): abandoned\"" \
+    "a call cancelled while its connect attempt hangs: not sent, the attempt abandoned"
+  since_fired cancel-connect "$first" 0 1500 "at the cancellation"
+  trace_ok cancel-connect
+fi
+
+if scenario cancel-cap; then
+  evil cancel-cap 18187 || exit 1
+  # Two calls, one connection allowed: one is in its exchange, the other waits for the connection;
+  # one token cancels both, 200 ms after both requests went out and the server has the first.
+  client cancel-cap call GET "http://127.0.0.1:18187/sleep?ms=5000" concurrent=2 maxactive=1 cancel=200 \
+    after=send:2 log="$out/cancel-cap.evil.log" logtext="GET /sleep"
+  expect cancel-cap "call [01] error delivery=maybe delivered .*$cancelled" "the call in its exchange is cancelled"
+  expect cancel-cap "call [01] error delivery=not sent .*$cancelled detail=\"cancelled while (waiting for|taking) a connection" \
+    "the call waiting at the cap is cancelled, not sent"
+  since_fired cancel-cap '^round 0 of 2 calls took' 0 1500 "both return at the cancellation"
+  # The token on the waiting call only: the call holding the connection keeps it, so only the
+  # cancellation can end the wait.
+  client cancel-cap-waiter call GET "http://127.0.0.1:18187/sleep?ms=5000" concurrent=2 maxactive=1 cancel=200 \
+    after=send:2 log="$out/cancel-cap.evil.log" logtext="GET /sleep" cancelfrom=1
+  expect cancel-cap-waiter 'call 0 ok status=200 ' "the call holding the connection is answered"
+  expect cancel-cap-waiter "call 1 error delivery=not sent .*$cancelled detail=\"cancelled while waiting for a connection: the origin is at maxActivePerOrigin\"" \
+    "the waiting call alone is cancelled, while it waits"
+  since_fired cancel-cap-waiter '^call 1 error' 0 1500 "at the cancellation, not when the connection comes back"
+  for s in cancel-cap cancel-cap-waiter; do trace_ok $s; done
+fi
+
+if scenario shutdown; then
+  evil shutdown 18188 || exit 1
+  # Shut down 100 ms after the server has the three requests.
+  client shutdown call GET "http://127.0.0.1:18188/sleep?ms=5000" concurrent=3 shutdown=100 \
+    log="$out/shutdown.evil.log" logtext="GET /sleep" logcount=3
+  got=$(grep --count --extended-regexp '^call [0-2] error delivery=maybe delivered .*cause="the call was cancelled \(shutdown\)"' "$out/shutdown.txt")
+  if [ "$got" -eq 3 ]; then
+    result PASS shutdown "shutting the client down cancels its three calls in flight"
+  else
+    result FAIL shutdown "shutting the client down cancelled $got of the three calls in flight"
+  fi
+  since_fired shutdown '^round 0 of 3 calls took' 0 1500 "they return at the shutdown"
+  expect shutdown '^after shutdown: call 3 error delivery=not sent .*cause="the call was cancelled \(shutdown\)"' \
+    "a call after the shutdown fails at once"
+  expect shutdown '^after shutdown: pool idle=0 checked_out=0$' "no connection is pooled"
+  # A call waiting at the active cap: the shutdown closes the pool, which wakes it, and it still
+  # reports the shutdown, not the closed pool.
+  client shutdown-cap call GET "http://127.0.0.1:18188/sleep?ms=5000" concurrent=2 maxactive=1 shutdown=200 \
+    after=send:2 log="$out/shutdown.evil.log" logtext="GET /sleep"
+  expect shutdown-cap 'call [01] error delivery=maybe delivered .*cause="the call was cancelled \(shutdown\)"' \
+    "the call in its exchange is cancelled by the shutdown"
+  expect shutdown-cap 'call [01] error delivery=not sent .*cause="the call was cancelled \(shutdown\)" detail="cancelled while (waiting for|taking) a connection' \
+    "the call waiting at the cap is cancelled by the shutdown, not refused by the closed pool"
+  since_fired shutdown-cap '^round 0 of 2 calls took' 0 1500 "both return at the shutdown"
+  # A call waiting to retry, 300 ms into its wait.
+  client shutdown-backoff call GET "http://127.0.0.1:$CLOSED/" retries=2 base=4000 cap=4000 seed=3 shutdown=300 after=wait
+  expect shutdown-backoff 'call 0 error delivery=not sent .*retries=1 .*cause="the call was cancelled \(shutdown\)" detail="cancelled while waiting to retry"' \
+    "a call waiting to retry is cancelled by the shutdown"
+  since_fired shutdown-backoff "$first" 0 1500 "at the shutdown"
+  for s in shutdown shutdown-cap shutdown-backoff; do trace_ok $s; done
+fi
+
+# Cancelled as a step of the call is taken, in the client's record of the call (Config.observe):
+# cancel=0 after=STEP.
+if scenario cancel-steps; then
+  evil cancel-steps 18193 || exit 1
+  client cancel-follow call GET "http://127.0.0.1:18193/chain/1" cancel=0 after=follow
+  expect cancel-follow "call 0 error delivery=response received .*hops=1 .*$cancelled detail=\"cancelled before the redirect was followed\"" \
+    "cancelled as the planner decides to follow a redirect: the redirect is not followed"
+  expect cancel-follow '^pool idle=0 checked_out=0 allocated=1$' "the redirect's connection, its body not drained, is closed"
+  if ! grep --quiet 'conn1 req1 GET /chain/1 ' "$out/cancel-steps.evil.log"; then
+    result FAIL cancel-follow "the server did not see the first request"
+  elif grep --quiet 'GET /chain/0' "$out/cancel-steps.evil.log"; then
+    result FAIL cancel-follow "the redirect was followed"
+  else
+    result PASS cancel-follow "the server never saw the redirect's request"
+  fi
+  client cancel-wait call GET "http://127.0.0.1:$CLOSED/" retries=2 base=4000 cap=4000 seed=3 cancel=0 after=wait
+  expect cancel-wait "call 0 error delivery=not sent .*retries=1 .*$cancelled detail=\"cancelled while waiting to retry\"" \
+    "cancelled as the wait before a retry begins: the retry is not sent"
+  since_fired cancel-wait "$first" 0 1500 "at once, not after the 3670 ms backoff"
+  client cancel-deliver stream GET "http://127.0.0.1:18193/ok" cancel=0 after=deliver
+  expect cancel-deliver "stream call 0 error delivery=response received .*$cancelled.* read_before=0\$" \
+    "cancelled as the response is handed to the callback: its first read raises"
+  expect cancel-deliver '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
+  for s in cancel-follow cancel-wait cancel-deliver; do trace_ok $s; done
+fi
+
 # Last, because it points the resolver at a name server that never answers.
 if scenario dns-timeout; then
   cp /etc/resolv.conf /tmp/resolv.conf.saved 2>/dev/null || : > /tmp/resolv.conf.saved
@@ -1387,6 +1649,16 @@ if scenario dns-timeout; then
   expect dns-timeout 'call 0 error delivery=not sent .*cause="deadline timeout"' \
     "a name server that never answers: the call ends at the deadline; nothing sent"
   within dns-timeout 1990 2400 "at the 2 s deadline"
+  # Cancelled while the name is looked up: the call returns at once; the lookup, which cannot be
+  # cancelled, is abandoned as the deadline abandons it, and delays exit as before.  Nothing sees the
+  # lookup hang, so the cancellation is a time: 1 s after the request goes out.
+  printf 'nameserver 127.0.0.1\n' > /etc/resolv.conf || exit 1
+  known_exit="the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)" \
+    client dns-cancel call GET "http://slow.test/" deadline=10000 cancel=1000 after=send
+  cp /tmp/resolv.conf.saved /etc/resolv.conf
+  expect dns-cancel "call 0 error delivery=not sent .*$cancelled detail=\"cancelled while the name was looked up\"" \
+    "a call cancelled while its name is looked up: not sent"
+  since_fired dns-cancel "$first" 0 1500 "at the cancellation"
 fi
 
 cleanup

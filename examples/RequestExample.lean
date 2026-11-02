@@ -1,7 +1,8 @@
 import LeanHttp
 
 /-!
-A GET and a POST with a JSON body, through `Client.request`, which reads the whole response body.
+A GET and a POST with a JSON body, through `Client.request`, which reads the whole response body,
+a refused connect, and a call cancelled while it waits for its answer.
 Run against `examples/server.py`: `request-example [base URL]` (default `http://127.0.0.1:8080`).
 -/
 
@@ -51,4 +52,19 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln s!"unexpected: {response.line.status.toCode}"
     return 1
   | .error err => IO.println s!"refused: {err.cause.describe}; {advice err}"
+
+  -- A call the caller gives up on: the server takes 5 s to answer, and another task cancels the
+  -- call's token after 200 ms.
+  let token ← Std.CancellationToken.new
+  let slow := Request.get (.parse! s!"{base}/slow?ms=5000") |>.body .empty
+  let result ← (do
+    let call ← Std.Async.async (client.request slow (cancel := token))
+    Std.Async.sleep 200
+    token.cancel
+    Std.Async.await call).block
+  match result with
+  | .ok response =>
+    IO.eprintln s!"unexpected: {response.line.status.toCode}"
+    return 1
+  | .error err => IO.println s!"gave up: {err.cause.describe}; {advice err}"
   return 0

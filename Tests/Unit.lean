@@ -311,6 +311,47 @@ def traceChecks : Checks Unit := do
   check "a trace that stops before the delivery is caught" (rejects good.pop)
   check "anything after the delivery is caught" (rejects (good.push .deliver))
   check "a trace without its start is caught" (rejects (good.extract 1 good.size))
+  -- A call cancelled while it waits to retry: in place of the retry, the planner hears of a
+  -- failure whose cause is the cancellation, with nothing sent, and fails the call.
+  let cancelled : Failure := {
+    cause := .cancelled .cancel, delivery := .notSent, written := 0,
+    detail := "cancelled while waiting to retry" }
+  let cC : Call.Clock := { now := 100 + delay / 2, wallSec := 1700000000 }
+  let (_, sc) := Call.plan st1 cC (.failure cancelled)
+  check "the planner fails a cancelled call" (sc matches .fail (.failure _ .cause))
+  let cancelError : Error := {
+    cause := .cancelled .cancel, delivery := .notSent, retries := 1, notRetried := some .cause }
+  let cancelTrace : Array Call.Event :=
+    (good.extract 0 4).push (.decide cC (.failure cancelled) sc) |>.push (.fail cancelError)
+  checkEq "a call cancelled while it waits to retry replays, two steps"
+    (Call.validate cancelTrace).toOption (some 2)
+  check "a cancellation in place of a request that says maybe delivered is caught"
+    (rejects (cancelTrace.set! 4 (.decide cC (.failure { cancelled with delivery := .maybeDelivered })
+      (Call.plan st1 cC (.failure { cancelled with delivery := .maybeDelivered })).2)))
+  check "a cancellation in place of a request that counts bytes written is caught"
+    (rejects (cancelTrace.set! 4 (.decide cC (.failure { cancelled with written := 3 })
+      (Call.plan st1 cC (.failure { cancelled with written := 3 })).2)))
+  -- A failure the planner never retries, with the error it calls for: only the rule that a request
+  -- may give way to a cancellation alone rejects it.
+  let unresolved : Failure := { cause := .resolve "a.test" "x", delivery := .notSent, written := 0 }
+  let unresolvedStep := (Call.plan st1 cC (.failure unresolved)).2
+  let unresolvedError : Error := {
+    cause := .resolve "a.test" "x", delivery := .notSent, retries := 1, notRetried := some .cause }
+  check "a failure other than a cancellation in place of a request is caught"
+    (rejects ((good.extract 0 4).push (.decide cC (.failure unresolved) unresolvedStep)
+      |>.push (.fail unresolvedError)))
+  check "a cancelled call's error with another cause is caught"
+    (rejects (cancelTrace.set! 5 (.fail { cancelError with cause := .timeout .deadline })))
+  check "a cancelled call's error that says it was retried for the cancellation is caught"
+    (rejects (cancelTrace.set! 5 (.fail { cancelError with notRetried := some .noTime })))
+  -- A call cancelled before its first request went out.
+  let c0 : Call.Clock := { now := 5, wallSec := 1700000000 }
+  let (_, s0) := Call.plan st0 c0 (.failure cancelled)
+  let cancelFirst : Array Call.Event := #[
+    .start policy headA .none (.length 0) seed deadline true, .decide c0 (.failure cancelled) s0,
+    .fail { cancelError with retries := 0 }]
+  checkEq "a call cancelled before its first request replays, one step"
+    (Call.validate cancelFirst).toOption (some 1)
   -- Re-dispatch: an exchange on a reused connection sent again on a fresh one.
   let closedFirst : Client.Ended :=
     .failure { cause := .peerClosed, delivery := .maybeDelivered, written := 30 } false
@@ -575,10 +616,70 @@ def tlsChecks : Checks Unit := do
   check "a zero TLS handshake timeout is an invalid request"
     (Client.checkConfig { tlsHandshakeTimeoutMs := 0 } matches .error (.invalidRequest _))
 
+/-! ## A call's cancellation -/
+
+def cancelChecks : Checks Unit := do
+  -- A token cancelled before the watch starts is seen at once, and fires the call.
+  let early ← Std.CancellationToken.new
+  early.cancel .shutdown
+  let c ← Cancel.watch #[early] #[early]
+  check "a token cancelled before the watch is seen at once" (reprStr (← c.reason?) == reprStr (some Std.CancellationReason.shutdown))
+  let ran ← IO.mkRef false
+  c.onCancel (ran.set true)
+  check "and a hook registered afterwards runs at once" (← ran.get)
+  c.finish
+  -- A token cancelled during the call: the check asks the token, so it holds as cancel returns.
+  let token ← Std.CancellationToken.new
+  let c ← Cancel.watch #[token] #[token]
+  check "an uncancelled call has no reason" (← c.reason?).isNone
+  token.cancel .cancel
+  check "a check right after cancel sees it" (← c.reason?).isSome
+  let hooked ← IO.mkRef false
+  c.onCancel (hooked.set true)
+  check "a hook registered after the cancellation runs at once" (← hooked.get)
+  let waited ← (c.race (#[] : Array (Task Unit)) 10000).block
+  check "a wait after the cancellation ends at once" (waited matches .cancelled _)
+  c.finish
+  -- A wait that the timer ends: its bell, the last of the call, is released when the call ends
+  -- (what is chained on it then runs, with nothing), so an uncancelled call keeps nothing alive.
+  let quiet ← Std.CancellationToken.new
+  let c ← Cancel.watch #[quiet] #[quiet]
+  let waited ← (c.race (#[] : Array (Task Unit)) 1).block
+  check "a wait with nothing to wait for ends at its time" (waited matches .timedOut)
+  let lastBell := ((← c.bell.get).map (·.result?)).getD (Task.pure none)
+  check "the last wait's bell is unresolved while the call goes on" !(← IO.hasFinished lastBell)
+  c.finish
+  IO.sleep 50
+  check "the last wait's bell is released when the call ends" (← IO.hasFinished lastBell)
+  quiet.cancel .cancel
+  check "a token cancelled after the call ended does not cancel it" (← c.reason?).isNone
+  -- A token shared by many calls keeps nothing of the calls that have ended.
+  let shared ← Std.CancellationToken.new
+  let entries : BaseIO Nat := shared.state.atomically (m := BaseIO) do
+    return (← get).consumers.toArray.size
+  let calls ← (List.range 5).mapM fun _ => Cancel.watch #[shared] #[shared]
+  check "each call in flight is registered with its token" ((← entries) == 5)
+  for c in calls do c.finish
+  check "and a call that has ended is not" ((← entries) == 0)
+  -- A token cancelled while a wait is in progress ends it.
+  let later ← Std.CancellationToken.new
+  let c ← Cancel.watch #[later] #[later]
+  let fired ← IO.mkRef false
+  c.onCancel (fired.set true)
+  let wait ← start (c.race (#[] : Array (Task Unit)) 10000)
+  IO.sleep 20
+  later.cancel .deadline
+  check "a hook registered before runs as the token is cancelled" (← fired.get)
+  let t0 ← IO.monoMsNow
+  let waited ← IO.wait wait
+  check "a wait in progress ends at the cancellation, with the token's reason"
+    ((waited matches .ok (.cancelled .deadline)) && (← IO.monoMsNow) - t0 < 2000)
+  c.finish
+
 /-- Every check, in order. -/
 def allChecks : Checks Unit := do
   backoffChecks; addressChecks; planChecks; errorChecks; poolChecks; traceChecks; streamChecks
-  uploadChecks; tlsChecks
+  uploadChecks; tlsChecks; cancelChecks
 
 def main : IO UInt32 := do
   let ((), results) ← allChecks.run #[]

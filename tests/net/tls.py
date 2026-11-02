@@ -25,9 +25,10 @@ TLS event is logged with a connection number and a monotonic timestamp.
   GET  /redirect-http      302 to http://127.0.0.1:<plain port>/plain
   GET  /plain (plain port) 200 over plain HTTP
 
-Modes (--mode) for the TLS port: normal; hang (accept TCP and never answer the handshake);
-close-handshake (read the ClientHello, then close); tls11 (offer TLS 1.1 at most); tls12 (offer
-TLS 1.2 at most).  The server name each client sent (SNI) is logged as sni=<name>, or sni=None.
+Modes (--mode) for the TLS port: normal; hang (accept TCP and never answer the handshake, logging
+when the ClientHello arrives); close-handshake (read the ClientHello, then close); tls11 (offer
+TLS 1.1 at most); tls12 (offer TLS 1.2 at most).  The server name each client sent (SNI) is logged
+as sni=<name>, or sni=None.
 
 --idle-close MS closes a kept connection that has been idle for MS milliseconds, with close_notify
 (--idle-notify 1) or without it (0).
@@ -35,7 +36,7 @@ TLS 1.2 at most).  The server name each client sent (SNI) is logged as sni=<name
 Usage: tls.py --cert FILE --key FILE [--port N] [--plain-port N] [--mode M] [--idle-close MS]
               [--idle-notify 0|1]
 """
-import argparse, socket, ssl, sys, threading, time, warnings
+import argparse, select, socket, ssl, sys, threading, time, warnings
 
 LOCK = threading.Lock()
 T0 = time.monotonic()
@@ -218,6 +219,9 @@ def handle(raw, n, ctx):
     raw.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     if ARGS.mode == "hang":
         log(f"conn{n} accepted; never answering the handshake")
+        # The ClientHello is seen without being read: the client is in its handshake.
+        select.select([raw], [], [])
+        log(f"conn{n} the ClientHello arrived; never answering")
         time.sleep(3600)
         return
     if ARGS.mode == "close-handshake":

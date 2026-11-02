@@ -2,6 +2,7 @@ module
 
 public import Std.Async.TCP
 public import Std.Http.Data
+public import LeanHttp.Cancel
 public import LeanHttp.Error
 public import LeanHttp.Exchange
 public import LeanHttp.Transport
@@ -23,6 +24,11 @@ own steps: a TCP receive whose ciphertext yields no plaintext yet is followed by
 registered as a step that reports nothing to the core.  A streamed request body goes on being pulled
 and written while the response is read, as long as the exchange goes on; a producer still running
 when the exchange ends is left to finish, and what it returns is dropped.
+
+Cancelling the call reaches the exchange through the same mailbox: the call's cancellation puts a
+completion of its own there, reported before anything else, which the shell reports to the core as
+`ExchangeEvent.cancel`.  The core ends the exchange, the shell cancels the pending receive, and a
+write or a pull still in flight is abandoned, as when the deadline ends an exchange.
 
 A `BodyStream` is a response body the caller pulls.  A `read` that finds nothing held gives the
 core credit for one more read from the socket, so the core reads only as fast as the caller does:
@@ -59,6 +65,11 @@ inductive Completion where
   A call of the request body's producer ended: a chunk, the end of the body, or an error.
   -/
   | pulled (result : Except IO.Error (Option ByteArray))
+
+  /--
+  The call was cancelled; the reason is asked of the call's tokens when this is taken.
+  -/
+  | cancelled
 
 /--
 Where the operations the shell started for an exchange report when they complete.  Each operation
@@ -136,6 +147,11 @@ structure Live where
   The number of the call of the producer in flight.
   -/
   pulling : Option Nat := none
+
+  /--
+  The call's cancellation, which puts a completion in the mailbox when it comes.
+  -/
+  cancel : Cancel
 
 /--
 What the core handed over in one stretch of driving.
@@ -221,11 +237,12 @@ delivered.  Once the exchange has ended, a receive still pending is cancelled.
   return (live, out)
 
 /--
-Takes the next completion to report from the mailbox, if there is one: a write before a pull before
-a read, since when several have completed, the core must learn that the request was written before
-it reads the response to it.  Completions of operations the exchange no longer waits for are
-dropped: a receive it cancelled, and once the upload has stopped (the response head arrived first),
-the write still in flight, of which the core makes nothing.
+Takes the next completion to report from the mailbox, if there is one: the call's cancellation
+first, so that a busy connection cannot hold it off, then a write before a pull before a read, since
+when several have completed, the core must learn that the request was written before it reads the
+response to it.  Completions of operations the exchange no longer waits for are dropped: a receive
+it cancelled, and once the upload has stopped (the response head arrived first), the write still in
+flight, of which the core makes nothing.
 -/
 def Live.takeCompletion (live : Live) : BaseIO (Option Completion) :=
   live.mailbox.inbox.modifyGet fun inbox =>
@@ -233,11 +250,13 @@ def Live.takeCompletion (live : Live) : BaseIO (Option Completion) :=
       | (n, .read _) => live.reading == some n
       | (n, .wrote ..) => live.writing == some n && !live.ex.uploadStopped
       | (n, .pulled _) => live.pulling == some n
+      | (_, .cancelled) => true
     let inbox := inbox.filter current
     let rank : Completion → Nat
-      | .wrote .. => 0
-      | .pulled _ => 1
-      | .read _ => 2
+      | .cancelled => 0
+      | .wrote .. => 1
+      | .pulled _ => 2
+      | .read _ => 3
     let best := inbox.foldl (init := none) fun best (n, c) =>
       match best with
       | some (_, b) => if rank c < rank b then some (n, c) else best
@@ -278,6 +297,9 @@ def Live.report (live : Live) : Completion → ExchangeEvent × Live
       | .ok chunk => ExchangeEvent.pulled chunk
       | .error err => .pullFailed (toString err)
     (event, { live with pulling := none })
+  | .cancelled =>
+    -- `Live.next` turns the cancellation into the event with its reason first.
+    (ExchangeEvent.cancel .cancel, live)
 
 /--
 Waits for the first operation in flight to complete, or for the core's next deadline, and reports
@@ -296,6 +318,13 @@ what happened to the core.  Returns the core's actions.
       match ← awaitFirst #[bell.result?] wait with
       | none => pure none
       | some _ => live.takeCompletion
+  -- A cancellation wins over whatever ended the wait, whether or not it has reached the mailbox yet:
+  -- the check asks the tokens, and gives the reason.
+  match ← live.cancel.reason? with
+  | some reason =>
+    let (ex, actions) := live.ex.step (← IO.monoMsNow) (.cancel reason)
+    return ({ live with ex }, actions)
+  | none => pure ()
   -- Ciphertext is fed to the session first; if it yields nothing yet, the next receive starts and
   -- nothing is reported to the core.
   let completion ← match completion with
@@ -345,24 +374,49 @@ partial def Live.until (live : Live) (actions : Array ExchangeAction) (stop : De
   live.until actions stop out
 
 /--
+The completion number of the call's cancellation in the mailbox; operations count up from 0.
+-/
+def cancelOp : Nat := 2 ^ 62
+
+/--
 Starts `prepared` on `transport` with `deadline` for the whole call, and drives it until the final
 response head arrives or the exchange ends first.  `produce` gives the chunks of a streamed body.
-The core holds whatever body bytes come with the head until the caller asks for them.
+The core holds whatever body bytes come with the head until the caller asks for them.  The call's
+cancellation (`cancel`) reaches the exchange through its mailbox, for as long as the exchange lasts.
 -/
 def Live.begin (transport : Transport) (prepared : PreparedRequest) (deadline : Nat)
-    (produce : Async (Option ByteArray) := pure none) : Async (Live × Option Response.Head) := do
+    (cancel : Cancel) (produce : Async (Option ByteArray) := pure none) :
+    Async (Live × Option Response.Head) := do
   let (ex, actions) := Exchange.begin prepared (← IO.monoMsNow) deadline
-  let (live, out) ← ({ transport, ex, produce, mailbox := ← Mailbox.new } : Live).until actions
+  let mailbox ← Mailbox.new
+  cancel.onCancel do
+    mailbox.inbox.modify (·.push (cancelOp, .cancelled))
+    (← mailbox.bell.get).resolve ()
+  let (live, out) ← ({ transport, ex, produce, mailbox, cancel } : Live).until actions
     (·.head.isSome)
   return (live, out.head)
 
 /--
+Reports the call's cancellation to the core now, if the call has been cancelled and the exchange is
+still going.  Returns the exchange after it, and the core's actions.
+-/
+def Live.cancelNow? (live : Live) : BaseIO (Live × Array ExchangeAction) := do
+  if live.ex.terminal then return (live, #[])
+  match ← live.cancel.reason? with
+  | some reason => live.stepNow (.cancel reason)
+  | none => return (live, #[])
+
+/--
 Abandons the rest of the response: the core drains it within its drain limits, keeping the
 connection reusable, or gives up on the connection; drives that to the end.  A body that has already
-arrived in full is simply taken.  Returns the exchange's verdict on reuse.  No receive is pending
-when it returns; should anything throw, the connection is not reused.
+arrived in full is simply taken.  A call that has been cancelled is reported to the core instead,
+which ends the exchange without draining it, and the connection is not reused; a cancellation that
+comes while the body is drained ends the drain the same way.  Returns the exchange's verdict on
+reuse.  No receive is pending when it returns; should anything throw, the connection is not reused.
 -/
 def Live.abandon (live : Live) : Async Bool := do
+  -- A cancelled exchange is not drained: the core ends it, and the connection is not reused.
+  let (live, _) ← live.cancelNow?
   if let some verdict := live.verdict then
     discard <| live.cancelRead
     return verdict
@@ -502,13 +556,16 @@ private partial def drive (s : BodyStream) (live : Live) (actions : Array Exchan
 /--
 Drives the exchange until it delivers body bytes or ends, after giving the core credit for one more
 read if it has none: the core then delivers what it holds or reads once more, and holds nothing
-further, so the shell never holds more than one read.  Never throws: an exception from the socket
-counts as a failed exchange.  Returns the stream's next state.
+further, so the shell never holds more than one read.  A call cancelled meanwhile is reported to the
+core first, which ends the exchange.  Never throws: an exception from the socket counts as a failed
+exchange.  Returns the stream's next state.
 -/
 private def advance (s : BodyStream) (live : Live) : Async State := do
   try
-    let (live, actions) ←
-      if live.ex.credit == 0 then live.stepNow (.wantBody 1) else pure (live, #[])
+    let (live, actions) ← do
+      let (live, cancelled) ← live.cancelNow?
+      if live.ex.terminal then pure (live, cancelled)
+      else if live.ex.credit == 0 then live.stepNow (.wantBody 1) else pure (live, #[])
     let (live, bodies) ← s.drive live actions
     let pending := bodies.toList
     match live.verdict with
@@ -562,6 +619,10 @@ partial def read (s : BodyStream) (max : Nat := 64 * 1024) : Async (Option ByteA
     -- read has taken what it returns.
     let next ← match pending, failure, live with
       | [], none, some live => s.advance live
+      | _, none, some live =>
+        -- Bytes the stream holds are not handed out once the call is cancelled: the cancellation
+        -- ends the exchange, and the read raises.
+        if (← live.cancel.reason?).isSome then s.advance live else pure state
       | _, _, _ => pure state
     let .open live failure pending offset := next
       | do s.finishRead done next; throw (IO.userError usedAfterMessage)
@@ -632,7 +693,9 @@ def readAll (s : BodyStream) : Async ByteArray := do
       return join held heldSize
     | none, some live =>
       let next ← try
-          let (live, actions) ← live.stepNow (.wantBody (2 ^ 62))
+          let (live, cancelled) ← live.cancelNow?
+          let (live, actions) ←
+            if live.ex.terminal then pure (live, cancelled) else live.stepNow (.wantBody (2 ^ 62))
           let (live, chunks, size) ← s.collect live actions held heldSize
           match live.verdict with
           | some verdict =>

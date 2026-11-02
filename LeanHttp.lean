@@ -5,6 +5,7 @@ public import LeanHttp.Backoff
 public import LeanHttp.Body
 public import LeanHttp.Call
 public import LeanHttp.Call.Trace
+public import LeanHttp.Cancel
 public import LeanHttp.Client
 public import LeanHttp.Config
 public import LeanHttp.Connect

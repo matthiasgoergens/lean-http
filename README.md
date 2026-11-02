@@ -2,7 +2,7 @@
 
 An HTTP/1.1 client for Lean 4, for `http` and `https` URLs.
 
-It is a Lake package that depends on nothing but the Lean toolchain: for HTTPS it uses the OpenSSL that the toolchain already links into every Lean executable.  Requests and responses are `Std.Http`'s types (`Request`, `Response`, `Headers`), and the library adds the client: name resolution, connects with a timeout per address, TLS with certificate verification, a connection pool, redirects, retries with backoff, deadlines, and streamed request and response bodies.
+It is a Lake package that depends on nothing but the Lean toolchain: for HTTPS it uses the OpenSSL that the toolchain already links into every Lean executable.  Requests and responses are `Std.Http`'s types (`Request`, `Response`, `Headers`), and the library adds the client: name resolution, connects with a timeout per address, TLS with certificate verification, a connection pool, redirects, retries with backoff, deadlines, cancellation, and streamed request and response bodies.
 
 ## How it is built, and what is proved
 
@@ -18,8 +18,8 @@ The shell around them (`LeanHttp.Client`, `LeanHttp.Body`, `LeanHttp.Connect`, a
 The cores' properties are proved in Lean:
 
 - **The codec** (`LeanHttp/Codec/Proofs.lean` and `LeanHttp/Codec/Proofs/`): its result does not depend on how the input is cut into reads; it never delivers more body than `Content-Length` says, nothing for HEAD, 204 or 304, and nothing beyond the body limit; and the head and body it reports are the ones received: the bytes are the interim heads, the head and a body of the kind its framing declares, and the body delivered is that body's payload.
-- **The exchange core** (`LeanHttp/Exchange/Proofs.lean`, `Liveness.lean`, `Response.lean`): no response head is delivered before the request head has been written; a connection is declared reusable only when the bytes received are exactly one complete response, framed with certainty, with nothing after it; until an exchange fails, and unless the caller abandoned the body, the body delivered is a prefix of the body decoded from the bytes received; and every exchange ends by its deadline, provided the shell keeps reporting events when they fall due.  A streamed request body is pulled one chunk at a time, only once the request head and everything before the chunk have been written, so a failure that says nothing was sent has read none of it; what goes on the wire is the body framed as declared, with a `Content-Length` never more than the declared size, and chunked a well-formed chunked body that ends with the last chunk; and a connection is reusable only once all of the body was written.
-- **The planner** (`LeanHttp/Call/Proofs.lean`, `LeanHttp/RequestBody/Proofs.lean`): `Authorization`, `Cookie` and `Proxy-Authorization` never go to an origin other than the first request's; once a byte of a request may have reached the server, it is retried only if its method is idempotent and its body can be replayed (a 307 or 308 redirect still sends a POST again with its body, as the server asked), so a streamed body is never sent again, by a retry, a re-dispatch or a redirect; a call the client gave up on itself is never retried; every retry's delay ends before the call's deadline and within its cap; a call follows at most `maxRedirects` redirects and fails on the next; a 303 turns the request into a GET (a HEAD stays a HEAD), and a method change drops the body and the content fields.
+- **The exchange core** (`LeanHttp/Exchange/Proofs.lean`, `Liveness.lean`, `Response.lean`): no response head is delivered before the request head has been written; a connection is declared reusable only when the bytes received are exactly one complete response, framed with certainty, with nothing after it; until an exchange fails, and unless the caller abandoned the body, the body delivered is a prefix of the body decoded from the bytes received; and every exchange ends by its deadline, provided the shell keeps reporting events when they fall due.  A cancel ends the exchange in the step that reports it, with the delivery it had reached and a connection that is not reused.  A streamed request body is pulled one chunk at a time, only once the request head and everything before the chunk have been written, so a failure that says nothing was sent has read none of it; what goes on the wire is the body framed as declared, with a `Content-Length` never more than the declared size, and chunked a well-formed chunked body that ends with the last chunk; and a connection is reusable only once all of the body was written.
+- **The planner** (`LeanHttp/Call/Proofs.lean`, `LeanHttp/RequestBody/Proofs.lean`): `Authorization`, `Cookie` and `Proxy-Authorization` never go to an origin other than the first request's; once a byte of a request may have reached the server, it is retried only if its method is idempotent and its body can be replayed (a 307 or 308 redirect still sends a POST again with its body, as the server asked), so a streamed body is never sent again, by a retry, a re-dispatch or a redirect; a call the client gave up on itself, or that was cancelled, is never retried, and an exchange that was cancelled is never sent again on a fresh connection; every retry's delay ends before the call's deadline and within its cap; a call follows at most `maxRedirects` redirects and fails on the next; a 303 turns the request into a GET (a HEAD stays a HEAD), and a method change drops the body and the content fields.
 - **The pool** (`LeanHttp/Pool/Proofs.lean`): every connection is idle, checked out or gone, and only one of them; the hand-outs and returns of a connection alternate; a connection given back as not reusable, or dropped, is never handed out again; the caps on idle and active connections per origin hold; and no connection is handed out after its idle timeout.
 
 `lake build` checks every proof: the proof modules are roots of the library target.  The four scripts `scripts/proof-axioms.lean`, `codec-axioms.lean`, `call-axioms.lean` and `pool-axioms.lean` print the axioms of the main theorems, and CI requires that each depends on nothing beyond `propext`, `Classical.choice` and `Quot.sound`, so on no `sorry`.
@@ -27,7 +27,7 @@ The cores' properties are proved in Lean:
 The theorems are about the cores.  That the shell does what the cores say, and reports to them truthfully what the sockets did, is not proved.  It is tested:
 
 - With `Config.observe` the client records every step of every call: each request as written, each decision with its clock, each wait and the error.  `Call.validate` replays such a record through a planner of its own and rejects any request, wait or error the planner did not call for.  The real-socket suite checks every call it makes this way.
-- The real-socket suite (`tests/net/run.sh`) runs the client over loopback against local servers that misbehave on purpose: servers that close idle connections or send a 408 on them, that drop SYNs, stall mid-body, answer an upload early or send malformed responses.  It checks outcomes, connection reuse, timings, and that the process exits promptly afterwards.
+- The real-socket suite (`tests/net/run.sh`) runs the client over loopback against local servers that misbehave on purpose: servers that close idle connections or send a 408 on them, that drop SYNs, stall mid-body, answer an upload early or send malformed responses, and it cancels calls while they connect, shake hands over TLS, write, wait for the response, read its body, upload, wait to retry and wait at the cap on connections.  It checks outcomes, connection reuse, timings, and that the process exits promptly afterwards.
 - The pure suites drive the cores through fixed traces of known defects, through random runs with properties checked at every step, and through bounded exhaustive exploration, with planted bugs as positive controls.  The codec is compared with the HTTP/1.1 parser of the client proposed for `Std.Http` ([leanprover/lean4#14548](https://github.com/leanprover/lean4/pull/14548)), which `scripts/vendor.sh` generates from a lean4 commit for the tests; the library does not import it.  The exchange core with the codec inside it is also fuzzed with AFL++ (`fuzz/`).
 
 The `Retry-After` parser and the resolution of redirect targets are tested, not proved.
@@ -123,6 +123,26 @@ A stream returns `some chunk` for each chunk (an empty one is skipped) and `none
 
 A stream is read once, so a call that may have sent any of it is never sent again: not retried, whatever the method, not sent again on a fresh connection when its pooled one turns out closed, and a 307 or 308 redirect, which would have to send the body again, is delivered to the caller instead of followed (a 301, 302 or 303 that turns the request into a GET is followed without the body).  A call that failed before it wrote anything (a refused connect) has read none of the stream, and is retried as any other.  The stream goes on being pulled while the response arrives, as long as the caller reads it (with `withUpload`, a callback that does not read the body stalls the rest of the upload, within the call's deadline); if the server answers before the upload ends (a 413, say), the response is delivered and the connection is not reused.  A chunk the client is waiting for when the call ends is dropped when it comes.
 
+## Cancelling a call
+
+Every call takes an optional `Std.CancellationToken` (`cancel`), and cancelling the token from any task cancels the call wherever it is: taking a connection, looking up the name, connecting, in the TLS handshake, writing the request, waiting for the response, reading the body, or waiting to retry.  From `examples/RequestExample.lean`:
+
+```lean
+let token ← Std.CancellationToken.new
+let slow := Request.get (.parse! s!"{base}/slow?ms=5000") |>.body .empty
+let result ← (do
+  let call ← Std.Async.async (client.request slow (cancel := token))
+  Std.Async.sleep 200
+  token.cancel
+  Std.Async.await call).block
+```
+
+The call returns promptly with the cause `cancelled` and the token's reason, as if its deadline had passed at that moment: it is never retried, its `delivery` says how far it got, a connection it had written to is closed rather than pooled (one it had taken and written nothing on goes back to the pool), and no receive is left pending.  What Lean v4.34.1 cannot cancel is abandoned, as the deadline abandons it: a name lookup, a connect attempt, a write the peer does not accept, and a call of a request body's producer run on and their results are dropped (Current limits, below).  One token may serve any number of calls, and only calls still running hold anything of it.
+
+With `withResponse` and `withUpload`, cancelling once the response head has arrived makes a read in progress, and every later read, raise the call's error, and when the callback ends its connection is closed.  A token cancelled with the reason `deadline` gives `cancelled .deadline`, not the `timeout .deadline` of the call's own deadline.  The callback itself is not interrupted: if it returns normally, its result is the call's.  Once the whole body has arrived and been handed to the stream (at once, for a response without a body), cancelling changes nothing: the stream gives out what it holds.
+
+`Client.close` is graceful: it closes the idle connections and refuses later calls with `localClose`, and calls in flight run on to their end (a redirect or retry of theirs that needs a new connection is refused).  `Client.shutdownNow` closes the client and also cancels every call in flight through it, which fail with `cancelled` and the reason `shutdown`, as do later calls.  (As in Java's `ExecutorService` and HTTP client, `shutdown` would be the graceful one, so the cancelling one is `shutdownNow`.)
+
 ## Configuration
 
 `Client.new` takes a `Config`; every field has a default.  From `examples/StreamExample.lean`, a client for a slow upstream:
@@ -184,7 +204,7 @@ The OpenSSL used is the toolchain's own (3.6.0 in the Linux toolchains): the lib
 
 ## Errors
 
-`Client.request` never throws: a failure is an `Error`.  Its `cause` says what went wrong (`connect`, `resolve`, `tls`, `timeout`, `peerClosed`, `protocol`, `limit`, `tooManyRedirects`, `invalidRequest`, `localClose`, `requestBody`), and its `delivery` says how far the call got, which decides whether you can safely try again:
+`Client.request` never throws: a failure is an `Error`.  Its `cause` says what went wrong (`connect`, `resolve`, `tls`, `timeout`, `peerClosed`, `protocol`, `limit`, `tooManyRedirects`, `invalidRequest`, `localClose`, `cancelled`, `requestBody`), and its `delivery` says how far the call got, which decides whether you can safely try again:
 
 - `notSent`: no byte of any request of the call was written, so the server cannot have seen it.  Sending it again is safe whatever the method.
 - `maybeDelivered`: request bytes were written but no complete response head came back.  The server may or may not have acted on the request.
@@ -205,8 +225,8 @@ def advice (err : Error) : String :=
 ## Current limits
 
 - No HTTP/2, no proxies, no cookies and no decompression.  TLS has no session resumption and no client certificates, and reads trust stores only from files.
-- A call cannot be cancelled.  `Client.close` closes the idle connections and refuses later calls, but calls in flight run on.
-- Exiting the process.  On v4.34.1 a process can hang at exit when a socket receive is still pending, a bug in Lean's task manager that [leanprover/lean4#15743](https://github.com/leanprover/lean4/pull/15743) fixes (open as of 2026-10-27); the client ends every receive before a call returns, and the real-socket suite checks that processes exit promptly.  A pending connect, write or name lookup cannot be cancelled on v4.34.1: an abandoned connect attempt holds its socket until the kernel gives up on it (about two minutes with Linux's defaults), and a name lookup cut off by the deadline keeps running until the resolver gives up, which can delay exit and has crashed the process at exit.  `NOTES.md` has the measurements.
+- Cancelling a call cannot interrupt code of the caller's: the callback of `withResponse` runs on until it returns, and a call of a request body's producer runs on, its result dropped.
+- Exiting the process.  On v4.34.1 a process can hang at exit when a socket receive is still pending, a bug in Lean's task manager that [leanprover/lean4#15743](https://github.com/leanprover/lean4/pull/15743) fixes (open as of 2026-10-27); the client ends every receive before a call returns, and the real-socket suite checks that processes exit promptly.  A pending connect, write or name lookup cannot be cancelled on v4.34.1, by the deadline or by cancelling the call: an abandoned connect attempt holds its socket until the kernel gives up on it (about two minutes with Linux's defaults), and an abandoned name lookup keeps running until the resolver gives up, which can delay exit and has crashed the process at exit.  `NOTES.md` has the measurements.
 
 ## Running the tests and checking the proofs
 

@@ -3,10 +3,12 @@ module
 public import Std.Async.TCP
 public import Std.Http.Data
 public import Std.Sync.Mutex
+public import Std.Sync.CancellationToken
 public import Std.Time.DateTime.Timestamp
 public import LeanHttp.Body
 public import LeanHttp.Call
 public import LeanHttp.Call.Trace
+public import LeanHttp.Cancel
 public import LeanHttp.Config
 public import LeanHttp.Connect
 public import LeanHttp.Error
@@ -230,6 +232,17 @@ structure Client where
   -/
   tlsCtx : Std.Mutex (Option Tls.Context)
 
+  /--
+  Cancelled by `shutdownNow`: every call's checks ask it, besides the token the call was given.
+  -/
+  closing : Std.CancellationToken
+
+  /--
+  The cancellation of every call in flight, by call number, which `shutdownNow` cancels.  A table
+  rather than a watch of `closing` per call: a watch costs every call, given a token or not.
+  -/
+  inflight : Std.Mutex (Std.HashMap Nat Cancel)
+
 namespace Client
 
 /--
@@ -245,7 +258,8 @@ A client with the given configuration and an empty pool.
 def new (config : Config := {}) : BaseIO Client := do
   let freed ← IO.Promise.new
   let state ← Std.Mutex.new { pool := Pool.empty (poolConfig config), freed }
-  return { config, state, calls := ← IO.mkRef 0, tlsCtx := ← Std.Mutex.new none }
+  return { config, state, calls := ← IO.mkRef 0, tlsCtx := ← Std.Mutex.new none,
+           closing := ← Std.CancellationToken.new, inflight := ← Std.Mutex.new {} }
 
 /--
 Runs `f` on the pool state under the mutex.
@@ -307,9 +321,10 @@ def stats (client : Client) : BaseIO Stats :=
     return (s, { idle := s.pool.idle.length, checkedOut := s.pool.out.length, allocated := s.pool.next })
 
 /--
-Closes every idle connection and the pool: calls already holding a connection finish, and their
-connections are closed at the end; later calls fail with `Cause.localClose`, not sent (with pooling
-off too).
+Closes every idle connection and the pool, gracefully: calls in flight go on and finish, and their
+connections are closed at the end; a later request of theirs that needs a connection (a redirect,
+a retry) fails, as does every later call, with `Cause.localClose`, not sent (with pooling off too).
+To stop the calls in flight as well, use `shutdownNow`, or cancel their tokens.
 -/
 def close (client : Client) : BaseIO Unit := do
   let gone ← client.withState fun s => do
@@ -318,6 +333,20 @@ def close (client : Client) : BaseIO Unit := do
     let s ← wake { s with pool, idle := {} }
     return (s, gone)
   releaseAll gone
+
+/--
+Closes the client (`close`) and cancels every call in flight through it, and every later one: they
+fail with `Cause.cancelled .shutdown`, as if each had been given a token that was cancelled now,
+with the delivery each had reached.  Their connections are closed, never pooled.  Returns at once,
+without waiting for the calls to end.
+-/
+def shutdownNow (client : Client) : BaseIO Unit := do
+  -- The token first, so that every check made from now on sees the shutdown, then the calls in
+  -- flight, whose waits it wakes; a call that starts in between finds the token cancelled.
+  client.closing.cancel .shutdown
+  let calls ← client.inflight.atomically (m := BaseIO) do return (← get).toArray
+  calls.forM fun (_, c) => c.cancel .shutdown
+  client.close
 
 /--
 A seed for the backoff jitter, from the operating system.
@@ -531,6 +560,8 @@ private structure Attempt where
   deadline : Nat
   /-- Reports a step of the call (`Config.observe`). -/
   observe : Call.Event → BaseIO Unit
+  /-- The call's cancellation. -/
+  cancel : Cancel
 
 /--
 A failure before any request byte was written.
@@ -575,12 +606,13 @@ private def Attempt.session (a : Attempt) : IO (Except TlsFailure Tls.Session) :
 
 /--
 Runs the TLS handshake of `session` on a freshly connected `socket`, within
-`Config.tlsHandshakeTimeoutMs` and the call's deadline.  No receive is pending when it returns.
+`Config.tlsHandshakeTimeoutMs` and the call's deadline, unless the call is cancelled first.  No
+receive is pending when it returns.
 -/
 private def Attempt.secure (a : Attempt) (socket : TCP.Socket.Client) (session : Tls.Session) :
     Async (Except Failure Transport) := do
   let timeoutAt := (← IO.monoMsNow) + a.client.config.tlsHandshakeTimeoutMs
-  let shaken ← try handshake socket session timeoutAt a.deadline
+  let shaken ← try handshake socket session timeoutAt a.deadline a.cancel
     catch e =>
       socket.native.cancelRecv.catchExceptions fun _ => pure ()
       pure (.error (.failed s!"the client failed: {e}"))
@@ -592,6 +624,21 @@ private def Attempt.secure (a : Attempt) (socket : TCP.Socket.Client) (session :
     | .error (.verify detail) => .error (notSent (.tls (.verify detail)))
     | .error (.failed detail) => .error (notSent (.tls (.handshake detail)))
     | .error (.closed detail) => .error (notSent (.tls (.closed detail)))
+    | .error (.cancelled reason) =>
+      .error (notSent (.cancelled reason) "cancelled during the TLS handshake")
+
+/--
+The addresses of the plan's host, in the order to try them: an IP literal as it is, a name by a
+lookup, for each round of connect attempts.
+-/
+private def Attempt.addresses (a : Attempt) (progress : Progress) :
+    Async (Except String (Except ConnectError (Array IPAddr)) × Progress) := do
+  -- `Connect.resolve` reports its failures as values; should it throw anyway, the exception counts
+  -- as a failed connect.
+  let looked : Except String (Except ConnectError (Array IPAddr)) ←
+    try pure (.ok (← Connect.resolve (Target.ofHost a.plan.host) a.deadline a.cancel))
+    catch e => pure (.error (toString e))
+  return (looked, progress)
 
 /--
 Opens a connection, under pool id `id` if pooling is on, with one round of connect attempts and,
@@ -600,78 +647,105 @@ for `https`, the TLS handshake; drops the id if either fails.
 private def Attempt.connect (a : Attempt) (id : Option ConnId) (progress : Progress) :
     Async (Except Failure Held × Progress) := do
   let config := a.client.config
-  -- An exchange sent again may get here with the deadline gone: no lookup is started then, since a
-  -- lookup cannot be cancelled and an abandoned one can delay exit (`NOTES.md`).
-  if a.deadline ≤ (← IO.monoMsNow) then
+  let fail (f : Failure) (progress : Progress) : BaseIO (Except Failure Held × Progress) := do
     if let some id := id then dropConn a.client id
-    return (.error (notSent (.timeout .deadline)), progress)
+    return (.error f, progress)
+  -- An exchange sent again may get here with the deadline gone, or the call cancelled: no lookup is
+  -- started then, since a lookup cannot be cancelled and an abandoned one can delay exit
+  -- (`NOTES.md`).
+  if let some reason ← a.cancel.reason? then
+    return ← fail (notSent (.cancelled reason) "cancelled before connecting") progress
+  if a.deadline ≤ (← IO.monoMsNow) then
+    return ← fail (notSent (.timeout .deadline)) progress
   let session? ← match a.plan.scheme with
     | .http => pure none
     | .https =>
       match ← a.session with
       | .ok session => pure (some session)
-      | .error f =>
-        if let some id := id then dropConn a.client id
-        return (.error (notSent (.tls f)), progress)
+      | .error f => return ← fail (notSent (.tls f)) progress
+  let (addrs, progress) ← a.addresses progress
+  let addrs ← match addrs with
+    | .ok (.ok addrs) => pure addrs
+    | .ok (.error (.resolve host detail)) => return ← fail (notSent (.resolve host detail)) progress
+    | .ok (.error (.cancelled reason _)) =>
+      return ← fail (notSent (.cancelled reason) "cancelled while the name was looked up") progress
+    | .ok (.error _) =>
+      return ← fail (notSent (.timeout .deadline)
+        "the deadline passed before any connect attempt started (resolving the name, or before)")
+        progress
+    | .error detail => return ← fail (notSent (.connect #[]) detail) progress
   -- `Connect.run` reports its failures as values; should it throw anyway, the id must not stay
   -- checked out, so the exception counts as a failed connect.
   let connected : Except String (Except ConnectError Connected) ←
-    try pure (.ok (← Connect.run config (.ofHost a.plan.host) a.plan.port progress.rounds a.deadline))
+    try pure (.ok (← Connect.run config addrs a.plan.port progress.rounds a.deadline a.cancel))
     catch e => pure (.error (toString e))
+  let afterRound (attempts : Array ConnectAttempt) : Progress :=
+    { progress with rounds := progress.rounds + 1, attempts := progress.attempts ++ attempts }
   match connected with
   | .ok (.ok c) =>
-    let progress := { progress with
-      rounds := progress.rounds + 1, attempts := progress.attempts ++ c.attempts }
+    let progress := afterRound c.attempts
     let transport ← match session? with
       | none => pure (Transport.tcp c.socket)
       | some session =>
         match ← a.secure c.socket session with
         | .ok transport => pure transport
-        | .error f =>
-          if let some id := id then dropConn a.client id
-          return (.error f, progress)
+        | .error f => return ← fail f progress
     let held : Held := { transport, address := c.address, id, reused := false }
     return (.ok held, progress)
   | .ok (.error e) =>
-    if let some id := id then dropConn a.client id
-    return match e with
-      | .resolve host detail => (.error (notSent (.resolve host detail)), progress)
-      | .exhausted attempts =>
-        (.error (notSent (.connect attempts)),
-          { progress with rounds := progress.rounds + 1, attempts := progress.attempts ++ attempts })
-      | .deadline attempts =>
-        if attempts.isEmpty then
-          (.error (notSent (.timeout .deadline)
-            "the deadline passed before any connect attempt started (resolving the name, or before)"),
-            progress)
-        else
-          (.error (notSent (.timeout .deadline) (Cause.connect attempts).describe),
-            { progress with rounds := progress.rounds + 1, attempts := progress.attempts ++ attempts })
-  | .error detail =>
-    if let some id := id then dropConn a.client id
-    return (.error (notSent (.connect #[]) detail), progress)
+    match e with
+    | .resolve host detail => fail (notSent (.resolve host detail)) progress
+    | .exhausted attempts => fail (notSent (.connect attempts)) (afterRound attempts)
+    | .deadline attempts =>
+      if attempts.isEmpty then
+        fail (notSent (.timeout .deadline) "the deadline passed before any connect attempt started")
+          progress
+      else
+        fail (notSent (.timeout .deadline) (Cause.connect attempts).describe) (afterRound attempts)
+    | .cancelled reason attempts =>
+      if attempts.isEmpty then
+        fail (notSent (.cancelled reason) "cancelled while connecting") progress
+      else
+        fail (notSent (.cancelled reason)
+          s!"cancelled while connecting; {(Cause.connect attempts).describe}") (afterRound attempts)
+  | .error detail => fail (notSent (.connect #[]) detail) progress
 
 /--
 Takes a connection from the pool for the exchange: an idle one that passes the idle check (closing
 those that fail it), or a new one, waiting while the origin is at its active cap, within the
-deadline.
+deadline and until the call is cancelled.
 -/
 private partial def Attempt.acquire (a : Attempt) (reuse : Bool) (progress : Progress) :
     Async (Except Failure Held × Progress) := do
   let config := a.client.config
+  -- Checked on every round, before the pool: a wait at the active cap that a returned connection,
+  -- or the client's close, ended may have ended as the call was cancelled (`Client.shutdownNow`
+  -- cancels, then closes).
+  if let some reason ← a.cancel.reason? then
+    return (.error (notSent (.cancelled reason) "cancelled while taking a connection"), progress)
   let left := a.deadline - (← IO.monoMsNow)
   if left == 0 then
     return (.error (notSent (.timeout .deadline)
       "the deadline passed while taking a connection from the pool"), progress)
   match ← takeConn a.client a.target reuse with
-  | .closed => return (.error (notSent .localClose "the client was closed"), progress)
+  | .closed =>
+    -- `Client.shutdownNow` cancels before it closes: a pool found closed after a shutdown is the
+    -- shutdown's.
+    if let some reason ← a.cancel.reason? then
+      return (.error (notSent (.cancelled reason) "cancelled while taking a connection"), progress)
+    return (.error (notSent .localClose "the client was closed"), progress)
   | .atCap freed =>
     let left := a.deadline - (← IO.monoMsNow)
     if left == 0 then
       return (.error (notSent (.timeout .deadline)
         "waiting for a connection: the origin is at maxActivePerOrigin"), progress)
-    match ← (try (some <$> awaitFirst #[freed.result?] left) catch _ => pure none) with
-    | some _ => a.acquire reuse progress
+    match ← (try (some <$> a.cancel.race #[freed.result?] left) catch _ => pure none) with
+    | some (.cancelled reason) =>
+      return (.error (notSent (.cancelled reason)
+        "cancelled while waiting for a connection: the origin is at maxActivePerOrigin"), progress)
+    -- A connection came back, or the time ran out: ask the pool again, which reports the deadline
+    -- if it has passed.
+    | some (.done _) | some .timedOut => a.acquire reuse progress
     | none =>
       return (.error (notSent (.timeout .deadline) "waiting for a connection failed"), progress)
   | .fresh id => a.connect (some id) progress
@@ -715,7 +789,9 @@ private partial def Attempt.run (a : Attempt) (reuse : Bool) (progress : Progres
   let (got, progress) ← if config.pool then a.acquire reuse progress else do
       -- Without pooling the pool only records whether the client was closed.
       let closed ← a.client.withState (β := Bool) fun s => pure (s, s.pool.closed)
-      if closed then
+      if let some reason ← a.cancel.reason? then
+        pure (.error (notSent (.cancelled reason) "cancelled while taking a connection"), progress)
+      else if closed then
         pure (.error (notSent .localClose "the client was closed"), progress)
       else
         a.connect none progress
@@ -723,11 +799,17 @@ private partial def Attempt.run (a : Attempt) (reuse : Bool) (progress : Progres
     | .ok held => pure held
     | .error f => return (.failure f, { progress with reused := false })
   let progress := { progress with reused := held.reused }
+  -- A call cancelled while it took its connection writes nothing: the connection, on which nothing
+  -- was done, goes back to the pool.
+  if let some reason ← a.cancel.reason? then
+    settleHeld a.client held true
+    return (.failure (notSent (.cancelled reason) "cancelled before the request was written"),
+      progress)
   -- The shell reports socket errors to the core as events; should anything throw anyway, the
   -- connection is dropped like after any failure, with no receive left pending, and the exchange
   -- is not sent again.
   let begun : Except Failure (Live × Option Response.Head) ←
-    try pure (.ok (← Live.begin held.transport a.prepared a.deadline a.produce))
+    try pure (.ok (← Live.begin held.transport a.prepared a.deadline a.cancel a.produce))
     catch e =>
       held.transport.cancelRecv true
       pure (.error {
@@ -790,17 +872,6 @@ def wallSec : IO Nat := do
   return (← Std.Time.Timestamp.now).toSecondsSinceUnixEpoch.val.toNat
 
 /--
-Sleeps until `IO.monoMsNow` reaches `target`.  A timer may fire up to a millisecond before its time by
-`IO.monoMsNow`, since libuv measures timers from the time it cached at the start of the loop's
-iteration, so the remainder is slept again.
--/
-partial def sleepUntil (target : Nat) : Async Unit := do
-  let now ← IO.monoMsNow
-  if now < target then
-    Std.Async.sleep (.ofNat (target - now))
-    sleepUntil target
-
-/--
 What a call is made of, fixed when it starts.
 -/
 private structure CallSpec where
@@ -818,6 +889,8 @@ private structure CallSpec where
   deadline : Nat
   /-- The call's number, for `Config.observe`. -/
   number : Nat
+  /-- The call's cancellation. -/
+  cancel : Cancel
 
 /--
 Reports a step of the call to `Config.observe`, if it is set.
@@ -849,10 +922,13 @@ private def CallSpec.error (spec : CallSpec) (st : Call.State) (progress : Progr
 
 /--
 Runs the call from the planner's state `st`: sends the current request, asks the planner what
-follows, and does what it says, until it delivers (by entering `k`) or fails.
+follows, and does what it says, until it delivers (by entering `k`) or fails.  A call cancelled
+before the request goes out (`pending` says when: before the first request, while waiting to retry,
+before following a redirect) reports that to the planner as a failure with nothing sent, and fails.
 -/
 private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State)
-    (progress : Progress) (k : Response BodyStream → Async α) : Async (Except Error α) := do
+    (progress : Progress) (pending : String) (k : Response BodyStream → Async α) :
+    Async (Except Error α) := do
   let hop := st.current
   let body := match hop.body with
     | .original => spec.req.body
@@ -860,6 +936,20 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
   let fail (e : Error) : Async (Except Error α) := do
     spec.observe (.fail e)
     return .error e
+  if let some reason ← spec.cancel.reason? then
+    let f := notSent (.cancelled reason) s!"cancelled {pending}"
+    let target := s!"{hop.origin.scheme.val}://{hop.origin.host}:{hop.origin.port}"
+    let wall ← try wallSec catch _ => pure 0
+    let clock : Call.Clock := { now := ← IO.monoMsNow, wallSec := wall }
+    let (_, step) := Call.plan st clock (.failure f)
+    spec.observe (.decide clock (.failure f) step)
+    -- The planner fails every cancelled call (`Call.plan_cancelled`); should it not, the call fails
+    -- anyway.
+    let why := match step with
+      | .fail (.failure _ why) => why
+      | _ => .cause
+    return ← fail (spec.error st { progress with reused := false, redispatched := false } target f
+      (some why))
   -- The planner follows only `http` and `https` redirects, which `Client.plan` accepts; should it
   -- refuse one anyway, the call fails before sending it.
   let plan ← match Client.plan hop.head with
@@ -880,7 +970,8 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
     spec.observe (.send hop.head target wire framing (← IO.monoMsNow))
   let attempt : Attempt := {
     client := spec.client, plan, target, prepared, produce,
-    replayable := hop.replayable st.bodyKind, deadline := spec.deadline, observe := spec.observe }
+    replayable := hop.replayable st.bodyKind, deadline := spec.deadline, observe := spec.observe,
+    cancel := spec.cancel }
   let (began, progress) ← attempt.run true { progress with redispatched := false }
   let outcome := match began with
     | .head _ head _ => Call.Outcome.response head
@@ -926,15 +1017,16 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
       | none => throw e
   | .follow _, _ =>
     discardBody
-    spec.loop st' progress k
+    spec.loop st' progress "before the redirect was followed" k
   | .retry delay _, _ =>
     discardBody
     -- The delay runs from the time the planner decided, and is never slept past the deadline (the
-    -- planner made it end before the deadline when it decided).
+    -- planner made it end before the deadline when it decided).  A cancellation ends it early, and
+    -- the next round of the loop fails the call.
     let endsAt := min (clock.now + delay) spec.deadline
     spec.observe (.wait endsAt)
-    sleepUntil endsAt
-    spec.loop st' progress k
+    discard <| spec.cancel.sleepUntil endsAt
+    spec.loop st' progress "while waiting to retry" k
   | .fail reason, _ =>
     discardBody
     let (status, written) := match began with
@@ -955,10 +1047,22 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
     fail (spec.error st progress target f none)
 
 /--
+Records call `number`'s cancellation among the calls in flight, for `shutdownNow`, or with `none`
+forgets it.
+-/
+private def track (client : Client) (number : Nat) (c : Option Cancel) : BaseIO Unit :=
+  client.inflight.atomically (m := BaseIO) do
+    match c with
+    | some c => modify (·.insert number c)
+    | none => modify (·.erase number)
+
+/--
 Makes a call whose response body may be read up to `maxBody` bytes, and hands the response to `k`.
+The call is cancelled when `cancel` is, or the client is shut down.
 -/
 private def run {α : Type} (client : Client) (req : Request RequestBody) (maxBody : Nat)
-    (k : Response BodyStream → Async α) : Async (Except Error α) := do
+    (cancel : Option Std.CancellationToken) (k : Response BodyStream → Async α) :
+    Async (Except Error α) := do
   let config := client.config
   let started ← IO.monoMsNow
   let deadline := started + config.deadlineMs
@@ -986,9 +1090,17 @@ private def run {α : Type} (client : Client) (req : Request RequestBody) (maxBo
     | .ok st => pure st
     | .error e => return refuse (.invalidRequest s!"the planner refuses the request: {reprStr e}") target
   let number ← client.calls.modifyGet fun n => (n, n + 1)
-  let spec : CallSpec := { client, req, xcfg, seed, started, deadline, number }
+  -- The caller's token first: a call it cancelled reports its reason, even if the client is shut
+  -- down afterwards.
+  let watch ← Cancel.watch (cancel.toArray.push client.closing) cancel.toArray
+  track client number (some watch)
+  let spec : CallSpec := { client, req, xcfg, seed, started, deadline, number, cancel := watch }
   spec.observe (.start config.policy req.line kind framing seed deadline xcfg.keepAlive)
-  spec.loop st {} k
+  -- The call ends here, the callback included: the watch of its tokens ends with it.
+  try spec.loop st {} "before the request was sent" k
+  finally
+    track client number none
+    watch.finish
 
 /--
 Sends `req` and hands the final response to `k`, whose body `k` pulls with `BodyStream.read`.
@@ -1014,10 +1126,19 @@ otherwise the connection is closed.  The stream must not be used after `k` ends;
 an error.  An error the stream raised (the connection closed early, a timeout) that leaves `k` makes
 the call's result that `Error`; any other exception from `k` is raised again once the connection is
 released.  The call's deadline (`Config.deadlineMs`) covers reading the body too.
+
+Cancelling `cancel` (or `shutdownNow`) cancels the call wherever it is, with `Cause.cancelled`:
+until the final response head arrives, the call fails; from then on, a read in progress and every
+later read of the body raise that error, and when `k` ends the connection is closed, never pooled.
+`k` itself is not interrupted, since Lean cannot stop an `Async` computation; if it returns
+normally, its result is the call's.  Once the exchange has ended (the whole body has arrived and been
+handed to the stream, as for a response without a body), cancelling changes nothing: the stream
+gives out what it holds.
 -/
 def withResponse {α : Type} (client : Client) (req : Request ByteArray)
-    (k : Response BodyStream → Async α) : Async (Except Error α) :=
-  client.run { req with body := .bytes req.body } (2 ^ 62) k
+    (k : Response BodyStream → Async α) (cancel : Option Std.CancellationToken := none) :
+    Async (Except Error α) :=
+  client.run { req with body := .bytes req.body } (2 ^ 62) cancel k
 
 /--
 Like `withResponse`, for a request whose body may be a stream the caller produces while the request
@@ -1028,16 +1149,19 @@ re-dispatch, and a 307 or 308 redirect, which would send the body again, is deli
 instead of followed.  A producer that raises an error, or gives more or fewer bytes than the size it
 declared, fails the call with `Cause.requestBody` (a producer asked whether it has ended after its
 whole declared size, once the response has already ended the call, is not waited for).  The upload
-goes on only while `k` reads the response body.
+goes on only while `k` reads the response body.  Cancelling `cancel` cancels the call as for
+`withResponse`; a call of the producer still running is left to finish, and what it returns is
+dropped.
 -/
 def withUpload {α : Type} (client : Client) (req : Request RequestBody)
-    (k : Response BodyStream → Async α) : Async (Except Error α) :=
-  client.run req (2 ^ 62) k
+    (k : Response BodyStream → Async α) (cancel : Option Std.CancellationToken := none) :
+    Async (Except Error α) :=
+  client.run req (2 ^ 62) cancel k
 
 /--
 Like `request`, for a request whose body may be a stream the caller produces while the request is
 sent (`RequestBody.stream`; see `withUpload`).  Reads the whole response, up to
-`Config.maxBodyBytes`, and never throws.
+`Config.maxBodyBytes`, and never throws.  Cancelling `cancel` cancels the call (see `request`).
 
 ```
 let body ← LeanHttp.RequestBody.ofChunks #["first ".toUTF8, "second".toUTF8]
@@ -1047,8 +1171,8 @@ match ← client.upload req with
 | .error err => ...
 ```
 -/
-def upload (client : Client) (req : Request RequestBody) :
-    Async (Except Error (Response ByteArray)) := do
+def upload (client : Client) (req : Request RequestBody)
+    (cancel : Option Std.CancellationToken := none) : Async (Except Error (Response ByteArray)) := do
   let started ← IO.monoMsNow
   let read (response : Response BodyStream) : Async (Response ByteArray) := do
     let body ← response.body.readAll
@@ -1059,7 +1183,7 @@ def upload (client : Client) (req : Request RequestBody) :
     return { response with body, extensions }
   -- `readAll` raises only the stream's own errors, which `run` returns as the call's error; should
   -- anything else escape, it is reported as an error too.
-  try client.run req client.config.maxBodyBytes read
+  try client.run req client.config.maxBodyBytes cancel read
   catch e =>
     return .error {
       cause := .peerClosed, delivery := .maybeDelivered, detail := s!"the client failed: {e}" }
@@ -1082,16 +1206,33 @@ match ← client.request req with
 ```
 
 Never throws: every failure is an `Error`, which says how far the call got.
+
+A call can be cancelled by the token `cancel`, from any task, at any time until the call returns:
+
+```
+let token ← Std.CancellationToken.new
+let call ← Std.Async.async (client.request req (cancel := token))
+...
+token.cancel                       -- the call returns promptly with Cause.cancelled
+```
+
+It then fails with `Cause.cancelled` and the token's reason, as if its deadline had passed at that
+moment: never retried, with the delivery it had reached (`Error.delivery`), a pending receive
+cancelled, and a connection it had written to closed, never pooled (one it took and wrote nothing
+on goes back to the pool).  What v4.34.1 cannot cancel (a name lookup, a
+connect attempt, a write, a call of a request body's producer) is abandoned, as the deadline
+abandons it.  One token may serve any number of calls.
 -/
-def request (client : Client) (req : Request ByteArray) :
-    Async (Except Error (Response ByteArray)) :=
-  client.upload { req with body := .bytes req.body }
+def request (client : Client) (req : Request ByteArray)
+    (cancel : Option Std.CancellationToken := none) : Async (Except Error (Response ByteArray)) :=
+  client.upload { req with body := .bytes req.body } cancel
 
 /--
 Like `request`, but throws the error as an `IO.Error` (its message says how far the call got).
 -/
-def send (client : Client) (req : Request ByteArray) : Async (Response ByteArray) := do
-  match ← client.request req with
+def send (client : Client) (req : Request ByteArray) (cancel : Option Std.CancellationToken := none) :
+    Async (Response ByteArray) := do
+  match ← client.request req cancel with
   | .ok response => return response
   | .error err => throw err.toIOError
 

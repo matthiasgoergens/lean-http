@@ -23,6 +23,21 @@ net-client call <METHOD> <URL> [key=value ...]
   trace=0        do not check each call's steps against the planner (default: check, `Call.validate`)
   showtrace=1    print each call's steps
   linger=MS      after the calls, wait and count open descriptors again
+  cancel=MS      give the calls a cancellation token, cancelled MS ms after the first call starts
+                 (0: before it starts), or after the mark of after=
+  cancelcalls=N  give the token to the first N calls only (default: all)
+  cancelfrom=N   and not to the calls before call N (default 0)
+  shutdown=MS    shut the client down MS ms after the first call starts, or after the mark of
+                 after=, then make one more call
+  after=MARK[:N] measure cancel=MS or shutdown=MS from the Nth time (default 1) any call reaches
+                 MARK instead: send (a request goes out), follow (the planner follows a redirect),
+                 wait (the wait before a retry begins), deliver (the response goes to the
+                 callback), read (a read of the body returns bytes, stream); or idle, hold (stream)
+                 or pull (upload), whose sleep, or the producer's delay, the action falls MS ms into
+  log=PATH logtext=TEXT logcount=N
+                 and not before N (default 1) more occurrences of TEXT are in the file PATH (a
+                 server's log) than when the first call started
+                 Prints when the action was taken, from the start of the first call.
 net-client stream <METHOD> <URL> [key=value ...]
   Calls `Client.withResponse` and reads the body in pulls; the options of `call`, and
   pull=N          bytes asked for in each read (default 65536)
@@ -32,7 +47,10 @@ net-client stream <METHOD> <URL> [key=value ...]
   race=MS         start a task that reads the stream, and leave the callback MS ms later while
                   that read is in progress
   whole=1         a control: `Client.request`, which reads the whole body into memory
-  Prints the peak resident memory of the process at the end.
+  idle=MS         sleep MS inside the callback before reading the body
+  hold=MS         once the pulls stop (stop=N), sleep MS and read once more
+  Prints when the first call's callback was entered, and the peak resident memory of the process
+  at the end.
 net-client upload <METHOD> <URL> [key=value ...]
   Calls `Client.upload` with a streamed body that a producer makes as it is pulled: byte k of the
   body is k % 251.  The options of `call` (repeat, deadline, gap, retries, ...), and
@@ -41,6 +59,8 @@ net-client upload <METHOD> <URL> [key=value ...]
   declare=N|none  the size declared (default: size); none sends the body chunked
   fail=K          the producer raises an error at pull K, counting from 0
   delay=MS        the producer waits MS before each chunk
+  stall=MS        with after=pull, the producer waits MS after the action rather than the rest of
+                  its delay
   bytes=1         a control: the same body as one byte array, through `Client.request`
   Prints, per call, the outcome as `call` does with the producer's pulls and the bytes it gave,
   and at the end the peak resident memory of the process.
@@ -116,9 +136,12 @@ def configOf (kv : List (String × String)) : Config :=
 abbrev Traces := IO.Ref (Std.HashMap Nat (Array Call.Event))
 
 /-- `config` with an observer that records every call's steps in `traces`, unless `trace=0`. -/
-def withTraces (config : Config) (kv : List (String × String)) (traces : Traces) : Config :=
-  if getNat kv "trace" 1 == 0 then config
-  else { config with observe := some fun n e => traces.modify fun m => m.insert n ((m.getD n #[]).push e) }
+def withTraces (config : Config) (kv : List (String × String)) (traces : Traces)
+    (hook : Call.Event → BaseIO Unit := fun _ => pure ()) : Config :=
+  let record := getNat kv "trace" 1 != 0
+  { config with observe := some fun n e => do
+    if record then traces.modify fun m => m.insert n ((m.getD n #[]).push e)
+    hook e }
 
 /--
 Checks every recorded call against the planner (`Call.validate`) and prints the result, the
@@ -169,6 +192,196 @@ def summary (label : String) (times : Array Nat) : String :=
 def openFds : IO Nat := do
   return (← System.FilePath.readDir "/proc/self/fd").size
 
+/-- Runs `action` `ms` milliseconds from now, from a task of its own; at once for 0. -/
+def after (ms : Nat) (action : BaseIO Unit) : IO Unit := do
+  if ms == 0 then action
+  else discard <| start (do Std.Async.sleep (.ofNat ms); action : Async Unit)
+
+/--
+Where the action of `cancel=MS` or `shutdown=MS` is measured from (`after=MARK[:N]`): the first call's
+start, or the `N`th time (default the first) any call of the client reaches one of these steps.
+-/
+inductive Mark where
+  /-- The first call starts (the default). -/
+  | start
+  /-- A call's request goes out (`Call.Event.send`): the call begins taking a connection for it. -/
+  | send
+  /-- The planner decides to follow a redirect, before the redirect's body is drained. -/
+  | follow
+  /-- The wait before a retry begins. -/
+  | wait
+  /-- The response is about to be handed to the callback. -/
+  | deliver
+  /-- A read of the body by the callback (`stream`) returned bytes. -/
+  | read
+  /-- The callback's `idle` sleep; the callback itself acts `MS` ms into it, then sleeps the rest. -/
+  | idle
+  /-- The callback's `hold` sleep, in the same way. -/
+  | hold
+  /-- A call of the upload's producer; the producer acts `MS` ms into its `delay`, then waits the rest. -/
+  | pull
+  deriving BEq
+
+def Mark.parse? : String → Option Mark
+  | "start" => some .start
+  | "send" => some .send
+  | "follow" => some .follow
+  | "wait" => some .wait
+  | "deliver" => some .deliver
+  | "read" => some .read
+  | "idle" => some .idle
+  | "hold" => some .hold
+  | "pull" => some .pull
+  | _ => none
+
+/--
+The cancellation (`cancel=MS`, of a token the calls get) or shutdown (`shutdown=MS`) of a run, and
+when it is taken: `MS` ms after its mark (`after=`), and, with `log=PATH logtext=TEXT`, not before
+`logcount` (default 1) more occurrences of `TEXT` are in the file `PATH` than when the first call
+started: a server's log saying that it has the request, so that the action is placed at a stage of
+the call a server sees and the client does not report.
+-/
+structure Trigger where
+  /-- `cancel` or `shutdown`; `none` without either option. -/
+  label : Option String
+  mark : Mark
+  count : Nat
+  ms : Nat
+  log? : Option (System.FilePath × String × Nat)
+  /-- The token of `cancel=MS`. -/
+  token : Option Std.CancellationToken
+  /-- What is done: cancel the token, or shut the client down (set once there is a client). -/
+  action : IO.Ref (BaseIO Unit)
+  /-- How often the mark was reached. -/
+  seen : IO.Ref Nat
+  /-- Whether the mark was reached, for a trigger that also waits for a log. -/
+  reached : IO.Ref Bool
+  /-- Whether the action was taken, or is being taken. -/
+  claimed : IO.Ref Bool
+  /-- When the first call started (`IO.monoNanosNow`). -/
+  armedAt : IO.Ref Nat
+  /-- When the action was taken, in nanoseconds from the start of the first call. -/
+  firedAt : IO.Ref (Option Nat)
+  /-- The occurrences of the log's text when the first call started. -/
+  logBase : IO.Ref Nat
+  /-- Set when the calls are over, so that a trigger still waiting for its log stops. -/
+  done : IO.Ref Bool
+
+def triggerOf (kv : List (String × String)) : IO Trigger := do
+  let (label, ms) ← match kv.lookup "cancel" >>= String.toNat?, kv.lookup "shutdown" >>= String.toNat? with
+    | some _, some _ => throw (.userError "give cancel=MS or shutdown=MS, not both")
+    | some ms, none => pure (some "cancel", ms)
+    | none, some ms => pure (some "shutdown", ms)
+    | none, none => pure (none, 0)
+  let (mark, count) ← match (kv.lookup "after").map (·.splitOn ":") with
+    | none => pure (Mark.start, 1)
+    | some [m] => match Mark.parse? m with
+      | some mark => pure (mark, 1)
+      | none => throw (.userError s!"after={m}: no such mark")
+    | some [m, n] => match Mark.parse? m, n.toNat? with
+      | some mark, some n => pure (mark, n)
+      | _, _ => throw (.userError s!"after={m}:{n}: no such mark, or not a count")
+    | some _ => throw (.userError "after=MARK or after=MARK:N")
+  let log? ← match kv.lookup "log", kv.lookup "logtext" with
+    | some path, some text => pure (some (System.FilePath.mk path, text, getNat kv "logcount" 1))
+    | none, none => pure none
+    | _, _ => throw (.userError "log=PATH and logtext=TEXT go together")
+  if log?.isSome && (mark == .idle || mark == .hold || mark == .pull) then
+    throw (.userError "a log cannot be waited for inside the callback or the producer")
+  let token ← if label == some "cancel" then some <$> Std.CancellationToken.new else pure none
+  let cancel : BaseIO Unit := match token with
+    | some t => t.cancel .cancel
+    | none => pure ()
+  return {
+    label, mark, count, ms, log?, token, action := ← IO.mkRef cancel, seen := ← IO.mkRef 0,
+    reached := ← IO.mkRef false, claimed := ← IO.mkRef false, armedAt := ← IO.mkRef 0,
+    firedAt := ← IO.mkRef none, logBase := ← IO.mkRef 0, done := ← IO.mkRef false }
+
+/-- With `shutdown=MS`, the client to shut down. -/
+def Trigger.setClient (t : Trigger) (client : Client) : BaseIO Unit := do
+  if t.label == some "shutdown" then t.action.set client.shutdownNow
+
+/-- Takes the action, once, and records when. -/
+def Trigger.fire (t : Trigger) : BaseIO Unit := do
+  if ← t.claimed.modifyGet fun c => (c, true) then return
+  t.firedAt.set (some ((← IO.monoNanosNow) - (← t.armedAt.get)))
+  (← t.action.get)
+
+/-- The occurrences of `text` in the file `path` (0 if it cannot be read). -/
+def occurrences (path : System.FilePath) (text : String) : BaseIO Nat := do
+  match ← (IO.FS.readFile path).toBaseIO with
+  | .ok s => return (s.splitOn text).length - 1
+  | .error _ => return 0
+
+/-- Waits, for at most 60 s, until the mark was reached and the log has the text, then acts. -/
+def Trigger.poll (t : Trigger) (path : System.FilePath) (text : String) (n : Nat) : Async Unit := do
+  for _ in [0:30000] do
+    if ← t.done.get then return
+    if (← t.reached.get) && (← occurrences path text) ≥ (← t.logBase.get) + n then
+      if t.ms > 0 then Std.Async.sleep (.ofNat t.ms)
+      t.fire
+      return
+    Std.Async.sleep (.ofNat 2)
+
+/-- The mark `m` was reached: the action follows `ms` ms after its `count`th time (or the log). -/
+def Trigger.reach (t : Trigger) (m : Mark) : BaseIO Unit := do
+  if t.label.isNone || t.mark != m then return
+  let n ← t.seen.modifyGet fun n => (n + 1, n + 1)
+  if n != t.count then return
+  if t.log?.isSome then t.reached.set true
+  else (after t.ms t.fire).catchExceptions fun _ => pure ()
+
+/-- An observer of the calls' steps (`Config.observe`) that reaches the marks they are. -/
+def Trigger.observe (t : Trigger) : Call.Event → BaseIO Unit
+  | .send .. => t.reach .send
+  | .decide _ _ (.follow _) => t.reach .follow
+  | .wait _ => t.reach .wait
+  | .deliver => t.reach .deliver
+  | _ => pure ()
+
+/--
+Sleeps `total` ms, for the mark `m` (`idle`, `hold`, `pull`): if this is its `count`th time, takes
+the action `ms` ms into the sleep, from this task, so that it falls inside the sleep whatever the
+load, and then sleeps the rest, or `rest` ms if given.
+-/
+def Trigger.sleepAt (t : Trigger) (m : Mark) (total : Nat) (rest : Option Nat := none) :
+    Async Unit := do
+  let mine ← if t.label.isSome && t.mark == m then
+      (· == t.count) <$> t.seen.modifyGet fun n => (n + 1, n + 1)
+    else pure false
+  if mine then
+    let first := min t.ms total
+    if first > 0 then Std.Async.sleep (.ofNat first)
+    t.fire
+    let rest := rest.getD (total - first)
+    if rest > 0 then Std.Async.sleep (.ofNat rest)
+  else if total > 0 then Std.Async.sleep (.ofNat total)
+
+/-- Arms the trigger as the first call starts, and returns that time (`IO.monoNanosNow`). -/
+def Trigger.arm (t : Trigger) : IO Nat := do
+  let now ← IO.monoNanosNow
+  t.armedAt.set now
+  if t.label.isNone then return now
+  match t.log? with
+  | some (path, text, n) =>
+    t.logBase.set (← occurrences path text)
+    if t.mark == .start then t.reached.set true
+    discard <| start (t.poll path text n)
+  | none => if t.mark == .start then after t.ms t.fire
+  return now
+
+/-- Prints when the action was taken, from the start of the first call, and stops a waiting trigger. -/
+def Trigger.report (t : Trigger) : IO Unit := do
+  t.done.set true
+  let some label := t.label | return
+  match ← t.firedAt.get with
+  | some ns => IO.println s!"{label} fired at ms={fmtMs ns}"
+  | none => IO.println s!"{label} never fired"
+
+/-- The token call `k` gets: the calls from `cancelfrom` (default 0) up to `cancelcalls` get it. -/
+def tokenFor (kv : List (String × String)) (t : Trigger) (k : Nat) : Option Std.CancellationToken :=
+  if getNat kv "cancelfrom" 0 ≤ k && k < getNat kv "cancelcalls" (2 ^ 62) then t.token else none
+
 /-- One line describing call `i`'s result. -/
 def describeCall (i : Nat) (ns : Nat) (result : Except Error (Response ByteArray)) : String :=
   match result with
@@ -216,8 +429,10 @@ def runCalls (args : List String) : IO Unit := do
   let kv := parseKV rest
   let req ← requestOf methodName url kv
   let traces : Traces ← IO.mkRef {}
-  let config := withTraces (configOf kv) kv traces
+  let trigger ← triggerOf kv
+  let config := withTraces (configOf kv) kv traces trigger.observe
   let client ← Client.new config
+  trigger.setClient client
   let n := getNat kv "repeat" 1
   let pause := getNat kv "pause" 0
   let concurrent := getNat kv "concurrent" 1
@@ -227,9 +442,9 @@ def runCalls (args : List String) : IO Unit := do
   let mut k := 0
   for round in [0:n] do
     if round > 0 && pause > 0 then IO.sleep pause.toUInt32
+    let t0 ← if round == 0 then trigger.arm else IO.monoNanosNow
     if concurrent ≤ 1 then
-      let t0 ← IO.monoNanosNow
-      let result ← (client.request req).block
+      let result ← (client.request req (tokenFor kv trigger k)).block
       let t1 ← IO.monoNanosNow
       times := times.push (t1 - t0)
       if let .ok resp := result then
@@ -241,11 +456,11 @@ def runCalls (args : List String) : IO Unit := do
       k := k + 1
     else
       -- All the calls of a round start at once; each records its own time.
-      let t0 ← IO.monoNanosNow
       let mut tasks := #[]
-      for _ in [0:concurrent] do
+      for j in [0:concurrent] do
+        let cancel := tokenFor kv trigger (k + j)
         let task ← start do
-          let r ← client.request req
+          let r ← client.request req cancel
           return (r, ← IO.monoNanosNow)
         tasks := tasks.push task
       for task in tasks do
@@ -264,15 +479,22 @@ def runCalls (args : List String) : IO Unit := do
       IO.println (summary "later calls" (times.extract 1 times.size))
   if !checks.isEmpty then
     IO.println (summary "idle checks of reused connections" checks)
+  trigger.report
   let stats ← client.stats
   IO.println s!"pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
-  reportTraces kv traces
+  if (kv.lookup "shutdown").isSome then
+    let result ← (client.request req).block
+    IO.println s!"after shutdown: {describeCall k 0 result}"
+    let stats ← client.stats
+    IO.println s!"after shutdown: pool idle={stats.idle} checked_out={stats.checkedOut}"
   if getNat kv "close" 0 == 1 then
     client.close
     let stats ← client.stats
     IO.println s!"after close: pool idle={stats.idle} checked_out={stats.checkedOut}"
     let result ← (client.request req).block
     IO.println s!"after close: {describeCall k 0 result}"
+  -- After the calls after a shutdown or a close, so that their steps are checked too.
+  reportTraces kv traces
   -- Open descriptors right after the calls and, with `linger=MS`, again after waiting: sockets of
   -- abandoned connect attempts are released only when the kernel gives up on them.
   IO.println s!"fds_after_calls={← openFds}"
@@ -301,13 +523,14 @@ Reads `body` in pulls of `pull` bytes until its end or until `stop` bytes were r
 bytes read in `count` too, so that they are known if a read raises.
 -/
 partial def pullLoop (body : BodyStream) (pull : Nat) (stop : Option Nat) (count : IO.Ref Nat)
-    (read pulls maxPull : Nat) : Async (Nat × Nat × Nat) := do
+    (read pulls maxPull : Nat) (onRead : BaseIO Unit := pure ()) : Async (Nat × Nat × Nat) := do
   if stop.any (read ≥ ·) then return (read, pulls, maxPull)
   match ← body.read pull with
   | none => return (read, pulls, maxPull)
   | some bytes =>
     count.set (read + bytes.size)
-    pullLoop body pull stop count (read + bytes.size) (pulls + 1) (max maxPull bytes.size)
+    onRead
+    pullLoop body pull stop count (read + bytes.size) (pulls + 1) (max maxPull bytes.size) onRead
 
 def runStream (args : List String) : IO Unit := do
   let (methodName, url, rest) ← match args with
@@ -316,30 +539,42 @@ def runStream (args : List String) : IO Unit := do
   let kv := parseKV rest
   let req ← requestOf methodName url kv
   let traces : Traces ← IO.mkRef {}
-  let client ← Client.new (withTraces (configOf kv) kv traces)
+  let trigger ← triggerOf kv
+  let client ← Client.new (withTraces (configOf kv) kv traces trigger.observe)
+  trigger.setClient client
+  let idle := getNat kv "idle" 0
+  let hold := getNat kv "hold" 0
   let pull := getNat kv "pull" 65536
   let stop := kv.lookup "stop" >>= String.toNat?
   let throwIt := getNat kv "throw" 0 == 1
   let escape := getNat kv "escape" 0 == 1
   for i in [0:getNat kv "repeat" 1] do
     if i > 0 then IO.sleep (getNat kv "pause" 0).toUInt32
-    let t0 ← IO.monoNanosNow
+    let t0 ← if i == 0 then trigger.arm else IO.monoNanosNow
     if getNat kv "whole" 0 == 1 then
-      let result ← (client.request req).block
+      let result ← (client.request req (tokenFor kv trigger i)).block
       IO.println (describeCall i ((← IO.monoNanosNow) - t0) result)
       continue
     let kept : IO.Ref (Option BodyStream) ← IO.mkRef none
     let count : IO.Ref Nat ← IO.mkRef 0
     let racer : IO.Ref (Option (AsyncTask (Nat × Nat × Nat))) ← IO.mkRef none
+    let entered : IO.Ref (Option Nat) ← IO.mkRef none
     let result ← try
-        pure (some (← (client.withResponse req fun resp => do
+        pure (some (← (client.withResponse req (cancel := tokenFor kv trigger i) fun resp => do
+          entered.set (some ((← IO.monoNanosNow) - t0))
+          trigger.sleepAt .idle idle
           if let some ms := kv.lookup "race" >>= String.toNat? then
             racer.set (some (← start (pullLoop resp.body pull none (← IO.mkRef 0) 0 0 0)))
             Std.Async.sleep (.ofNat ms)
             return ({
               status := resp.line.status, read := 0, pulls := 0, maxPull := 0,
               info := resp.extensions.get CallInfo } : Streamed)
-          let (read, pulls, maxPull) ← pullLoop resp.body pull stop count 0 0 0
+          let (read, pulls, maxPull) ← pullLoop resp.body pull stop count 0 0 0 (trigger.reach .read)
+          let read ← if hold == 0 then pure read else do
+            trigger.sleepAt .hold hold
+            let more := ((← resp.body.read pull).map (·.size)).getD 0
+            count.set (read + more)
+            pure (read + more)
           if escape then kept.set (some resp.body)
           if throwIt then throw (IO.userError "thrown inside the callback")
           return ({
@@ -359,6 +594,8 @@ def runStream (args : List String) : IO Unit := do
     | some (.error err) =>
       IO.println s!"stream {describeCall i ns (.error err)} read_before={← count.get}"
     | none => pure ()
+    if i == 0 then
+      if let some ns ← entered.get then IO.println s!"callback entered at ms={fmtMs ns}"
     if let some task ← racer.get then
       let stats ← client.stats
       IO.println s!"when withResponse returned: pool checked_out={stats.checkedOut}"
@@ -372,6 +609,7 @@ def runStream (args : List String) : IO Unit := do
       catch e => IO.println s!"after the callback: read raised {repr (toString e)}"
     let stats ← client.stats
     IO.println s!"after stream {i}: pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
+  trigger.report
   reportTraces kv traces
   IO.println s!"rss_peak_kb={← procStatusKb "VmHWM"} rss_kb={← procStatusKb "VmRSS"}"
 
@@ -386,11 +624,11 @@ def patternBytes (o n : Nat) : ByteArray := Id.run do
 A producer of `size` bytes of the pattern in chunks of `chunk`, counting its pulls and the bytes it
 gave in `pulls` and `produced`; it raises an error at pull `fail` and waits `delay` ms before each chunk.
 -/
-def producer (size chunk : Nat) (fail : Option Nat) (delay : Nat) (pulls produced : IO.Ref Nat) :
-    Async (Option ByteArray) := do
+def producer (size chunk : Nat) (fail : Option Nat) (delay : Nat) (pulls produced : IO.Ref Nat)
+    (trigger : Trigger) (stall : Option Nat) : Async (Option ByteArray) := do
   let k ← pulls.modifyGet fun k => (k, k + 1)
   if fail == some k then throw (IO.userError "the producer failed on purpose")
-  if delay > 0 then Std.Async.sleep (.ofNat delay)
+  trigger.sleepAt .pull delay stall
   let o ← produced.get
   if o ≥ size then return none
   let n := min (max 1 chunk) (size - o)
@@ -404,7 +642,9 @@ def runUpload (args : List String) : IO Unit := do
   let kv := parseKV rest
   let req ← requestOf methodName url kv
   let traces : Traces ← IO.mkRef {}
-  let client ← Client.new (withTraces (configOf kv) kv traces)
+  let trigger ← triggerOf kv
+  let client ← Client.new (withTraces (configOf kv) kv traces trigger.observe)
+  trigger.setClient client
   let size := getNat kv "size" 0
   let chunk := getNat kv "chunk" 16384
   let declared : Option Nat := match kv.lookup "declare" with
@@ -413,16 +653,17 @@ def runUpload (args : List String) : IO Unit := do
     | none => some size
   let fail := kv.lookup "fail" >>= String.toNat?
   let delay := getNat kv "delay" 0
+  let stall := kv.lookup "stall" >>= String.toNat?
   for i in [0:getNat kv "repeat" 1] do
     if i > 0 then IO.sleep (getNat kv "pause" 0).toUInt32
     let pulls ← IO.mkRef 0
     let produced ← IO.mkRef 0
-    let t0 ← IO.monoNanosNow
+    let t0 ← if i == 0 then trigger.arm else IO.monoNanosNow
     let result ← if getNat kv "bytes" 0 == 1 then
-        (client.request { req with body := patternBytes 0 size }).block
+        (client.request { req with body := patternBytes 0 size } (tokenFor kv trigger i)).block
       else
-        let body := RequestBody.stream declared (producer size chunk fail delay pulls produced)
-        (client.upload { req with body }).block
+        let body := RequestBody.stream declared (producer size chunk fail delay pulls produced trigger stall)
+        (client.upload { req with body } (tokenFor kv trigger i)).block
     let ns := (← IO.monoNanosNow) - t0
     let response := match result with
       | .ok resp => s!" response={repr ((String.fromUTF8? resp.body).getD "<binary>")}"
@@ -430,6 +671,7 @@ def runUpload (args : List String) : IO Unit := do
     IO.println s!"upload {describeCall i ns result} pulls={← pulls.get} produced={← produced.get}{response}"
     let stats ← client.stats
     IO.println s!"after upload {i}: pool idle={stats.idle} checked_out={stats.checkedOut} allocated={stats.allocated}"
+  trigger.report
   reportTraces kv traces
   IO.println s!"rss_peak_kb={← procStatusKb "VmHWM"} rss_kb={← procStatusKb "VmRSS"}"
 
