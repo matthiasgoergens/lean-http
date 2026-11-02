@@ -16,7 +16,12 @@ bench/       the cost of watching for cancellation: PLAN.txt (written before the
              scripts/remote.sh bash -c "$(cat bench/blocks.sh)" blocks.sh 40 2000 100 101),
              analyse.py; out.txt and result.txt the final run on 99e7983; first/, second/, third/,
              fourth/ and ablate/ the earlier runs and the ablations, each with a README;
-             profile/ perf profiles of main and the final version.
+             profile/ perf profiles of main and the final version.  To rerun blocks.sh, build its
+             net-client-cancel from 99e7983 (build.sh builds HEAD): its token variant passes
+             cancelon=none, an option of that client that later clients no longer know, and since
+             2026-11-02 the test client rejects an option it does not know.  With a later client,
+             cancel=3600000 gives the calls a token that is not cancelled during the run, though
+             it also starts the client's trigger, a timer of an hour, which the old variant did not.
 reviews/     four rounds of a fresh Claude and Gemini (agy-readonly), the prompts, the author's
              verdicts on each round, the probes the Claude reviewer ran; README.md says what came of
              every finding.

@@ -13,8 +13,8 @@
 # the environment cannot support is skipped, with a SKIP line saying why: the scenarios that need
 # the names of tests/net/hosts when /etc/hosts lacks them and cannot be written, those that need
 # IPv6 loopback when ::1 is not usable, the descriptor check of blackhole-timeout when
-# tcp_syn_retries is above 2, and dns-timeout when not run as root (it rewrites /etc/resolv.conf and
-# listens on port 53).
+# tcp_syn_retries is above 2, dns-timeout when not run as root (it rewrites /etc/resolv.conf and
+# listens on port 53), and timers without taskset.
 #
 # Writes one file per scenario to out/net/<name>.txt, each starting with the client's command and
 # ending with its exit status, wall time and how long the process took to exit after `main`
@@ -22,6 +22,8 @@
 # summary.
 
 root=$(cd "$(dirname "$0")/../.." && pwd) || exit 1
+# The exit check reads the system's clock through $EPOCHREALTIME, which bash has since version 5.
+[ -n "${EPOCHREALTIME:-}" ] || { echo "tests/net/run.sh needs bash 5 or later (\$EPOCHREALTIME)" >&2; exit 1; }
 if [ -z "${PY:-}" ]; then
   if [ -x /py/bin/python3 ]; then PY=/py/bin/python3; else PY=python3; fi
 fi
@@ -67,29 +69,44 @@ start() {
   return 1
 }
 
+# How long a process may take to exit after `main` returned, in ms.  The delays this exists to catch
+# are an abandoned lookup holding the process until the resolver gives up (8 s and more, dns-timeout)
+# and a receive left pending at exit (a hang).  A correct client usually exits within milliseconds;
+# on a loaded host (load average 300 to 400 on 128 CPUs) it took up to about a second, measured as
+# below (NOTES.md, "The real-socket suite under load").
+EXIT_MS=4000
+
 # client <scenario> <net-client args...>: run the client once, record its output and timings.
-# A non-zero exit status or a slow exit is a FAIL, or KNOWN with the reason in $known_exit.
+# A non-zero exit status or a slow exit is a FAIL, or KNOWN with the reason in $known_exit.  The exit
+# is timed from the moment `main` returned, by the system's clock, which the client prints
+# (returning_unix_us) and bash reads without starting a process ($EPOCHREALTIME), to the moment the
+# shell sees the process end; the process's start, until `main` began, is recorded as well
+# (start_ms) but not checked.
 client() {
   local scenario=$1; shift
   local file="$out/$scenario.txt"
   echo "\$ net-client $*" > "$file"
   local t0 t1 rc
-  t0=$(date +%s%N)
+  t0=${EPOCHREALTIME/[.,]/}
   timeout 60 "$BIN" "$@" >> "$file" 2>&1
   rc=$?
-  t1=$(date +%s%N)
-  local wall=$(( (t1 - t0) / 1000000 ))
-  local main
-  main=$(sed --quiet 's/^main returning at ms=\([0-9]*\)\..*/\1/p' "$file")
-  local after=$(( wall - ${main:-$wall} ))
-  echo "exit status=$rc wall_ms=$wall exit_after_main_ms=$after" >> "$file"
-  if [ -z "$main" ]; then
+  t1=${EPOCHREALTIME/[.,]/}
+  local wall=$(( (t1 - t0) / 1000 ))
+  local began returned
+  began=$(sed --quiet 's/^main returning at .* started_unix_us=\([0-9]*\) .*/\1/p' "$file")
+  returned=$(sed --quiet 's/^main returning at .* returning_unix_us=\([0-9]*\)$/\1/p' "$file")
+  if [ -z "$returned" ]; then
+    echo "exit status=$rc wall_ms=$wall" >> "$file"
     result FAIL "$scenario" "main never returned (status $rc)"
-  elif { [ "$after" -gt 1000 ] || [ "$rc" -ne 0 ]; } && [ -n "${known_exit:-}" ]; then
+    return
+  fi
+  local after=$(( (t1 - returned) / 1000 )) start=$(( (began - t0) / 1000 ))
+  echo "exit status=$rc wall_ms=$wall start_ms=$start exit_after_main_ms=$after" >> "$file"
+  if { [ "$after" -gt "$EXIT_MS" ] || [ "$rc" -ne 0 ]; } && [ -n "${known_exit:-}" ]; then
     result KNOWN "$scenario" "exit status $rc, ${after} ms after main returned: $known_exit"
   elif [ "$rc" -ne 0 ]; then
     result FAIL "$scenario" "exit status $rc, ${after} ms after main returned"
-  elif [ "$after" -gt 1000 ]; then
+  elif [ "$after" -gt "$EXIT_MS" ]; then
     result FAIL "$scenario" "process took ${after} ms to exit after main returned"
   else
     result PASS "$scenario" "process exited ${after} ms after main returned"
@@ -104,6 +121,19 @@ expect() {
     result FAIL "$1" "$3 (no match for: $2)"
   fi
 }
+
+# How late a correct client may end a wait on a loaded host, in ms.  On the shared build host, with
+# three CI runs at once and other people's jobs (load average 110 to 270 on 128 CPUs), calls timed
+# from their start ended up to 470 ms past their time; at load average 300 to 480, up to 2.2 s.
+# Every check of a time is "no earlier than the time (less up to 10 ms of rounding), and no later
+# than the time plus SLACK", and its scenario is arranged so that what a broken client would do
+# instead (not time out at all, wait for the server, wait for the rest of a body, wait twice as long)
+# takes longer than that: a broken client cannot be faster than the server or the timer it waits
+# for, however idle the host.  The medians of blackhole-first (240 to 600 ms), blackhole-stagger50
+# (40 to 200) and nodelay (under 20) keep tighter bounds, which they need to tell a 250 ms stagger
+# from a 50 ms one and a 40 ms stall from none: a median of ten or more calls is not moved by a few
+# slow ones (at load average 300 to 600 it stayed within 80 ms of an idle host's).
+SLACK=3000
 
 # call_ms <scenario>: the time of the first call, in whole milliseconds.
 call_ms() {
@@ -133,6 +163,35 @@ median_within() {
   fi
 }
 
+# us_of <scenario> <regex>: the time ms=N.NNN of the first line matching <regex>, in microseconds.
+us_of() {
+  grep --extended-regexp "$2" "$out/$1.txt" | head --lines=1 \
+    | sed --quiet 's/.* ms=\([0-9]*\)\.\([0-9][0-9][0-9]\).*/\1\2/p'
+}
+
+# since <scenario> <from regex> <to regex> <lo> <hi> <description>: the first lines matching the two
+# regexes have times ms=F and ms=N (both from the start of the first call), with lo <= N - F <= hi.
+since() {
+  local from to d
+  from=$(us_of "$1" "$2")
+  to=$(us_of "$1" "$3")
+  if [ -z "$from" ] || [ -z "$to" ]; then
+    result FAIL "$1" "$6: no time (from: ${from:-none}, to: ${to:-none})"
+    return
+  fi
+  # Base 10: a time below 1 ms has leading zeros, which $((...)) would read as octal.
+  d=$((10#$to - 10#$from))
+  if [ "$d" -ge $(($4 * 1000)) ] && [ "$d" -le $(($5 * 1000)) ]; then
+    result PASS "$1" "$6: $((d / 1000)) ms"
+  else
+    result FAIL "$1" "$6: $((d / 1000)) ms, expected $4-$5"
+  fi
+}
+
+# since_fired <scenario> <regex> <lo> <hi> <description>: the first line matching <regex> has a time
+# between lo and hi ms after the cancellation or shutdown fired.
+since_fired() { since "$1" '^(cancel|shutdown) fired at ' "$2" "$3" "$4" "$5"; }
+
 # trace_ok <scenario>: net-client replayed every call's steps through the planner (`Call.validate`).
 trace_ok() {
   if grep --quiet 'trace call .* FAIL' "$out/$1.txt"; then
@@ -146,7 +205,9 @@ trace_ok() {
 
 # gaps_within <scenario> <slack>: every retry went out no earlier than its delay and at most <slack>
 # ms after it, from the time the planner decided.  Never early is the property; the slack only allows
-# for a loaded machine (30 ms failed under load: a timer woke up to 100 ms late).
+# for a loaded machine (30 ms failed under load: a timer woke up to 100 ms late, and 150 ms was
+# exceeded by 137 ms on a host at load average 200).  The scenarios that use it give delays above
+# SLACK, so that a retry that waited twice its delay is still caught.
 gaps_within() {
   local line delays gaps ok=1 i
   line=$(grep --max-count=1 '^trace call 0 retry delays=' "$out/$1.txt")
@@ -200,6 +261,9 @@ fi
 if [ "$(id --user)" -ne 0 ]; then
   unavailable[dns-timeout]="needs root, to rewrite /etc/resolv.conf and listen on port 53"
 fi
+if ! command -v taskset > /dev/null; then
+  unavailable[timers]="needs taskset, to hold up the event loop's thread"
+fi
 syn_retries=$(cat /proc/sys/net/ipv4/tcp_syn_retries)
 # The TLS scenarios need the openssl command-line tool to make their certificates.
 certs=$out/tls-certs
@@ -235,6 +299,10 @@ scenario() { # scenario <name>: true if the scenario was asked for (or none were
 matched=()
 selected=("$@")
 rm --force "$out"/*.txt "$out"/*.log
+# The suite's own errors, kept, so that an error of the script (a helper used before it is defined,
+# as `since` once was, silently, for three checks) fails the run rather than vanishing into the
+# console.
+exec 2> >(tee "$out/stderr.txt" >&2)
 echo "### $(date --utc +%FT%TZ) $(uname -r); syn_retries=$syn_retries; uid=$(id --user)" \
   | tee "$out/summary.txt"
 
@@ -302,19 +370,26 @@ if scenario blackhole-first; then
   expect blackhole-first 'summary calls n=10 .* ok=10$' "ten calls out of ten"
   expect blackhole-first 'failed_attempts=\[\[::1\]:18083#0:abandoned\]' "the ::1 attempt was abandoned"
   # Each call's connection must close before the next call connects.  A connection kept open by the
-  # abandoned ::1 attempt would close only when the kernel gives up on that attempt, or at exit.
+  # abandoned ::1 attempt would close only when the kernel gives up on that attempt (7 s with
+  # tcp_syn_retries=2), or at exit, 2 s and more after the next call connected, for the first calls.
+  # The server's threads log the end of one connection and the start of the next, which a loaded host
+  # can write out of order (once 72 ms apart), so the end must be logged no later than 1 s after the
+  # next connection's start, by the log's own times.
   ordered=1
+  late=""
   for k in $(seq 1 9); do
-    eof=$(grep --line-number "conn$k EOF from client" "$out/blackhole-first.evil.log" | cut --delimiter=: --fields=1 | head --lines=1)
-    next=$(grep --line-number "conn$((k + 1)) accepted" "$out/blackhole-first.evil.log" | cut --delimiter=: --fields=1 | head --lines=1)
-    { [ -n "$eof" ] && [ -n "$next" ] && [ "$eof" -lt "$next" ]; } || ordered=0
+    eof=$(sed --quiet "s/^ *\([0-9]*\)\.[0-9] conn$k EOF from client.*/\1/p" "$out/blackhole-first.evil.log" | head --lines=1)
+    next=$(sed --quiet "s/^ *\([0-9]*\)\.[0-9] conn$((k + 1)) accepted.*/\1/p" "$out/blackhole-first.evil.log" | head --lines=1)
+    if [ -z "$eof" ] || [ -z "$next" ] || [ "$eof" -gt $((next + 1000)) ]; then
+      ordered=0; late="$late conn$k(end ${eof:-never}, next ${next:-never})"
+    fi
   done
   if [ $ordered -eq 1 ]; then
     result PASS blackhole-first "each call's connection closed before the next call connected"
   else
-    result FAIL blackhole-first "a call's connection was still open when the next call connected"
+    result FAIL blackhole-first "a call's connection was still open when the next call connected:$late"
   fi
-  median_within blackhole-first 240 400 "median call within about the 250 ms stagger"
+  median_within blackhole-first 240 600 "median call within about the 250 ms stagger"
   client blackhole-stagger50 call GET "http://dual.test:$DUAL/ok" repeat=10 stagger=50 pool=0
   median_within blackhole-stagger50 40 200 "with a 50 ms stagger, the median call is about 50 ms"
 fi
@@ -324,7 +399,9 @@ if scenario blackhole-timeout; then
   client blackhole-timeout call GET "http://[::1]:$HOLE/" connect=1000 retries=1 seed=1 linger=9000
   expect blackhole-timeout 'call 0 error delivery=not sent .*attempts=\[\[::1\]:18084#0:timedOut, \[::1\]:18084#1:timedOut\]' \
     "two connect attempts time out; nothing sent"
-  within blackhole-timeout 2000 2400 "two 1 s attempts and one backoff"
+  # The two attempts and the 15 ms backoff of seed 1, never shorter by IO.monoMsNow (an attempt not
+  # timed out would wait about 7 s, with tcp_syn_retries=2, for the kernel to give up on its SYN).
+  within blackhole-timeout 2010 $((2015 + SLACK)) "two 1 s attempts and one backoff"
   calls=$(sed --quiet 's/^fds_after_calls=//p' "$out/blackhole-timeout.txt")
   later=$(sed --quiet 's/^fds_after_linger_9000ms=//p' "$out/blackhole-timeout.txt")
   if [ "$syn_retries" -gt 2 ]; then
@@ -337,24 +414,26 @@ if scenario blackhole-timeout; then
 fi
 
 if scenario refused-backoff; then
-  "$BIN" backoff 42 > "$out/refused-backoff.schedule.txt" 2>&1
-  client refused-backoff call GET "http://127.0.0.1:$CLOSED/" seed=42
-  expect refused-backoff 'call 0 error delivery=not sent .*rounds=3 lookups=0 seed=42 .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*could not connect' \
+  # Seed 3 with a base and cap of 4 s gives [3670, 3728]: delays above SLACK, so that waiting twice
+  # the delay is caught by the gaps.
+  "$BIN" backoff 3 base=4000 cap=4000 > "$out/refused-backoff.schedule.txt" 2>&1
+  client refused-backoff call GET "http://127.0.0.1:$CLOSED/" seed=3 base=4000 cap=4000
+  expect refused-backoff 'call 0 error delivery=not sent .*rounds=3 lookups=0 seed=3 .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*could not connect' \
     "refused three times (two retries by the planner); nothing sent"
   expect refused-backoff 'attempts=\[127\.0\.0\.1:18085#0:failed\([^]]*\), 127\.0\.0\.1:18085#1:failed\([^]]*\), 127\.0\.0\.1:18085#2:failed\([^]]*\)\]' \
     "one connect round per attempt"
-  # backoff 42 gives [23, 49]: the call takes at least their sum.
-  within refused-backoff 72 400 "at least the 23 + 49 ms of backoff for seed 42"
-  expect refused-backoff '^trace call 0 retry delays=\[23, 49\] ' "the planner's delays are the schedule of seed 42"
-  gaps_within refused-backoff 150
+  within refused-backoff 7398 $((7398 + SLACK)) "at least the 3670 + 3728 ms of backoff for seed 3"
+  expect refused-backoff '^trace call 0 retry delays=\[3670, 3728\] ' "the planner's delays are the schedule of seed 3"
+  gaps_within refused-backoff $SLACK
   trace_ok refused-backoff
-  # With a backoff of up to 1 s and a deadline of 300 ms: seed 5 draws 738 ms for the first retry,
-  # which would reach the deadline, so the call fails at once rather than wait for it.
-  "$BIN" backoff 5 base=1000 cap=1000 n=1 > "$out/refused-deadline.schedule.txt" 2>&1
-  client refused-deadline call GET "http://127.0.0.1:$CLOSED/" seed=5 base=1000 cap=1000 deadline=300
+  # With a backoff of up to 10 s and a deadline of 5 s: seed 1 draws 6004 ms for the first retry,
+  # which would reach the deadline, so the call fails at once rather than wait for it (a client that
+  # waited would fail at the deadline, 5 s in, or after the backoff).
+  "$BIN" backoff 1 base=10000 cap=10000 n=1 > "$out/refused-deadline.schedule.txt" 2>&1
+  client refused-deadline call GET "http://127.0.0.1:$CLOSED/" seed=1 base=10000 cap=10000 deadline=5000
   expect refused-deadline 'call 0 error delivery=not sent .*rounds=1 .*retries=0 not_retried=LeanHttp.Call.NoRetry.noTime .*could not connect' \
     "a retry whose backoff would reach the deadline is not made"
-  within refused-deadline 0 100 "the call fails at once, not at the deadline"
+  within refused-deadline 0 $SLACK "the call fails at once, not at the deadline"
   trace_ok refused-deadline
 fi
 
@@ -362,14 +441,14 @@ if scenario deadline-trickle; then
   client deadline-trickle call GET "http://127.0.0.1:$EVIL/trickle?ms=100" deadline=2000 gap=1000
   expect deadline-trickle 'call 0 error delivery=response received .*status=\(some 200\) cause="deadline timeout"' \
     "a body trickling one byte per 100 ms ends at the deadline"
-  within deadline-trickle 1990 2400 "at the 2 s deadline"
+  within deadline-trickle 1990 $((2000 + SLACK)) "at the 2 s deadline"
 fi
 
 if scenario deadline-interim; then
   client deadline-interim call GET "http://127.0.0.1:$EVIL/interim-forever?ms=300" deadline=2000
   expect deadline-interim 'call 0 error delivery=maybe delivered .*cause="deadline timeout"' \
     "interim responses every 300 ms, never a final one, end at the deadline"
-  within deadline-interim 1990 2400 "at the 2 s deadline"
+  within deadline-interim 1990 $((2000 + SLACK)) "at the 2 s deadline"
 fi
 
 if scenario interim-limit; then
@@ -379,15 +458,16 @@ if scenario interim-limit; then
 fi
 
 if scenario read-gap; then
-  client read-gap call GET "http://127.0.0.1:$EVIL/stall-head?ms=3000" gap=1000 retries=0
+  # The server answers 10 s after the request, long after any gap a correct client could end.
+  client read-gap call GET "http://127.0.0.1:$EVIL/stall-head?ms=10000" gap=1000 retries=0
   expect read-gap 'call 0 error delivery=maybe delivered .*cause="read timeout"' "a silent server hits the read gap"
-  within read-gap 990 1400 "after the 1 s gap"
+  within read-gap 990 $((1000 + SLACK)) "after the 1 s gap"
   # A GET can be sent again after a read timeout: twice more, after backoffs of at most 100 and
   # 200 ms.
-  client read-gap-retried call GET "http://127.0.0.1:$EVIL/stall-head?ms=3000" gap=1000
+  client read-gap-retried call GET "http://127.0.0.1:$EVIL/stall-head?ms=10000" gap=1000
   expect read-gap-retried 'call 0 error delivery=maybe delivered .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*cause="read timeout"' \
     "by default the GET is tried three times"
-  within read-gap-retried 2990 3700 "three 1 s gaps and two backoffs"
+  within read-gap-retried 2990 $((3300 + SLACK)) "three 1 s gaps and two backoffs"
 fi
 
 if scenario body-limit; then
@@ -455,7 +535,8 @@ if scenario connect-deadline; then
   client connect-deadline call GET "http://[::1]:$HOLE2/" deadline=1500
   expect connect-deadline 'call 0 error delivery=not sent .*cause="deadline timeout"' \
     "the deadline passes while connecting; nothing sent"
-  within connect-deadline 1490 1900 "at the 1.5 s deadline"
+  # An attempt that the deadline did not end would wait for its own 10 s timeout.
+  within connect-deadline 1490 $((1500 + SLACK)) "at the 1.5 s deadline"
 fi
 
 if scenario write-timeout; then
@@ -467,18 +548,34 @@ fi
 
 if scenario early-response; then
   start early-response early "listening" "$PY" -I "$here/early.py" $EARLY || exit 1
-  client early-response call POST "http://127.0.0.1:$EARLY/" body=32000000 gap=1000
+  client early-response call POST "http://127.0.0.1:$EARLY/" body=32000000 gap=5000
   expect early-response 'call 0 ok status=413 bytes=3 .*body_start="big"' \
     "a server that answers 413 after the head and stops reading: the response is delivered"
-  within early-response 0 900 "before the 1 s write gap"
+  within early-response 0 $SLACK "well before the 5 s write gap"
 fi
 
 # --- Pooling.  Each scenario has an evil.py of its own, so that its log counts the connections.
 
 # conns <scenario> <n> <description>: the scenario's server accepted exactly n connections.
+# count_lines <file> <regex> <n>: the lines of <file> that match, once there are n of them or 5 s
+# have passed: a server may log a connection it accepted after the client has returned, when the
+# connection got no answer and a loaded host held the server up (it once wrote a line 2.4 s late).
+# A file that does not exist counts 0.  It waits only for too few lines: one logged late beyond n is
+# not waited for.
+count_lines() {
+  local got k
+  for k in $(seq 100); do
+    got=$(grep --count --extended-regexp "$2" "$1" 2>/dev/null)
+    got=${got:-0}
+    [ "$got" -ge "$3" ] && break
+    sleep 0.05
+  done
+  echo "$got"
+}
+
 conns() {
   local got
-  got=$(grep --count ' accepted from ' "$out/$1.evil.log")
+  got=$(count_lines "$out/$1.evil.log" ' accepted from ' "$2")
   if [ "$got" -eq "$2" ]; then
     result PASS "$1" "$3: $got"
   else
@@ -486,9 +583,23 @@ conns() {
   fi
 }
 
-# logged <scenario> <extended regex> <description>: the scenario's server logged a match.
+# in_flight <scenario> <n> <description>: the most requests the scenario's server held at once, from
+# the request's arrival to its answer (the sleep route logs both), was exactly n.
+in_flight() {
+  local most
+  most=$(awk '/ req[0-9]+ GET \/sleep/ { k++; if (k > m) m = k } / answering after / { k-- } END { print m + 0 }' \
+    "$out/$1.evil.log")
+  if [ "$most" -eq "$2" ]; then
+    result PASS "$1" "$3: $most"
+  else
+    result FAIL "$1" "$3: $most at most, expected $2"
+  fi
+}
+
+# logged <scenario> <extended regex> <description>: the scenario's server logged a match (within 5 s,
+# for what it logs after the client has acted, such as the end of a connection).
 logged() {
-  if grep --quiet --extended-regexp "$2" "$out/$1.evil.log"; then
+  if [ "$(count_lines "$out/$1.evil.log" "$2" 1)" -ge 1 ]; then
     result PASS "$1" "$3"
   else
     result FAIL "$1" "$3 (no match in the server log for: $2)"
@@ -522,9 +633,11 @@ if scenario pool-off; then
 fi
 
 if scenario keepalive-close; then
-  # The server closes a connection 200 ms after its last response; the next call comes 500 ms later.
+  # The server closes a connection 1 s after its last response, by when the client has pooled it; the
+  # next call comes 3 s later, by when the server has closed it, with seconds of margin either way for
+  # a loaded host (and the idle connections kept for a minute, so that none expires first).
   evil keepalive-close 18092 || exit 1
-  client keepalive-close call GET "http://127.0.0.1:18092/close-after-idle?ms=200" repeat=3 pause=500
+  client keepalive-close call GET "http://127.0.0.1:18092/close-after-idle?ms=1000" repeat=3 pause=3000 idletimeout=60000
   expect keepalive-close 'call 1 ok status=200 .*reused=false discarded=1 .*redispatched=false' \
     "the idle check finds the closed connection; the call opens a new one"
   expect keepalive-close 'call 2 ok status=200 .*reused=false discarded=1 .*redispatched=false' "and again"
@@ -532,11 +645,11 @@ if scenario keepalive-close; then
   conns keepalive-close 3 "three connections"
   # Without the idle check, the closed connection is used: the request goes out, the end of input
   # comes back, and a GET is sent again on a fresh connection.
-  client keepalive-close-nocheck call GET "http://127.0.0.1:18092/close-after-idle?ms=200" repeat=2 pause=500 idlecheck=off
+  client keepalive-close-nocheck call GET "http://127.0.0.1:18092/close-after-idle?ms=1000" repeat=2 pause=3000 idletimeout=60000 idlecheck=off
   expect keepalive-close-nocheck 'call 1 ok status=200 .*reused=false discarded=0 .*redispatched=true' \
     "without the idle check, the GET is sent again on a fresh connection"
   # A POST is not: the server may have acted on it.
-  client keepalive-close-post call POST "http://127.0.0.1:18092/close-after-idle?ms=200" body=5 repeat=2 pause=500 idlecheck=off
+  client keepalive-close-post call POST "http://127.0.0.1:18092/close-after-idle?ms=1000" body=5 repeat=2 pause=3000 idletimeout=60000 idlecheck=off
   expect keepalive-close-post 'call 1 error delivery=maybe delivered .*reused=true redispatched=false .*cause="the connection closed before a complete response"' \
     "without the idle check, a POST on the closed connection fails, maybe delivered"
 fi
@@ -559,16 +672,16 @@ if scenario keepalive-race; then
 fi
 
 if scenario idle-408; then
-  # The server sends 408 and closes 100 ms after its response; the next call comes 400 ms later.
+  # The server sends 408 and closes 1 s after its response; the next call comes 3 s later.
   evil idle-408 18094 || exit 1
-  client idle-408 call POST "http://127.0.0.1:18094/idle-408?ms=100" body=5 repeat=2 pause=400
+  client idle-408 call POST "http://127.0.0.1:18094/idle-408?ms=1000" body=5 repeat=2 pause=3000 idletimeout=60000
   expect idle-408 'call 1 ok status=200 .*reused=false discarded=1 .*redispatched=false' \
     "the idle check catches the 408 and the close; the POST goes on a new connection"
   logged idle-408 'conn1 sent 408' "the server sent the 408"
   # Without the idle check, and with the server keeping the connection open after the 408, the
   # request is written and the 408 read as its response: the POST is sent again, any method being
   # safe after a 408.
-  client idle-408-nocheck call POST "http://127.0.0.1:18094/idle-408?ms=100&linger=2000" body=5 repeat=2 pause=400 idlecheck=off
+  client idle-408-nocheck call POST "http://127.0.0.1:18094/idle-408?ms=1000&linger=6000" body=5 repeat=2 pause=3000 idletimeout=60000 idlecheck=off
   expect idle-408-nocheck 'call 1 ok status=200 .*reused=false .*redispatched=true' \
     "without the idle check, the 408 read as the response sends the POST again"
 fi
@@ -591,14 +704,12 @@ fi
 
 if scenario concurrency; then
   evil concurrency 18097 || exit 1
-  client concurrency call GET "http://127.0.0.1:18097/sleep?ms=300" concurrent=8 repeat=2
-  r0=$(sed --quiet 's/^round 0 of 8 calls took ms=\([0-9]*\)\..*/\1/p' "$out/concurrency.txt")
-  r1=$(sed --quiet 's/^round 1 of 8 calls took ms=\([0-9]*\)\..*/\1/p' "$out/concurrency.txt")
-  if [ -n "$r0" ] && [ -n "$r1" ] && [ "$r0" -lt 900 ] && [ "$r1" -lt 900 ]; then
-    result PASS concurrency "eight 300 ms calls at once take ${r0} and ${r1} ms: none waits for another"
-  else
-    result FAIL concurrency "rounds took ${r0:-?} and ${r1:-?} ms, expected under 900"
-  fi
+  # Each call takes 3 s at the server.  That none waits for another is read from the server's log,
+  # not from the time a round takes: the server has all eight requests of a round before it answers
+  # any, which a loaded host does not change (a call that waited for another would reach the server
+  # only after the other's answer, 3 s later).
+  client concurrency call GET "http://127.0.0.1:18097/sleep?ms=3000" concurrent=8 repeat=2
+  in_flight concurrency 8 "eight calls at once: the server had all eight requests of a round before answering any"
   expect concurrency 'summary calls n=16 .* ok=16$' "all sixteen calls succeed"
   expect concurrency '^pool idle=4 checked_out=0 allocated=12$' \
     "the first round opens eight connections and keeps four; the second reuses those and opens four"
@@ -606,13 +717,10 @@ if scenario concurrency; then
   [ "$(grep --count 'reused=true' "$out/concurrency.txt")" -eq 4 ]
   if [ $? -eq 0 ]; then result PASS concurrency "four calls reused"; else result FAIL concurrency "not four calls reused"; fi
   evil concurrency-cap 18098 || exit 1
-  client concurrency-cap call GET "http://127.0.0.1:18098/sleep?ms=200" concurrent=6 maxactive=2
-  r0=$(sed --quiet 's/^round 0 of 6 calls took ms=\([0-9]*\)\..*/\1/p' "$out/concurrency-cap.txt")
-  if [ -n "$r0" ] && [ "$r0" -ge 590 ] && [ "$r0" -lt 1200 ]; then
-    result PASS concurrency-cap "six 200 ms calls with at most two at once take ${r0} ms"
-  else
-    result FAIL concurrency-cap "the round took ${r0:-?} ms, expected 600 to 1200"
-  fi
+  # Six 2 s calls, at most two at once: the server has two requests at a time, never more, and never
+  # only one, which it would with one connection at a time.
+  client concurrency-cap call GET "http://127.0.0.1:18098/sleep?ms=2000" concurrent=6 maxactive=2
+  in_flight concurrency-cap 2 "at most two calls at once, and two at once"
   expect concurrency-cap 'summary calls n=6 .* ok=6$' "all six succeed"
   conns concurrency-cap 2 "two connections"
 fi
@@ -633,9 +741,14 @@ if scenario redispatch-refused; then
   # The server goes away between two calls.  Without the idle check, the second call's GET goes out
   # on the closed connection and is sent again on a fresh connection, which is refused: the error
   # describes the second attempt, but the first was written, so it says maybe delivered.
+  # Stopped a second after it logs the first request, which it answers at once; the second call
+  # comes 3 s after the first returned.
   evil redispatch-refused 18104 || exit 1
-  ( sleep 0.5; kill "${pids[-1]}" ) &
-  client redispatch-refused call GET "http://127.0.0.1:18104/ok" repeat=2 pause=1000 idlecheck=off retries=0
+  log=$out/redispatch-refused.evil.log
+  server=${pids[-1]}
+  ( for _ in $(seq 600); do grep --quiet 'req1 GET /ok' "$log" && break; sleep 0.05; done
+    sleep 1; kill "$server" ) &
+  client redispatch-refused call GET "http://127.0.0.1:18104/ok" repeat=2 pause=3000 idletimeout=60000 idlecheck=off retries=0
   expect redispatch-refused 'call 1 error delivery=maybe delivered .*reused=false redispatched=true .*could not connect' \
     "a re-dispatched GET whose fresh connection is refused: maybe delivered"
 fi
@@ -736,23 +849,24 @@ fi
 if scenario retry-after; then
   evil retry-after 18115 || exit 1
   log=$out/retry-after.evil.log
-  client retry-503 call GET "http://127.0.0.1:18115/flaky?key=a&after=1" retry503=1
+  # Retry-After of 4 s, above SLACK, so that a retry after twice the time is caught.
+  client retry-503 call GET "http://127.0.0.1:18115/flaky?key=a&after=4" retry503=1
   expect retry-503 'call 0 ok status=200 .*retries=1 .*body_start="recovered after 1"' \
-    "a 503 with Retry-After: 1 is retried when asked for"
-  within retry-503 1000 1500 "after the 1 s it asked for"
+    "a 503 with Retry-After: 4 is retried when asked for"
+  within retry-503 4000 $((4000 + SLACK)) "after the 4 s it asked for"
   client retry-503-off call GET "http://127.0.0.1:18115/flaky?key=b&after=1"
   expect retry-503-off 'call 0 ok status=503 .*retries=0 ' "and delivered when not"
-  client retry-429-date call GET "http://127.0.0.1:18115/flaky?key=c&code=429&after=date2" retry429=1
+  client retry-429-date call GET "http://127.0.0.1:18115/flaky?key=c&code=429&after=date4" retry429=1
   expect retry-429-date 'call 0 ok status=200 .*retries=1 ' "a 429 with a Retry-After date is retried"
-  within retry-429-date 1990 2600 "2 s after the response's Date"
+  within retry-429-date 3990 $((4000 + SLACK)) "4 s after the response's Date"
   client retry-503-long call GET "http://127.0.0.1:18115/flaky?key=d&after=120" retry503=1
   expect retry-503-long 'call 0 ok status=503 .*retries=0 ' "a Retry-After over the 60 s limit is delivered"
-  within retry-503-long 0 500 "at once"
-  client retry-503-backoff call GET "http://127.0.0.1:18115/flaky?key=e&n=2" retry503=1 seed=42
+  within retry-503-long 0 $SLACK "at once, not after the 120 s it asked for"
+  client retry-503-backoff call GET "http://127.0.0.1:18115/flaky?key=e&n=2" retry503=1 seed=3 base=4000 cap=4000
   expect retry-503-backoff 'call 0 ok status=200 .*retries=2 .*body_start="recovered after 2"' \
     "without a Retry-After, the backoff"
-  expect retry-503-backoff '^trace call 0 retry delays=\[23, 49\] ' "of seed 42"
-  gaps_within retry-503-backoff 150
+  expect retry-503-backoff '^trace call 0 retry delays=\[3670, 3728\] ' "of seed 3"
+  gaps_within retry-503-backoff $SLACK
   client retry-503-post call POST "http://127.0.0.1:18115/flaky?key=f&after=1" body=5 retry503=1
   expect retry-503-post 'call 0 ok status=503 .*retries=0 ' "a POST is not sent again after a 503"
   n=$(requests "$log" ' POST /flaky\?key=f')
@@ -795,7 +909,7 @@ if scenario redispatch-408; then
   # check), sent again on a fresh connection, which is refused (the server stopped listening after
   # the 408): the call's error must not say not sent, since the first request was written.
   evil redispatch-408 18119 || exit 1
-  client redispatch-408 call POST "http://127.0.0.1:18119/idle-408?ms=100&linger=5000&unlisten=1" body=5 repeat=2 pause=400 idlecheck=off retries=0
+  client redispatch-408 call POST "http://127.0.0.1:18119/idle-408?ms=1000&linger=6000&unlisten=1" body=5 repeat=2 pause=3000 idletimeout=60000 idlecheck=off retries=0
   expect redispatch-408 'call 1 error delivery=maybe delivered .*redispatched=true .*could not connect' \
     "the re-dispatched POST is refused, and the error says maybe delivered"
   logged redispatch-408 'stopped listening' "the server stopped listening after its 408"
@@ -840,18 +954,19 @@ if scenario stream-abandon; then
   expect stream-abandon '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
   expect stream-abandon 'stream 1 ok status=200 .*conn=\(some 1\) reused=false ' "the next call opens a new one"
   logged stream-abandon 'conn1 (bigbody send failed|EOF from client)' "the server sees the first connection closed"
-  # A body of 10 bytes whose last 7 come 30 ms after the first 3: leaving after the first read, the
-  # rest is drained within the 100 ms drain limit, and the connection reused.
-  client stream-drain stream GET "http://127.0.0.1:18118/stall-body?ms=30" stop=1 repeat=2
+  # A body of 10 bytes whose last 7 come 2 s after the first 3 (so that the first read gets the 3
+  # alone, however slow the client): leaving after the first read, the rest is drained within a
+  # drain limit of 6 s, and the connection reused.
+  client stream-drain stream GET "http://127.0.0.1:18118/stall-body?ms=2000" stop=1 repeat=2 drainms=6000
   expect stream-drain 'stream 0 ok status=200 read=3 ' "the first call reads the first 3 bytes and leaves"
   expect stream-drain '^after stream 0: pool idle=1 checked_out=0 allocated=1$' "the rest is drained and the connection kept"
   expect stream-drain 'stream 1 ok status=200 read=3 .*conn=\(some 0\) reused=true ' "and reused"
-  # When the rest comes 400 ms later, past the drain limit, the connection is closed.
-  client stream-drain-late stream GET "http://127.0.0.1:18118/stall-body?ms=400" stop=1 repeat=2
+  # When the rest comes 8 s later, past the default drain limit of 100 ms, the connection is closed.
+  client stream-drain-late stream GET "http://127.0.0.1:18118/stall-body?ms=8000" stop=1 repeat=2
   expect stream-drain-late '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "a rest that comes too late: the connection is closed"
   expect stream-drain-late 'stream 1 ok status=200 read=3 .*conn=\(some 1\) reused=false ' "and the next call opens another"
-  since stream-drain-late '^callback entered at ' '^stream 0 ok ' 0 300 \
-    "leaving waited no more than the drain limit, from the callback's start"
+  since stream-drain-late '^callback entered at ' '^stream 0 ok ' 0 $((100 + SLACK)) \
+    "leaving waited no more than the drain limit, from the callback's start, not for the rest"
   # A body that arrived in full with the head, longer than the drain limit, left without a read:
   # nothing remains on the connection, which is kept.
   client stream-unread-big stream GET "http://127.0.0.1:18118/unread-body?n=30000" stop=0 drainbytes=1000 repeat=2
@@ -860,7 +975,7 @@ if scenario stream-abandon; then
   client stream-unread stream GET "http://127.0.0.1:18118/unread-body?n=20000" stop=1 pull=1000 repeat=2
   expect stream-unread 'stream 1 ok status=200 read=1000 .*conn=\(some 0\) reused=true ' "a body read in full and left unread keeps the connection"
   # An exception inside the callback releases the connection the same way, and goes on.
-  client stream-throw stream GET "http://127.0.0.1:18118/stall-body?ms=30" stop=1 throw=1
+  client stream-throw stream GET "http://127.0.0.1:18118/stall-body?ms=2000" stop=1 throw=1 drainms=6000
   expect stream-throw 'stream 0 threw "thrown inside the callback"' "the callback's exception reaches the caller"
   expect stream-throw '^after stream 0: pool idle=1 checked_out=0 allocated=1$' "after the connection was drained and kept"
   client stream-throw-big stream GET "http://127.0.0.1:18118/bigbody?n=10000000" stop=1 throw=1
@@ -881,24 +996,26 @@ if scenario stream-abandon; then
   client stream-redirect stream GET "http://127.0.0.1:18118/chain/2"
   expect stream-redirect 'stream 0 ok status=200 read=[0-9]+ .*hops=2 ' "the callback gets the response after two redirects"
   # A read in progress in another task when the callback ends: its receive is cancelled, the
-  # callback's end waits for it, and the connection is released before withResponse returns.
-  client stream-race stream GET "http://127.0.0.1:18118/trickle?ms=500" race=100 pull=1
+  # callback's end waits for it, and the connection is released before withResponse returns.  The
+  # body's next byte comes 8 s after the head, which a client that waited for the read would wait for.
+  client stream-race stream GET "http://127.0.0.1:18118/trickle?ms=8000" race=100 pull=1
   expect stream-race 'stream 0 ok status=200 read=0 ' "the callback leaves while the other task reads"
   expect stream-race '^when withResponse returned: pool checked_out=0$' "the connection was released first"
   expect stream-race 'the racing reader raised ".*used after the callback of Client.withResponse ended"' \
     "and the other task's read fails"
-  since stream-race '^callback entered at ' '^stream 0 ok ' 90 400 \
+  since stream-race '^callback entered at ' '^stream 0 ok ' 90 $((100 + SLACK)) \
     "from the callback's start, without waiting for the next byte of the body"
-  # The call's deadline covers reading the body.
-  client stream-deadline stream GET "http://127.0.0.1:18118/trickle?ms=100" deadline=1000 pull=1
+  # The call's deadline covers reading the body.  Of 3 s, so that the head has come before it on a
+  # loaded host.
+  client stream-deadline stream GET "http://127.0.0.1:18118/trickle?ms=100" deadline=3000 pull=1
   expect stream-deadline 'stream call 0 error delivery=response received .*status=\(some 200\) cause="deadline timeout"' \
     "a body still coming at the deadline fails the call"
-  within stream-deadline 990 1400 "at the 1 s deadline"
+  within stream-deadline 2990 $((3000 + SLACK)) "at the 3 s deadline"
   for s in stream-abandon stream-drain stream-drain-late stream-unread-big stream-unread stream-throw stream-throw-big stream-escape stream-error stream-badchunk stream-redirect stream-race stream-deadline; do trace_ok $s; done
 fi
 
 ulogged() { # ulogged <scenario> <extended regex> <description>: check the upload server's log
-  if grep --quiet --extended-regexp "$2" "$out/$1.upload.log"; then
+  if [ "$(count_lines "$out/$1.upload.log" "$2" 1)" -ge 1 ]; then
     result PASS "$1" "$3"
   else
     result FAIL "$1" "$3 (no match in the server log for: $2)"
@@ -979,10 +1096,10 @@ if scenario upload-early; then
   start upload-early early "listening" "$PY" -I "$here/early.py" 18123 || exit 1
   # A server that answers 413 after the head and reads no more: the response is delivered while the
   # upload is stalled, and the producer is not asked for the rest.
-  client upload-early upload POST "http://127.0.0.1:18123/" size=32000000 chunk=65536 gap=1000
+  client upload-early upload POST "http://127.0.0.1:18123/" size=32000000 chunk=65536 gap=5000
   expect upload-early 'upload call 0 ok status=413 bytes=3 .*body_start="big"' \
     "an early 413 during a streamed upload is delivered"
-  within upload-early 0 900 "before the 1 s write gap"
+  within upload-early 0 $SLACK "well before the 5 s write gap"
   produced=$(sed --quiet 's/^upload call 0 .* produced=\([0-9]*\).*/\1/p' "$out/upload-early.txt")
   if [ -n "$produced" ] && [ "$produced" -lt 32000000 ]; then
     result PASS upload-early "the upload stopped: ${produced} of 32000000 bytes produced"
@@ -1051,19 +1168,21 @@ fi
 if scenario upload-redispatch; then
   evil upload-redispatch 18128 || exit 1
   # The server closes a kept-alive connection when the next request arrives: a PUT whose body is
-  # bytes goes again on a fresh connection, a streamed one does not, though PUT is idempotent.
-  client upload-race upload PUT "http://127.0.0.1:18128/die-on-next" size=1000 chunk=500 repeat=2
+  # bytes goes again on a fresh connection, a streamed one does not, though PUT is idempotent.  The
+  # server answers 2 s after the request, so that the producer has said that the body ended by then
+  # (a response that comes before that leaves the connection unpooled, and nothing to race).
+  client upload-race upload PUT "http://127.0.0.1:18128/die-on-next?ms=2000" size=1000 chunk=500 repeat=2
   expect upload-race 'upload call 1 error delivery=maybe delivered .*reused=true redispatched=false .*not_retried=LeanHttp.Call.NoRetry.delivered ' \
     "a streamed PUT whose pooled connection closes as it is sent is not sent again"
-  client upload-race-bytes upload PUT "http://127.0.0.1:18128/die-on-next" size=1000 bytes=1 repeat=2
+  client upload-race-bytes upload PUT "http://127.0.0.1:18128/die-on-next?ms=2000" size=1000 bytes=1 repeat=2
   expect upload-race-bytes 'upload call 1 ok status=200 .*redispatched=true' \
     "control: the same PUT with a byte-array body goes again on a fresh connection"
   # A 408 the server sent while the connection was idle, read as the response (no idle check): a
   # byte-array body is sent again, whatever the method; a stream is not, and the 408 is delivered.
-  client upload-408 upload POST "http://127.0.0.1:18128/idle-408?ms=100&linger=2000" size=5 repeat=2 pause=400 idlecheck=off
+  client upload-408 upload POST "http://127.0.0.1:18128/idle-408?ms=1000&linger=6000" size=5 repeat=2 pause=3000 idletimeout=60000 idlecheck=off
   expect upload-408 'upload call 1 ok status=408 .*redispatched=false' \
     "a streamed POST answered by the 408 of an idle connection: delivered, not sent again"
-  client upload-408-bytes upload POST "http://127.0.0.1:18128/idle-408?ms=100&linger=2000" size=5 bytes=1 repeat=2 pause=400 idlecheck=off
+  client upload-408-bytes upload POST "http://127.0.0.1:18128/idle-408?ms=1000&linger=6000" size=5 bytes=1 repeat=2 pause=3000 idletimeout=60000 idlecheck=off
   expect upload-408-bytes 'upload call 1 ok status=200 .*redispatched=true' \
     "control: with a byte-array body the POST goes again"
   for s in upload-race upload-race-bytes upload-408 upload-408-bytes; do trace_ok $s; done
@@ -1072,10 +1191,10 @@ fi
 if scenario upload-exit; then
   uploads upload-exit 18127 || exit 1
   # A producer still sleeping when the call ends at its deadline: the process still exits promptly.
-  client upload-exit upload PUT "http://127.0.0.1:18127/sink" size=1000 chunk=100 delay=30000 deadline=500
+  client upload-exit upload PUT "http://127.0.0.1:18127/sink" size=1000 chunk=100 delay=30000 deadline=3000
   expect upload-exit 'upload call 0 error delivery=maybe delivered .*cause="deadline timeout"' \
     "a producer that does not answer: the call ends at its deadline"
-  within upload-exit 490 900 "at the 500 ms deadline"
+  within upload-exit 2990 $((3000 + SLACK)) "at the 3 s deadline, not at the producer's 30 s"
   trace_ok upload-exit
 fi
 
@@ -1093,7 +1212,7 @@ tls_server() { # tls_server <scenario> <port> <certificate> [tls.py options...]
 # tls_conns <scenario> <count> <description>: the scenario's TLS server accepted <count> connections.
 tls_conns() {
   local got
-  got=$(grep --count '^ *[0-9.]* conn[0-9]* accepted from ' "$out/$1.tls.log")
+  got=$(count_lines "$out/$1.tls.log" '^ *[0-9.]* conn[0-9]* accepted from ' "$2")
   if [ "$got" -eq "$2" ]; then
     result PASS "$1" "$3: $got"
   else
@@ -1108,9 +1227,12 @@ if scenario tls-get; then
     "a GET over TLS 1.3, verified against the test CA"
   client tls-post call POST "https://127.0.0.1:18130/echo" body=100000 ca="$certs/ca.pem"
   expect tls-post 'call 0 ok status=200 bytes=100000 .*tls=TLSv1\.3' "a POST of 100 KB over TLS, echoed"
-  client tls-big call GET "https://127.0.0.1:18130/big?n=50000000" ca="$certs/ca.pem"
-  expect tls-big 'call 0 ok status=200 bytes=50000000 .*tls=TLSv1\.3' "a 50 MB body over TLS"
-  within tls-big 0 5000 "in less than 5 s"
+  # 200 MB, read whole: 0.7 to 2.1 s at load average 130 to 370, and 50 MB once took 5.8 s at 350; a
+  # body copied at every read, as the shell once did (NOTES.md, "Nothing carried across a wait is
+  # updated in place": 5.6 to 7.5 s for 60 MB), would take about a minute at this size, even idle.
+  client tls-big call GET "https://127.0.0.1:18130/big?n=200000000" ca="$certs/ca.pem" maxbody=300000000
+  expect tls-big 'call 0 ok status=200 bytes=200000000 .*tls=TLSv1\.3' "a 200 MB body over TLS"
+  within tls-big 0 45000 "in less than 45 s"
   client tls-localhost call GET "https://localhost:18130/hello" ca="$certs/ca.pem"
   expect tls-localhost 'call 0 ok status=200 .*tls=TLSv1\.3' "a host name matches the certificate's DNS name"
   if grep --quiet --extended-regexp "conn[0-9]+ GET /hello \{'host': 'localhost:18130', 'connection': 'keep-alive'\}" "$out/tls-get.tls.log"; then
@@ -1244,12 +1366,15 @@ if scenario tls-handshake; then
   client tls-hang call GET "https://127.0.0.1:18150/hello" ca="$certs/ca.pem" tlshs=500 retries=1 seed=1
   expect tls-hang 'call 0 error delivery=not sent .*retries=1 not_retried=LeanHttp.Call.NoRetry.hopLimit .*cause="TLS handshake timeout"' \
     "a server that never answers the handshake: it times out, is retried once, nothing sent"
-  within tls-hang 1000 1800 "two 500 ms handshakes and one backoff"
+  # The two handshakes' 500 ms and the 15 ms backoff of seed 1, never shorter: a timer that fires
+  # early is waited again (NOTES.md, "Timers fire early"); without a handshake timeout the call would
+  # wait for the server forever.
+  within tls-hang 1010 $((1015 + SLACK)) "two 500 ms handshakes and one backoff"
   tls_conns tls-hang 2 "two connections"
-  client tls-hang-deadline call GET "https://127.0.0.1:18150/hello" ca="$certs/ca.pem" deadline=700
+  client tls-hang-deadline call GET "https://127.0.0.1:18150/hello" ca="$certs/ca.pem" deadline=3000
   expect tls-hang-deadline 'call 0 error delivery=not sent .*not_retried=LeanHttp.Call.NoRetry.cause .*cause="deadline timeout" detail="the deadline passed during the TLS handshake"' \
     "the deadline during the handshake is the deadline's timeout, never retried"
-  within tls-hang-deadline 690 1000 "at the 700 ms deadline"
+  within tls-hang-deadline 2990 $((3000 + SLACK)) "at the 3 s deadline, not at the 10 s handshake timeout"
   tls_server tls-closed 18152 good --mode close-handshake || exit 1
   client tls-closed call GET "https://127.0.0.1:18152/hello" ca="$certs/ca.pem" seed=1
   expect tls-closed 'call 0 error delivery=not sent .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*cause="the connection closed during the TLS handshake' \
@@ -1264,22 +1389,24 @@ if scenario tls-handshake; then
 fi
 
 if scenario tls-idle; then
-  # Servers that close a kept connection after 200 ms of idleness, with and without close_notify.
-  tls_server tls-idle-notify 18156 good --idle-close 200 --idle-notify 1 || exit 1
-  client tls-idle-notify call GET "https://127.0.0.1:18156/hello" ca="$certs/ca.pem" repeat=2 pause=400
+  # Servers that close a kept connection after 1 s of idleness, with and without close_notify; the
+  # next call comes 3 s later.
+  tls_server tls-idle-notify 18156 good --idle-close 1000 --idle-notify 1 || exit 1
+  client tls-idle-notify call GET "https://127.0.0.1:18156/hello" ca="$certs/ca.pem" repeat=2 pause=3000 idletimeout=60000
   expect tls-idle-notify 'call 1 ok status=200 .*reused=false discarded=1 ' \
     "an idle connection the server closed with close_notify is caught by the idle check"
-  tls_server tls-idle-abrupt 18158 good --idle-close 200 --idle-notify 0 || exit 1
-  client tls-idle-abrupt call GET "https://127.0.0.1:18158/hello" ca="$certs/ca.pem" repeat=2 pause=400
+  tls_server tls-idle-abrupt 18158 good --idle-close 1000 --idle-notify 0 || exit 1
+  client tls-idle-abrupt call GET "https://127.0.0.1:18158/hello" ca="$certs/ca.pem" repeat=2 pause=3000 idletimeout=60000
   expect tls-idle-abrupt 'call 1 ok status=200 .*reused=false discarded=1 ' \
     "and one closed without it"
-  client tls-idle-nocheck call GET "https://127.0.0.1:18158/hello" ca="$certs/ca.pem" repeat=2 pause=400 idlecheck=off
+  client tls-idle-nocheck call GET "https://127.0.0.1:18158/hello" ca="$certs/ca.pem" repeat=2 pause=3000 idletimeout=60000 idlecheck=off
   expect tls-idle-nocheck 'call 1 ok status=200 .*redispatched=true ' \
     "without the idle check, the GET on the closed connection is sent again on a fresh one"
   # The pool lets an expired idle connection go with close_notify.
   tls_server tls-idle-expire 18160 good || exit 1
   client tls-idle-expire call GET "https://127.0.0.1:18160/hello" ca="$certs/ca.pem" repeat=2 pause=300 idletimeout=100
   expect tls-idle-expire 'call 1 ok status=200 .*reused=false ' "an expired idle connection is not used"
+  count_lines "$out/tls-idle-expire.tls.log" "conn1 (EOF from client|read failed)" 1 > /dev/null
   if grep --quiet --extended-regexp "conn1 (EOF from client|read failed)" "$out/tls-idle-expire.tls.log" &&
       ! grep --quiet "conn1 read failed" "$out/tls-idle-expire.tls.log"; then
     result PASS tls-idle-expire "and the client closed it cleanly, with close_notify"
@@ -1347,21 +1474,22 @@ if scenario tls-stream; then
   expect tls-stream-abandon 'stream 0 ok status=200 read=[0-9]+ .*conn=\(some 0\) reused=false ' "the first call reads one piece and leaves"
   expect tls-stream-abandon '^after stream 0: pool idle=0 checked_out=0 allocated=1$' "its connection is closed, not pooled"
   expect tls-stream-abandon 'stream 1 ok status=200 .*conn=\(some 1\) reused=false ' "the next call opens a new one"
-  client tls-stream-race stream GET "https://127.0.0.1:18162/trickle?ms=500" ca="$certs/ca.pem" race=100 pull=1
+  client tls-stream-race stream GET "https://127.0.0.1:18162/trickle?ms=8000" ca="$certs/ca.pem" race=100 pull=1
   expect tls-stream-race 'stream 0 ok status=200 read=0 ' "the callback leaves while the other task reads"
   expect tls-stream-race '^when withResponse returned: pool checked_out=0$' "the connection was released first"
   expect tls-stream-race 'the racing reader raised ".*used after the callback of Client.withResponse ended"' \
     "and the other task's read fails"
-  since tls-stream-race '^callback entered at ' '^stream 0 ok ' 90 400 \
+  since tls-stream-race '^callback entered at ' '^stream 0 ok ' 90 $((100 + SLACK)) \
     "from the callback's start, without waiting for the next byte of the body"
   client tls-stream-throw stream GET "https://127.0.0.1:18162/big?n=10000000" ca="$certs/ca.pem" stop=1 throw=1
   expect tls-stream-throw 'stream 0 threw "thrown inside the callback"' "the callback's exception reaches the caller"
   client tls-stream-pulls stream GET "https://127.0.0.1:18162/big?n=1000000" ca="$certs/ca.pem" pull=4096
   expect tls-stream-pulls 'stream 0 ok status=200 read=1000000 ' "a 1 MB body in 4 KiB pulls"
-  client tls-stream-deadline stream GET "https://127.0.0.1:18162/trickle?ms=100" ca="$certs/ca.pem" deadline=1000 pull=1
+  # Twenty bytes, one every 500 ms: the body would end 10 s in.
+  client tls-stream-deadline stream GET "https://127.0.0.1:18162/trickle?ms=500" ca="$certs/ca.pem" deadline=3000 pull=1
   expect tls-stream-deadline 'stream call 0 error delivery=response received .*cause="deadline timeout"' \
     "a body still coming at the deadline fails the call"
-  within tls-stream-deadline 990 1400 "at the 1 s deadline"
+  within tls-stream-deadline 2990 $((3000 + SLACK)) "at the 3 s deadline"
   for s in tls-stream-abandon tls-stream-race tls-stream-throw tls-stream-pulls tls-stream-deadline; do trace_ok $s; done
 fi
 
@@ -1391,36 +1519,9 @@ fi
 # that hangs, a lookup) is it a time, from the step before.  Whether the call returned at the
 # cancellation is measured from the moment it fired (since_fired), within 1500 ms: every other way
 # the call could end (the server's answer, the end of a backoff, a timeout, the producer's stall) is
-# at least 3 s after it, and a loaded host has been seen to take 700 ms to return.
-
-# us_of <scenario> <regex>: the time ms=N.NNN of the first line matching <regex>, in microseconds.
-us_of() {
-  grep --extended-regexp "$2" "$out/$1.txt" | head --lines=1 \
-    | sed --quiet 's/.* ms=\([0-9]*\)\.\([0-9][0-9][0-9]\).*/\1\2/p'
-}
-
-# since <scenario> <from regex> <to regex> <lo> <hi> <description>: the first lines matching the two
-# regexes have times ms=F and ms=N (both from the start of the first call), with lo <= N - F <= hi.
-since() {
-  local from to d
-  from=$(us_of "$1" "$2")
-  to=$(us_of "$1" "$3")
-  if [ -z "$from" ] || [ -z "$to" ]; then
-    result FAIL "$1" "$6: no time (from: ${from:-none}, to: ${to:-none})"
-    return
-  fi
-  # Base 10: a time below 1 ms has leading zeros, which $((...)) would read as octal.
-  d=$((10#$to - 10#$from))
-  if [ "$d" -ge $(($4 * 1000)) ] && [ "$d" -le $(($5 * 1000)) ]; then
-    result PASS "$1" "$6: $((d / 1000)) ms"
-  else
-    result FAIL "$1" "$6: $((d / 1000)) ms, expected $4-$5"
-  fi
-}
-
-# since_fired <scenario> <regex> <lo> <hi> <description>: the first line matching <regex> has a time
-# between lo and hi ms after the cancellation or shutdown fired.
-since_fired() { since "$1" '^(cancel|shutdown) fired at ' "$2" "$3" "$4" "$5"; }
+# at least 3 s after it, and a loaded host has been seen to take 700 ms to return.  It stays at
+# 1500 ms, below SLACK, because it is measured from the cancellation itself: on 2026-11-02, at load
+# average up to 1130, no call took more than 250 ms from it.
 
 cancelled='cause="the call was cancelled \(cancel\)"'
 first='^((stream |upload )?call|stream) 0 '
@@ -1532,7 +1633,10 @@ if scenario cancel-tls; then
   # Over TLS, a call cancelled while its body arrives: the TCP receive under the session is
   # cancelled, and the connection is not pooled.
   tls_server cancel-tls-body 18191 good || exit 1
-  client cancel-tls-body stream GET "https://127.0.0.1:18191/trickle?ms=100" ca="$certs/ca.pem" cancel=50 after=read pull=1
+  # A byte a second, so that the cancellation, 50 ms after the first read, comes while the next is
+  # awaited even if its timer is late (once, at load average 480, it had not fired 2.5 s later, by
+  # which time the 20 bytes of a byte every 100 ms had all come).
+  client cancel-tls-body stream GET "https://127.0.0.1:18191/trickle?ms=1000" ca="$certs/ca.pem" cancel=50 after=read pull=1
   expect cancel-tls-body "stream call 0 error delivery=response received .*$cancelled.* read_before=[1-9][0-9]*\$" \
     "a call over TLS cancelled while its body is read: the read raises the call's error"
   since_fired cancel-tls-body "$first" 0 1500 "at the cancellation"
@@ -1639,6 +1743,43 @@ if scenario cancel-steps; then
   for s in cancel-follow cancel-wait cancel-deliver; do trace_ok $s; done
 fi
 
+# --- A timer of the event loop fires early when the loop's thread is held up (NOTES.md, "Timers fire
+# early"); no wait of the client may end before its time.  The client pins the loop's thread to one
+# CPU, where busy loops hold it up, while threads of its own use the loop (hammer=); bare timers of
+# the loop, which do fire early then, are the control.
+if scenario timers; then
+  # The last CPU this process may use.
+  cpu=$(sed --quiet 's/^Cpus_allowed_list:[[:space:]]*//p' /proc/self/status | tr ',' '\n' | tail --lines=1)
+  cpu=${cpu##*-}
+  hogs=()
+  for _ in $(seq 16); do taskset --cpu-list "$cpu" bash -c 'while :; do :; done' & hogs+=($!); done
+  pids+=("${hogs[@]}")
+  client timers timers n=10 hammer=4 pinloop="$cpu"
+  kill "${hogs[@]}" 2>/dev/null
+  wait "${hogs[@]}" 2>/dev/null
+  if grep --quiet '^pinloop failed' "$out/timers.txt"; then
+    result SKIP timers "$(grep '^pinloop failed' "$out/timers.txt")"
+  else
+    # The control: how often the client's waits saw a timer fire early and started it again.
+    again=0
+    for kind in awaitFirst race; do
+      line=$(grep "^timers $kind " "$out/timers.txt")
+      w=$(sed --quiet 's/.* waits=\([0-9]*\) .*/\1/p' <<< "$line")
+      t=$(sed --quiet 's/.* timers=\([0-9]*\).*/\1/p' <<< "$line")
+      again=$(( again + ${t:-0} - ${w:-0} ))
+    done
+    bare=$(sed --quiet 's/^timers sleep .* early_over_1ms=\([0-9]*\) .*/\1/p' "$out/timers.txt")
+    if [ "$again" -gt 0 ]; then
+      result PASS timers "control: the client's waits saw $again timers fire early and started them again (and ${bare:-?} of 40 bare timers ended more than 1 ms early)"
+    else
+      result SKIP timers "control: no timer of the client's waits fired early in this run (${bare:-?} of 40 bare timers did), so the checks below had nothing to catch"
+    fi
+    for kind in awaitFirst race; do
+      expect timers "^timers $kind waits=40 early=0 " "no wait through $kind ends before its time"
+    done
+  fi
+fi
+
 # --- The lookups of a call: a name is looked up once per call, whatever its rounds of connect attempts.
 if scenario dns-once; then
   client dns-once call GET "http://dup.test:$CLOSED/" retries=2 base=0 cap=0
@@ -1663,7 +1804,7 @@ if scenario dns-timeout; then
   cp /tmp/resolv.conf.saved /etc/resolv.conf
   expect dns-timeout 'call 0 error delivery=not sent .*cause="deadline timeout"' \
     "a name server that never answers: the call ends at the deadline; nothing sent"
-  within dns-timeout 1990 2400 "at the 2 s deadline"
+  within dns-timeout 1990 $((2000 + SLACK)) "at the 2 s deadline"
   # Cancelled while the name is looked up: the call returns at once; the lookup, which cannot be
   # cancelled, is abandoned as the deadline abandons it, and delays exit as before.  Nothing sees the
   # lookup hang, so the cancellation is a time: 1 s after the request goes out.
@@ -1683,6 +1824,13 @@ if [ -n "$bad" ]; then
   result FAIL traces "calls whose steps the planner does not replay, in: $bad"
 else
   result PASS traces "every call's steps replay through the planner ($(cat "$out"/*.txt | grep --count 'trace call .* ok') calls)"
+fi
+# bash's own errors name the script and line ("run.sh: line N: since: command not found"); its notices
+# of a child that died of a signal (dns-cancel's crash at exit) give a process id there instead.
+errors=$(grep --extended-regexp 'run\.sh: line [0-9]+: ' "$out/stderr.txt" 2>/dev/null \
+  | grep --invert-match --extended-regexp 'run\.sh: line [0-9]+: +[0-9]+ ')
+if [ -n "$errors" ]; then
+  result FAIL run "the suite itself failed: $(head --lines=1 <<< "$errors")"
 fi
 # A name that matches no scenario, or a run with no checks at all, must not pass silently.
 for s in "${selected[@]}"; do

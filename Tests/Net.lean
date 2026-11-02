@@ -1,11 +1,14 @@
 import LeanHttp
+import Std.Time
 
 /-!
 # Real-socket test driver
 
 Run by `tests/net/run.sh` against local servers.  Prints one line per call and, for repeated calls,
-a summary of the per-call times; the last line says when `main` returned, so that the harness can
-tell how long the process took to exit after that.
+a summary of the per-call times; the last line says when `main` started and returned, by the
+system's clock as well (`unix_us`, the clock bash's `$EPOCHREALTIME` reads), so that the harness can
+tell how long the process took to start and to exit after `main` returned.  Every command rejects
+an option it does not take.
 
 ```
 net-client call <METHOD> <URL> [key=value ...]
@@ -73,17 +76,69 @@ net-client rawpost <PORT> [key=value ...]
   n=N size=N keepalive=0|1 nodelay=0|1
 net-client backoff <SEED> [n=N base=MS cap=MS]
   Prints the backoff schedule for SEED.
+net-client timers [key=value ...]
+  Waits MS ms with nothing to wait for, N times in each of W tasks at once, through each of a bare
+  timer of the event loop (`Std.Async.Sleep`), `LeanHttp.awaitFirst` and `Cancel.race`, and prints
+  for each how many waits ended before MS ms had passed by `IO.monoMsNow`, by how much at most, and
+  how many ended more than 1 ms early; for the last two also how many of their timers fired early
+  and were started again (`timers=` against `waits=`).
+  n=N waiters=W ms=MS (default 20, 4, 100)
+  hammer=N       N threads of their own start and stop timers of the event loop meanwhile, as a busy
+                 program's other users of the loop would
+  pinloop=CPU    first pin the thread of libuv's event loop to CPU (with taskset), where the caller
+                 may run busy loops to hold it up, as a loaded host does; if it cannot, prints
+                 "pinloop failed" and waits nothing
 ```
 -/
 
 open Std.Http Std.Async Std.Net LeanHttp
 
-/-- `key=value` arguments. -/
-def parseKV (args : List String) : List (String × String) :=
-  args.filterMap fun a =>
+/-- What an option's value must be: a whole number, or any text. -/
+inductive OptionKind where
+  | nat
+  | text
+
+/-- The options of `configOf`, `withTraces` and `triggerOf`, which every client command takes. -/
+def commonOptions : List (String × OptionKind) :=
+  (["deadline", "gap", "connect", "stagger", "retries", "maxbody", "interim", "seed", "nodelay",
+    "pool", "maxidle", "idletimeout", "maxactive", "budget", "base", "cap", "follow",
+    "maxredirects", "retry429", "retry503", "maxretryafter", "drainbytes", "drainms", "tlshs",
+    "trace", "showtrace", "cancel", "shutdown", "logcount", "cancelcalls", "cancelfrom", "repeat",
+    "pause"].map (·, .nat)) ++
+  [("idlecheck", .text), ("ca", .text), ("after", .text), ("log", .text), ("logtext", .text),
+    ("auth", .text), ("cookie", .text)]
+
+/-- The options each command takes. -/
+def optionsOf : String → List (String × OptionKind)
+  | "call" => commonOptions ++ (["body", "concurrent", "close", "linger"].map (·, .nat))
+  | "stream" => commonOptions ++
+    (["body", "pull", "stop", "throw", "escape", "race", "whole", "idle", "hold"].map (·, .nat))
+  | "upload" => commonOptions ++
+    (["size", "chunk", "fail", "delay", "stall", "bytes"].map (·, .nat)) ++ [("declare", .text)]
+  | "idlecheck" => (["n", "ms", "wait"].map (·, .nat)) ++ [("scenario", .text)]
+  | "rawpost" => ["n", "size", "keepalive", "nodelay"].map (·, .nat)
+  | "backoff" => ["n", "base", "cap"].map (·, .nat)
+  | "timers" => ["n", "waiters", "ms", "hammer", "pinloop"].map (·, .nat)
+  | _ => []
+
+/--
+The `key=value` arguments of command `cmd`.  An argument that is not of that form, an option the
+command does not take, or a value of the wrong kind is an error: an option silently ignored would
+let a run measure something other than what its command line says.
+-/
+def parseKV (cmd : String) (args : List String) : IO (List (String × String)) := do
+  let known := optionsOf cmd
+  args.mapM fun a => do
     match a.splitOn "=" with
-    | [k, v] => some (k, v)
-    | _ => none
+    | k :: v :: more =>
+      let v := "=".intercalate (v :: more)
+      match known.lookup k with
+      | none => throw (.userError s!"{cmd}: unknown option {k} (in {a})")
+      | some .nat =>
+        if v.toNat?.isNone then throw (.userError s!"{cmd}: {k} takes a whole number, not {v}")
+        pure (k, v)
+      | some .text => pure (k, v)
+    | _ => throw (.userError s!"{cmd}: not a key=value option: {a}")
 
 def getNat (kv : List (String × String)) (key : String) (default : Nat) : Nat :=
   (kv.lookup key >>= String.toNat?).getD default
@@ -422,11 +477,54 @@ def requestOf (methodName url : String) (kv : List (String × String)) : IO (Req
   let headers ← field Header.Name.authorization "auth" .empty >>= field Header.Name.cookie "cookie"
   return { line := { method, version := .v11, uri := .absoluteForm uri, headers }, body }
 
+/--
+Pins the thread of libuv's event loop to `cpu`: the thread of this process that waits in
+`epoll_wait` once the loop is idle, found by its system call (the numbers of x86-64), looking again
+every 20 ms for up to 5 s, since on a loaded host the loop's thread may be running or waiting for its
+lock when it is looked at.  Returns what went wrong, if it could not.
+-/
+partial def pinLoop (cpu : Nat) (tries : Nat := 250) : IO (Option String) := do
+  Std.Async.sleep 20 |>.block
+  for e in ← System.FilePath.readDir "/proc/self/task" do
+    let syscall ← try
+        pure (((← IO.FS.readFile (e.path / "syscall")).splitOn " ").head?.getD "")
+      catch _ => pure ""
+    -- epoll_wait, epoll_pwait and epoll_pwait2 on x86-64
+    if syscall == "232" || syscall == "281" || syscall == "441" then
+      let out ← try
+          IO.Process.output { cmd := "taskset", args := #["--pid", "--cpu-list", toString cpu, e.fileName] }
+        catch err => return some s!"taskset: {err}"
+      if out.exitCode != 0 then return some s!"taskset: {out.stderr.trimAscii}"
+      IO.println s!"pinned the event loop's thread {e.fileName} to CPU {cpu}"
+      return none
+  if tries > 1 then pinLoop cpu (tries - 1)
+  else return some "no thread of this process waited in epoll_wait within 5 s (x86-64 system call numbers)"
+
+/-- Starts and stops a timer of the event loop until `stop` is set. -/
+partial def hammerLoop (stop : IO.Ref Bool) : IO Unit := do
+  if ← stop.get then return
+  let s ← (Sleep.mk 1000).block
+  discard <| start s.wait
+  s.stop
+  hammerLoop stop
+
+/--
+With `hammer=N`, starts `N` threads that start and stop timers of the event loop, taking its lock,
+until the action returned stops them.
+-/
+def startHammer (n : Nat) : IO (IO Unit) := do
+  if n == 0 then return pure ()
+  let stop ← IO.mkRef false
+  let threads ← (List.range n).mapM fun _ => IO.asTask (prio := .dedicated) (hammerLoop stop)
+  return do
+    stop.set true
+    for t in threads do discard <| IO.wait t
+
 def runCalls (args : List String) : IO Unit := do
   let (methodName, url, rest) ← match args with
     | m :: u :: rest => pure (m, u, rest)
     | _ => throw (.userError "usage: net-client call <METHOD> <URL> [key=value ...]")
-  let kv := parseKV rest
+  let kv ← parseKV "call" rest
   let req ← requestOf methodName url kv
   let traces : Traces ← IO.mkRef {}
   let trigger ← triggerOf kv
@@ -536,7 +634,7 @@ def runStream (args : List String) : IO Unit := do
   let (methodName, url, rest) ← match args with
     | m :: u :: rest => pure (m, u, rest)
     | _ => throw (.userError "usage: net-client stream <METHOD> <URL> [key=value ...]")
-  let kv := parseKV rest
+  let kv ← parseKV "stream" rest
   let req ← requestOf methodName url kv
   let traces : Traces ← IO.mkRef {}
   let trigger ← triggerOf kv
@@ -639,7 +737,7 @@ def runUpload (args : List String) : IO Unit := do
   let (methodName, url, rest) ← match args with
     | m :: u :: rest => pure (m, u, rest)
     | _ => throw (.userError "usage: net-client upload <METHOD> <URL> [key=value ...]")
-  let kv := parseKV rest
+  let kv ← parseKV "upload" rest
   let req ← requestOf methodName url kv
   let traces : Traces ← IO.mkRef {}
   let trigger ← triggerOf kv
@@ -748,23 +846,85 @@ def rawPost (port : UInt16) (kv : List (String × String)) : IO Unit := do
     times := times.push (t1 - t0)
   IO.println (summary s!"rawpost keepalive={keepAlive} nodelay={noDelay} split=1 size={size}" times)
 
+/--
+How one kind of wait of `timers` waits `ms` milliseconds; `started` counts the timers that
+`awaitFirst` and `Cancel.race` start, one per wait unless a timer fired early.
+-/
+def timerWait (kind : String) (ms : Nat) (started : IO.Ref Nat) : Async Unit := do
+  let timer : StartTimer := fun ms => do
+    started.modify (· + 1)
+    libuvTimer ms
+  match kind with
+  | "sleep" => Std.Async.sleep (.ofNat ms)
+  | "awaitFirst" => discard <| awaitFirst (#[] : Array (Task Unit)) ms timer
+  | _ =>
+    let c ← Cancel.watch #[] #[]
+    discard <| c.race (#[] : Array (Task Unit)) ms timer
+    c.finish
+
+/--
+Waits `ms` milliseconds `n` times in each of `waiters` tasks at once, through a bare timer of the
+event loop, `awaitFirst` and `Cancel.race`, and prints how many waits of each ended early by
+`IO.monoMsNow`.
+-/
+def timers (kv : List (String × String)) : IO Unit := do
+  let n := getNat kv "n" 20
+  let waiters := getNat kv "waiters" 4
+  let ms := getNat kv "ms" 100
+  if let some cpu := kv.lookup "pinloop" >>= String.toNat? then
+    if let some why ← pinLoop cpu then
+      IO.println s!"pinloop failed: {why}"
+      return
+  let kinds := ["sleep", "awaitFirst", "race"]
+  -- For each kind, how much short of `ms` each wait ended (0 if it did not), in ms, and how many
+  -- timers its waits started.
+  let shorts ← kinds.mapM fun _ => IO.mkRef (#[] : Array Nat)
+  let started ← kinds.mapM fun _ => IO.mkRef 0
+  let stopHammer ← startHammer (getNat kv "hammer" 0)
+  try
+    let mut tasks := #[]
+    for ((kind, out), count) in (kinds.zip shorts).zip started do
+      for _ in [0:waiters] do
+        tasks := tasks.push (← start do
+          for _ in [0:n] do
+            let t0 ← IO.monoMsNow
+            timerWait kind ms count
+            let t1 ← IO.monoMsNow
+            out.modify (·.push (ms - (t1 - t0))))
+    for t in tasks do
+      if let .error e ← IO.wait t then IO.println s!"a waiter failed: {e}"
+  finally
+    stopHammer
+  for ((kind, out), count) in (kinds.zip shorts).zip started do
+    let s ← out.get
+    let early := s.filter (· > 0)
+    let k ← count.get
+    let timers := if kind == "sleep" then "" else s!" timers={k}"
+    IO.println s!"timers {kind} waits={s.size} early={early.size} early_over_1ms={(s.filter (· > 1)).size} most_ms={s.foldl max 0}{timers}"
+
+/-- The system's clock, in microseconds since the Unix epoch. -/
+def unixMicros : IO Int := do
+  return (← Std.Time.Timestamp.now).toNanosecondsSinceUnixEpoch.toInt / 1000
+
 def main (args : List String) : IO UInt32 := do
   let start ← IO.monoNanosNow
+  let started ← unixMicros
   match args with
   | "call" :: rest => runCalls rest
   | "stream" :: rest => runStream rest
   | "upload" :: rest => runUpload rest
-  | "rawpost" :: port :: rest => rawPost port.toNat!.toUInt16 (parseKV rest)
-  | "idlecheck" :: port :: rest => idleCheck port.toNat!.toUInt16 (parseKV rest)
+  | "rawpost" :: port :: rest => rawPost port.toNat!.toUInt16 (← parseKV "rawpost" rest)
+  | "idlecheck" :: port :: rest => idleCheck port.toNat!.toUInt16 (← parseKV "idlecheck" rest)
+  | "timers" :: rest => timers (← parseKV "timers" rest)
   | "backoff" :: seed :: rest =>
-    let kv := parseKV rest
+    let kv ← parseKV "backoff" rest
     let d : Config := {}
     let s := Backoff.schedule (getNat kv "base" d.backoffBaseMs) (getNat kv "cap" d.backoffCapMs)
       seed.toNat!.toUInt64 (getNat kv "n" d.maxRetriesPerHop)
     IO.println s!"backoff seed={seed} schedule={s}"
   | _ =>
-    IO.eprintln "usage: net-client call|stream|upload|rawpost|idlecheck|backoff ..."
+    IO.eprintln "usage: net-client call|stream|upload|rawpost|idlecheck|backoff|timers ..."
     return 2
   let now ← IO.monoNanosNow
-  IO.println s!"main returning at ms={fmtMs (now - start)}"
+  IO.println s!"main returning at ms={fmtMs (now - start)} started_unix_us={started} returning_unix_us={← unixMicros}"
   return 0

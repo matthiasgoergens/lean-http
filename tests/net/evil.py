@@ -127,6 +127,8 @@ def handle1(conn, cid, args):
         if mode == "die-on-next":
             # answer this request with keep-alive, then close as soon as the next request's first
             # bytes arrive, without answering it: the stale keep-alive race made deterministic
+            # (ms=M: answer M ms after reading the request)
+            time.sleep(int(q.get("ms", "0")) / 1000)
             b = b"ok"
             conn.sendall(resp("200 OK", cl(b), b))
             d = conn.recv(65536)
@@ -152,6 +154,7 @@ def route(mode, method, path, q, headers, body, args, conn, cid):
         return resp("200 OK", cl(b), b)
     if mode == "sleep":
         time.sleep(ms / 1000)
+        log(f"conn{cid} answering after {ms} ms")
         b = f"slept {ms}".encode()
         return resp("200 OK", cl(b), b)
     if mode == "close-delimited":
