@@ -263,8 +263,8 @@ when this returns.  A write of the handshake still in flight is abandoned.
 partial def handshake (socket : TCP.Socket.Client) (session : Tls.Session) (timeoutAt deadline : Nat)
     (cancel : Cancel) (lastWrite : Option (AsyncTask Unit) := none) (ended : Bool := false) :
     Async (Except HandshakeFailure Unit) := do
-  -- A timer may fire up to a millisecond early by `IO.monoMsNow`: when the deadline came first, the
-  -- wait was for the deadline.
+  -- A wait that timed out ended no earlier than the earlier of the two times: when the deadline came
+  -- first, the wait was for the deadline, and a wait that woke late may find it passed as well.
   let late : BaseIO HandshakeFailure := do
     return if deadline ≤ timeoutAt || deadline ≤ (← IO.monoMsNow) then .deadline else .timedOut
   let step ← try session.handshake catch e => pure (.failed (toString e))

@@ -192,20 +192,17 @@ inductive Waited (β : Type) where
 instance {β : Type} : Nonempty (Waited β) := ⟨.timedOut⟩
 
 /--
-Waits until one of `tasks` finishes, `ms` milliseconds pass or the call is cancelled, whichever
-comes first, like `awaitFirst`.  For the call's own task, one wait at a time: each wait replaces the
-bell of the one before, so a second wait at the same time would not hear of the cancellation.  The
-timer is stopped when it loses; tasks that lose keep running, and it is up to the caller to cancel
-them.  A call cancelled already, or cancelled when the wait ends, returns `cancelled`.
+Waits until one of `tasks` finishes, `IO.monoMsNow` reaches `target` or the call is cancelled,
+whichever comes first, as `race` does.
 -/
-def race {β : Type} (c : Cancel) (tasks : Array (Task β)) (ms : Nat) : Async (Waited β) := do
+partial def raceUntil {β : Type} (c : Cancel) (tasks : Array (Task β)) (target : Nat)
+    (startTimer : StartTimer) : Async (Waited β) := do
   -- A fresh bell first, then the check: a cancellation the check misses rings the new bell.  The
   -- last wait's bell, replaced, is dropped, and what was chained on it with it.
   let bell ← IO.Promise.new
   c.bell.set (some bell)
   if let some reason ← c.reason? then return .cancelled reason
-  let sleep ← Sleep.mk (.ofNat ms)
-  let timer ← start sleep.wait
+  let (timer, stop) ← startTimer (target - (← IO.monoMsNow))
   let winner : IO.Promise (Waited β) ← IO.Promise.new
   for task in tasks do
     BaseIO.chainTask (sync := true) task fun r => winner.resolve (.done r)
@@ -220,25 +217,38 @@ def race {β : Type} (c : Cancel) (tasks : Array (Task β)) (ms : Nat) : Async (
     | .error _ => pure ()
   -- `winner` is resolved by the timer at the latest, so `result!` cannot be left waiting.
   let result ← await winner.result!
-  sleep.stop
+  stop
   -- Something else may have ended the wait after a token was cancelled and before the watch rang
   -- the bell: the cancellation still wins.
   match ← c.reason?, result with
   | some reason, _ => return .cancelled reason
+  -- The timer fired before the time had passed (`libuvTimer`): wait for the rest, with a new bell.
+  | none, .timedOut =>
+    if (← IO.monoMsNow) < target then c.raceUntil tasks target startTimer else return .timedOut
   | none, _ => return result
 
 /--
-Sleeps until `IO.monoMsNow` reaches `target`, or until the call is cancelled; returns the reason if
-it was.  A timer may fire up to a millisecond before its time by `IO.monoMsNow`, since libuv
-measures timers from the time it cached at the start of the loop's iteration, so the remainder is
-slept again.
+Waits until one of `tasks` finishes, `ms` milliseconds pass by `IO.monoMsNow` or the call is
+cancelled, whichever comes first, like `awaitFirst`, and like it never times out before the time has
+passed.  For the call's own task, one wait at a time: each wait replaces the bell of the one before,
+so a second wait at the same time would not hear of the cancellation.  The timer is stopped when it
+loses; tasks that lose keep running, and it is up to the caller to cancel them.  A call cancelled
+already, or cancelled when the wait ends, returns `cancelled`.
 -/
-partial def sleepUntil (c : Cancel) (target : Nat) : Async (Option Std.CancellationReason) := do
+def race {β : Type} (c : Cancel) (tasks : Array (Task β)) (ms : Nat)
+    (startTimer : StartTimer := libuvTimer) : Async (Waited β) := do
+  c.raceUntil tasks ((← IO.monoMsNow) + ms) startTimer
+
+/--
+Sleeps until `IO.monoMsNow` reaches `target`, or until the call is cancelled; returns the reason if
+it was.
+-/
+def sleepUntil (c : Cancel) (target : Nat) : Async (Option Std.CancellationReason) := do
   let now ← IO.monoMsNow
   if now < target then
     match ← c.race (#[] : Array (Task Unit)) (target - now) with
     | .cancelled reason => return some reason
-    | _ => c.sleepUntil target
+    | _ => c.reason?
   else
     c.reason?
 

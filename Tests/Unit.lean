@@ -7,8 +7,9 @@ import Tests.Support.Drive
 Pure parts of the client: the backoff schedule, address ordering and de-duplication, request
 planning, error classification, the pool's settings, when an exchange is sent again, the check of
 a call's steps against the planner (with mutated traces as positive controls), how the body
-stream hands out what it holds, and TLS: the choice of trust store, the name a certificate must
-carry and what the planner retries.  Prints one line per check and exits with status 1 if any
+stream hands out what it holds, TLS: the choice of trust store, the name a certificate must
+carry and what the planner retries, a call's cancellation, and that a wait never times out early,
+whatever its timer does.  Prints one line per check and exits with status 1 if any
 failed.
 -/
 
@@ -676,10 +677,60 @@ def cancelChecks : Checks Unit := do
     ((waited matches .ok (.cancelled .deadline)) && (← IO.monoMsNow) - t0 < 2000)
   c.finish
 
+/-! ## Waits that a timer ends -/
+
+/--
+A timer that fires at half the time it is asked for, as a timer of the event loop does when the loop's
+clock is behind (`NOTES.md`, "Timers fire early").
+-/
+def earlyTimer : StartTimer := fun ms => libuvTimer (ms / 2)
+
+/--
+Waits through `awaitFirst` and `Cancel.race` with `earlyTimer`, all at once: a wait with nothing to
+wait for must still end at its time, and a task that finishes, or a cancellation that comes, after
+the timer first fired early must still win.  The times leave seconds of margin for a loaded host: the
+first early firing comes at 3 s of 6, and the task and the cancellation at 3.5 s.
+-/
+def timerChecks : Checks Unit := do
+  let t0 ← IO.monoMsNow
+  -- The control: the timer of these checks fires early.
+  let (fired, _) ← (earlyTimer 6000).block
+  let ctl ← BaseIO.mapTask (sync := true) (fun _ => IO.monoMsNow) fired
+  let lone ← start do
+    let r ← awaitFirst (#[] : Array (Task Unit)) 6000 earlyTimer
+    return (r, (← IO.monoMsNow) - t0)
+  let c ← Cancel.watch #[] #[]
+  let loneRace ← start do
+    let r ← c.race (#[] : Array (Task Unit)) 6000 earlyTimer
+    return (r, (← IO.monoMsNow) - t0)
+  let p : IO.Promise Nat ← IO.Promise.new
+  let c2 ← Cancel.watch #[] #[]
+  let withTask ← start (awaitFirst #[p.result!] 6000 earlyTimer)
+  let raceTask ← start (c2.race #[p.result!] 6000 earlyTimer)
+  let token ← Std.CancellationToken.new
+  let c3 ← Cancel.watch #[token] #[token]
+  let raceCancel ← start (c3.race (#[] : Array (Task Unit)) 6000 earlyTimer)
+  IO.sleep 3500
+  p.resolve 7
+  token.cancel .cancel
+  let ms := (← IO.wait ctl) - t0
+  check "control: the early timer fires at half its time" (ms < 5000) s!"after {ms} ms"
+  let (r, ms) ← IO.ofExcept (← IO.wait lone)
+  check "awaitFirst times out no earlier than its time, whatever the timer" (r.isNone && ms ≥ 6000)
+    s!"after {ms} ms"
+  let (r, ms) ← IO.ofExcept (← IO.wait loneRace)
+  check "Cancel.race times out no earlier than its time, whatever the timer"
+    ((r matches .timedOut) && ms ≥ 6000) s!"after {ms} ms"
+  check "a task that finishes after an early timer fired still wins awaitFirst"
+    ((← IO.wait withTask) matches .ok (some 7))
+  check "and Cancel.race" ((← IO.wait raceTask) matches .ok (.done 7))
+  check "and so does a cancellation" ((← IO.wait raceCancel) matches .ok (.cancelled .cancel))
+  c.finish; c2.finish; c3.finish
+
 /-- Every check, in order. -/
 def allChecks : Checks Unit := do
   backoffChecks; addressChecks; planChecks; errorChecks; poolChecks; traceChecks; streamChecks
-  uploadChecks; tlsChecks; cancelChecks
+  uploadChecks; tlsChecks; cancelChecks; timerChecks
 
 def main : IO UInt32 := do
   let ((), results) ← allChecks.run #[]
