@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18150/hello ca=/w/out/net/tls-certs/ca.pem deadline=700
+call 0 error delivery=not sent ms=706.191 rounds=1 lookups=0 seed=7048959310694733929 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="deadline timeout" detail="the deadline passed during the TLS handshake"
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=707.162
+exit status=0 wall_ms=727 exit_after_main_ms=20

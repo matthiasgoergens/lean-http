@@ -1,0 +1,9 @@
+      14.7 listening on 127.0.0.1:18095
+      91.8 conn1 accepted from ('127.0.0.1', 59438)
+      93.4 conn1 req1 GET /close-hdr {'host': ['127.0.0.1:18095'], 'connection': ['keep-alive']} body=0B
+      94.2 conn1 EOF from client after 1 requests
+      94.3 conn1 closed by server
+      94.7 conn2 accepted from ('127.0.0.1', 59440)
+      95.0 conn2 req1 GET /close-hdr {'host': ['127.0.0.1:18095'], 'connection': ['keep-alive']} body=0B
+      95.6 conn2 EOF from client after 1 requests
+      95.6 conn2 closed by server

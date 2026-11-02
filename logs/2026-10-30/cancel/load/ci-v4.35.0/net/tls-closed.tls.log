@@ -1,0 +1,7 @@
+      30.7 listening tls=18152 plain=18153 mode=close-handshake openssl=OpenSSL 3.5.9 29 Sep 2026
+      87.3 conn1 accepted from ('127.0.0.1', 36950)
+      88.6 conn1 read the ClientHello; closing
+     115.2 conn2 accepted from ('127.0.0.1', 36962)
+     121.6 conn2 read the ClientHello; closing
+     129.7 conn3 accepted from ('127.0.0.1', 36974)
+     130.9 conn3 read the ClientHello; closing

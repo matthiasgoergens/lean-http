@@ -1,0 +1,17 @@
+$ net-client call GET http://127.0.0.1:18188/sleep?ms=2000 concurrent=3 shutdown=100 log=/w/out/net/shutdown.evil.log logtext=GET /sleep logcount=3
+call 0 error delivery=maybe delivered ms=287.724 rounds=1 lookups=0 seed=3705084183854808242 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+call 1 error delivery=maybe delivered ms=287.271 rounds=1 lookups=0 seed=9536297167404858463 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+call 2 error delivery=maybe delivered ms=287.216 rounds=1 lookups=0 seed=3735724704547883032 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+round 0 of 3 calls took ms=287.808
+summary calls n=3 min=287.216 p50=287.271 p90=287.724 max=287.724 ms ok=0
+shutdown fired at ms=286.322
+pool idle=0 checked_out=0 allocated=3
+after shutdown: call 3 error delivery=not sent ms=0.000 rounds=0 lookups=0 seed=11585093744688442480 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail="cancelled before the request was sent"
+after shutdown: pool idle=0 checked_out=0
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+fds_after_calls=11
+main returning at ms=289.520
+exit status=0 wall_ms=630 exit_after_main_ms=341

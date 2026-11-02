@@ -1,0 +1,67 @@
+Second-round review of the cancellation change (lean-http), fresh-context Claude reviewer
+
+Scope: fixes.diff, read against the review2 tree, the author's verdicts.txt, and the round-2 brief.  I did not build the project.  To settle one question about reference counting I ran three small Lean programs with the v4.34.1 toolchain (`lean --run`, and the compiler's IR trace), outside the tree.  They are saved with their output in review2/claude-2-probes/.  Line numbers are in the review2 tree.
+
+NEW DEFECT, INTRODUCED BY THE FIX
+
+1. [Medium] Every call that waits even once (Cancel.race) and is not cancelled leaks its Cancel, through a reference cycle.  The location is Cancel.lean, race (the `bell.result?` chain) and finish.
+   The cycle: race arms a bell P, stores it in `c.bell`, and chains a continuation on `P.result?`.  The continuation's closure captures `c` whole.  The compiler's IR for the same lambda shows `pap race._lam_0._boxed x_1 x_2`, where x_1 is the Cancel (claude-2-probes/Probe.lean, out.txt).  So P's continuation holds c, c holds the Ref, and the Ref holds P.
+   Why it is never broken: a chainTask continuation is kept alive by the task manager until its task finishes ("will run even if the last reference to the task is dropped").  P's task finishes only when P is resolved or dropped.  A bell that a later wait replaces is dropped, and its continuation runs with `none`; that part of the fix works.  The last bell of a call is never replaced, though.  It is resolved only when the signal resolves with a reason: finish resolves the signal with `none`, and the watch's chain ignores that.  So for a call that ends uncancelled, P stays in `c.bell` and the continuation waits for ever.  It holds c (the tokens array, so the caller's token, plus the signal, ended and the Ref) and the last wait's winner promise with its value.
+   Measured: claude-2-probes/Leak.lean is the same shape (a Ref holding a promise, and a continuation on that promise that captures the Ref).  The continuation never runs, while the control without the capture runs.  Fix.lean shows that replacing the Ref's promise afterwards releases it.
+   Who leaks: every call that opens a connection (Connect.round always races), resolves a name, does a TLS handshake, sleeps before a retry or waits at the cap.  Calls that reuse a pooled connection without waiting do not.  Each leak is small, roughly hundreds of bytes and one waiting task, but it grows without bound in a long-running program.  NOTES.md ("everything chained on it is resolved when the call ends, so nothing outlives the call") and the Cancel.lean module doc now claim the opposite.  The exit checks cannot see it, because a waiting task does not hold up exit.
+   Fix, either of:
+   - In `finish`, drop the last bell (`c.bell.set (← IO.Promise.new)`), or ring it with a value that means "ended".
+   - Do not capture `c` in the bell closure: bind `c.tokens` and `c.signal` to locals first, or have the watch put the reason in the bell itself.
+   Either way, add a check: the bell's continuation runs at the end of a call; or Client.stats or a debug counter shows the number of live Cancel objects returning to zero.
+
+CHECKING THE OTHER FIXES
+
+2. Cancel.reason? asking the tokens: correct.  CancellationToken.cancel sets the reason before any worker can resolve the signal: the worker's `getCancellationReason` waits on the token mutex until cancel's atomically block has stored the state.  So a check made after `token.cancel` returned sees the cancellation, and "the signal has resolved" implies "the tokens say cancelled".  One side effect [Low, cost]: in the common, uncancelled case `reason?` takes the mutex of every watched token, and `client.closing` is shared by every call of the client.  It is now taken on every BodyStream.read (advance -> cancelNow?, plus the new pending-bytes branch) and every readAll start.  With pull=1 that means two mutex acquisitions per byte read, on a lock shared by all calls.  The mailbox already makes cancellation prompt in the exchange paths, so the hot paths could check the signal alone and keep the token query for the places where something else can end a wait (acquire, the pool-off closed check, connect, the loop's check).  Nit: the reason can differ between the token query, which takes the client's token first, and the signal, which takes whichever token won, when both tokens are cancelled at once.  Only one is used per error, so this is cosmetic.
+
+3. The bell protocol (race): sound for one wait at a time.  Arming the bell, then checking reason?, then chaining leaves no gap.  If the signal resolves before the bell is armed, reason? sees it, via the signal or the tokens.  If it resolves after, the watch's chain rings the current bell, which is this race's.  A bell rung before the chain is registered still fires the chain.  Fragility [Low]: the rule "one wait at a time" is not enforced.  A second concurrent race on the same Cancel (a future parallel attempt, for instance) would replace the first one's bell.  The dropped bell resolves `none`, so the first wait silently loses the cancellation and ends only by its task or timer.  All current callers (Connect.round, resolve, the handshake, acquire, sleepUntil) run in the call's own task, so nothing is wrong today.  An assertion or a comment at the struct field would keep it that way.
+
+4. The new checks in Attempt.acquire, Attempt.run (pool off), Attempt.connect and Connect.round: correct, and they close round-one findings 1 and 4.
+   - The acquire check runs at the top of every round, so a call woken from the cap by close's `wake` reports `cancelled .shutdown`, deterministically, because the token was cancelled before close ran.  It also removes the cancel-cap flake I suspected in round one, which explains the relaxed regex there.
+   - The connect check runs before `a.session` and the lookup.  A small window remains between this check and `Connect.resolve`'s `start (DNS.getAddrInfo …)`: `a.session`, which on a client's first https call runs Tls.discoverTrust and loads the CA bundle (milliseconds).  It is narrow.  Checking `reason?` again in `resolve`, just before `start`, would close it for nothing.
+   - The post-loop check in Connect.round turns a round that an attempt won as the call was cancelled into `cancelled`, and the socket is dropped.  Correct.  It also turns a round whose attempts all failed into `cancelled` when the cancellation came meanwhile, which is fine.
+
+5. BodyStream.read: correct.  With bytes pending, no failure and the exchange live, a cancellation goes to `advance`.  cancelNow? fails the exchange, perform cancels the receive, the state is rebuilt with `pending = []` and the failure, and the read raises.  The held bytes are dropped, as intended.  A stream whose exchange has ended (`live = none`) still hands out what it holds, which matches "once the exchange has ended, cancelling changes nothing".  cancel-held discriminates: without the fix the second read would return a byte, the callback would return normally, and the "stream call 0 error … read_before=1" line would be missing.
+
+6. step_cancel and step_cancel_not_reusable as now stated: they match the prose.  The draining case gives the finish, and every other phase gives the failure with reason, delivery and written.  The second docstring now says it covers one step, and an exchange that had already ended keeps its verdict.  The proof's `absurd hp hn` relies on `advanced` keeping the phase definitionally, which the first version relied on too.  I cannot check that it builds.
+
+7. The checker property now compares the reason and rejects a failure while draining.  It is stronger and can fail.  The rewritten unit test of a non-cancellation failure in place of a request now isolates that rule: a resolve failure, with the error the planner calls for.
+
+8. New and changed scenarios: each can fail when the behaviour is wrong.
+   - shutdown-cap would see `localClose` without the acquire check.
+   - shutdown-backoff checks the detail and the timing.
+   - cancel-redirect checks hops=1, status=none and the timing.
+   - cancel-write now checks the pool.
+   - cancel-return checks the second, uncancelled call's fresh connection and that it is pooled.
+   Moving reportTraces after the calls made after a shutdown or close means those calls are now replayed through the planner too.
+
+WHERE I DISAGREE WITH, OR WOULD QUALIFY, A VERDICT
+
+9. "Confirmed and fixed: per-wait continuations on the call's signal."  The per-wait growth is fixed, but the fix leaks one cycle per call instead (finding 1).  On a long-running client the old growth was bounded by each call's life, so the new leak is the worse of the two.
+
+10. "Not tested by sockets (judged impractical to time): a cancellation exactly between two hops, and one during a drain."  It need not be timed.  net-client can cancel the token from inside `Config.observe` when it sees a chosen event, since observe runs synchronously in the call's task.
+   - Cancelling at the `.decide` of a `.follow` gives "before the redirect was followed", exactly.
+   - Cancelling at the `.decide` of a follow whose redirect body is large exercises Live.abandon's cancelNow?, which skips the drain.
+   - A redirect body that trickles, cancelled a few milliseconds after that `.decide`, cancels during the drain.
+   - Cancelling at a `.wait` gives the back-off case deterministically.
+
+11. "Refuted: a token cancelled before the call starts is not seen before watch returns."  I agree.  My round-one report said that claim holds: tryFn runs the continuation inline.  The finding being refuted was the other reviewer's.
+
+12. "Not changed: a connection the call took and wrote nothing on goes back to the pool."  I agree.  A fresh connection, or an idle one that passed or skipped the idle check, with nothing written is clean.  giveBack still asks `transport.clean` for TLS, and after a shutdown the closed pool drops it anyway.
+
+ANYTHING BOTH ROUNDS MISSED
+
+13. [Low, documentation] DESIGN.md now cites `logs/2026-10-30/cancel/controls/` ("each with a planted defect that the checks catch"), and NOTES cites `logs/2026-10-30/cancel/`.  Neither directory exists in this snapshot, which has only tls, tls-verify, upload and upload-verify under logs/2026-10-30.  If the runs are pending (the RUNS placeholder), the DESIGN sentence should wait for them; as it stands, nothing in the tree supports it.
+
+14. [Low, documentation] Three statements need adjusting after finding 1 is fixed, or are already slightly off:
+   - The Cancel.lean module doc says "everything chained on the signal is resolved, and so released, as the call ends".  That is true of the signal, but the bell chain is not on the signal.
+   - The doc of the `bell` field says "(or of the last one)", which is exactly the one that leaks.
+   - NOTES's "What is proved" paragraph still describes step_cancel in the old disjunctive form.
+
+15. [Nit] The error's delivery for cancel-redirect is "response received" with no status of its own, because the redirect hop got a response.  That is consistent with the existing rule ("the furthest any request got").  But for a 307/308 redirect that keeps a POST, the request that may have been processed is the second one, and README's advice for response received ("the server answered, and the call failed afterwards") reads as reassurance there.  This is pre-existing and not caused by cancellation, but cancellation makes it easy to hit.  The README could say that response received can refer to an earlier hop.
+
+VERDICT: DEFECTS FOUND (one new: the per-call leak of the last bell's cycle; the rest of the fixes check out)

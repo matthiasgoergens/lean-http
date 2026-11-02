@@ -1,0 +1,14 @@
+$ net-client call GET https://127.0.0.1:18170/hello ca=/w/out/net/tls-certs/ca.pem repeat=3
+call 0 ok status=200 bytes=15 ms=6.420 rounds=1 lookups=0 address=127.0.0.1:18170 seed=18088129849782748853 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18170/hello tls=TLSv1.2 body_start="hello over tls\n"
+call 1 ok status=200 bytes=15 ms=0.406 rounds=0 lookups=0 address=127.0.0.1:18170 seed=10051875015565813568 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=64 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18170/hello tls=TLSv1.2 body_start="hello over tls\n"
+call 2 ok status=200 bytes=15 ms=0.431 rounds=0 lookups=0 address=127.0.0.1:18170 seed=5334486771871497282 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=48 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18170/hello tls=TLSv1.2 body_start="hello over tls\n"
+summary calls n=3 min=0.406 p50=0.431 p90=6.420 max=6.420 ms ok=3
+summary later calls n=2 min=0.406 p50=0.431 p90=0.431 max=0.431 ms
+summary idle checks of reused connections n=2 min=0.048 p50=0.064 p90=0.064 max=0.064 ms
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+fds_after_calls=11
+main returning at ms=7.992
+exit status=0 wall_ms=17 exit_after_main_ms=10

@@ -1,0 +1,18 @@
+What the author concluded about the second round, and what changed since (fixes.diff is the change since the snapshot the second round read; review.diff the whole change against main):
+
+Claude, round 2:
+- Confirmed and fixed: the last bell of a call was never released (the continuation on it captured the Cancel, whose bell field held it; finish resolved only the signal).  Cancel.finish now replaces the bell, which drops the last one, and the continuation captures the tokens array, not the Cancel.  A unit check ("the last wait's bell is released when the call ends") fails without the fix (controls: cancel-keeps-last-bell).
+- Fixed: a check in Connect.resolve just before the lookup starts (the TLS session's CA loading window).
+- Accepted: the token mutex on each body read; not changed (two uncontended locks per read).
+- Accepted: nothing enforces one race at a time per Cancel; documented in race's docstring.
+- Acted on: cancel from inside Config.observe at a chosen step.  net-client has cancelon=follow|wait|deliver, and scenario cancel-steps uses it (before a redirect is followed, as the wait before a retry begins, as the response is handed to the callback).  Also cancelfrom=N and scenario cancel-cap-waiter, where only the waiting call has the token (the earlier cap test could be passed by the holder's dropped connection waking the waiter).
+- The logs directories cited exist in the final tree (not in the snapshot).  NOTES "What is proved" now states step_cancel's phase split.
+- Not changed: the 307/308 delivery nit (pre-existing semantics of Error.delivery, the furthest any request got).
+
+Gemini, round 2:
+- 1 (stream hands out held bytes after cancel when the exchange already ended): not changed in code.  When the whole body has been handed to the stream the exchange has finished, the connection was given back clean, and what the stream holds is in memory; the docs now say cancelling changes nothing once the whole body has been handed to the stream (at once for a response without a body), and NOTES' left-open line about a cancellation between the head and the callback says so too.
+- 2 (window between acquire's check and takeConn): confirmed, fixed: the .closed branch asks the tokens too.
+- 3 (a completion, task or timer ending a wait in the moment between token.cancel and the signal): confirmed, fixed: Live.next asks the tokens after its wait and reports the cancellation instead of the completion; Cancel.race asks them after its wait and returns cancelled.  Connect.round's post-loop check stays.
+- 4 (lookup started before the checks; https session in between): fixed in Connect.resolve (cancellation and deadline checked before the lookup starts).
+- idleClean not racing the cancellation: not changed (window idleCheckMs, default 0 ms; the next acquire round checks).
+- Host-name case in the lookup cache: refuted; Std.Http's URI parser gives host names as lowercase labels (DESIGN.md, TLS section).

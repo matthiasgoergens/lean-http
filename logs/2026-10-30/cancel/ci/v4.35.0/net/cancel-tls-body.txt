@@ -1,0 +1,7 @@
+$ net-client stream GET https://127.0.0.1:18191/trickle?ms=100 ca=/w/out/net/tls-certs/ca.pem cancel=300 pull=1
+stream call 0 error delivery=response received ms=300.830 rounds=1 lookups=0 seed=15419910946198784467 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the call was cancelled (cancel)" detail="" read_before=2
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=24584 rss_kb=24584
+main returning at ms=301.908
+exit status=0 wall_ms=351 exit_after_main_ms=50

@@ -1,0 +1,2 @@
+closure captures the ref holding its promise: false; continuation ran: true
+closure captures the ref holding its promise: true; continuation ran: false

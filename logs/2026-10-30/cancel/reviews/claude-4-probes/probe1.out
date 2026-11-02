@@ -1,0 +1,16 @@
+== inline
+consumers after register: 1
+cancel finished within 500ms: true
+chain ran: true; same thread as canceller? tidIn=1122757 main=1122609
+exit 0
+== ask
+consumers after register: 1
+cancel finished within 500ms: false
+chain ran: false; same thread as canceller? tidIn=1122802 main=1122783
+exiting (a deadlocked thread may keep the process alive)
+exit 0
+== finish
+consumers after register: 1
+consumers after finish: 0
+chain ran (should be false): false
+exit 0

@@ -1,0 +1,10 @@
+$ net-client stream GET https://127.0.0.1:18162/trickle?ms=500 ca=/w/out/net/tls-certs/ca.pem race=100 pull=1
+stream 0 ok status=200 read=0 pulls=0 max_pull=0 ms=113.088 conn=(some 0) reused=false hops=0 retries=0 uri=https://127.0.0.1:18162/trickle?ms=500
+callback entered at ms=10.159
+when withResponse returned: pool checked_out=0
+the racing reader raised "the response body stream was used after the callback of Client.withResponse ended"
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=20880 rss_kb=22932
+main returning at ms=114.047
+exit status=0 wall_ms=127 exit_after_main_ms=13

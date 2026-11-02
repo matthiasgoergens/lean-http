@@ -1,0 +1,7 @@
+$ net-client stream GET http://127.0.0.1:18118/stall-body?ms=30 stop=1 throw=1
+stream 0 threw "thrown inside the callback" ms=54.671
+after stream 0: pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=17008 rss_kb=17008
+main returning at ms=55.400
+exit status=0 wall_ms=111 exit_after_main_ms=56

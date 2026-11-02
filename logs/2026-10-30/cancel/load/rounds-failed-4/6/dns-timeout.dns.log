@@ -1,0 +1,9 @@
+listening on 127.0.0.1:53 (udp)
+      16.8 query of 27 bytes from ('127.0.0.1', 33382); ignored
+      16.9 query of 27 bytes from ('127.0.0.1', 33382); ignored
+    5042.8 query of 27 bytes from ('127.0.0.1', 33382); ignored
+    5042.8 query of 27 bytes from ('127.0.0.1', 33382); ignored
+   10645.3 query of 27 bytes from ('127.0.0.1', 44893); ignored
+   10645.4 query of 27 bytes from ('127.0.0.1', 44893); ignored
+   15851.8 query of 27 bytes from ('127.0.0.1', 44893); ignored
+   15852.0 query of 27 bytes from ('127.0.0.1', 44893); ignored

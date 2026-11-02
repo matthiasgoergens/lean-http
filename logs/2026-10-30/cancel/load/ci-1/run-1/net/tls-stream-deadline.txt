@@ -1,0 +1,8 @@
+$ net-client stream GET https://127.0.0.1:18162/trickle?ms=100 ca=/w/out/net/tls-certs/ca.pem deadline=1000 pull=1
+stream call 0 error delivery=response received ms=1001.583 rounds=1 lookups=0 seed=295577764570204235 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="deadline timeout" detail="" read_before=9
+callback entered at ms=11.223
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=24884 rss_kb=26932
+main returning at ms=1002.465
+exit status=0 wall_ms=1018 exit_after_main_ms=16

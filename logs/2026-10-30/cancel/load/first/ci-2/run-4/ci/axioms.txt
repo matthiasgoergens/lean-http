@@ -1,0 +1,6 @@
+$ /py/bin/python3 -I scripts/check-axioms.py scripts/proof-axioms.lean scripts/codec-axioms.lean scripts/pool-axioms.lean scripts/call-axioms.lean
+ok scripts/proof-axioms.lean: 52 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/codec-axioms.lean: 41 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/pool-axioms.lean: 31 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/call-axioms.lean: 36 theorems, none beyond Classical.choice, Quot.sound, propext
+exit status 0, wall 9740 ms

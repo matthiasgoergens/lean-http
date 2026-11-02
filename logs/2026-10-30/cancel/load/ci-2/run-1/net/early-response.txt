@@ -1,0 +1,7 @@
+$ net-client call POST http://127.0.0.1:18089/ body=32000000 gap=1000
+call 0 ok status=413 bytes=3 ms=65.987 rounds=1 lookups=0 address=127.0.0.1:18089 seed=13796552756204418982 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18089/ tls=none body_start="big"
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=12
+main returning at ms=436.933
+exit status=0 wall_ms=455 exit_after_main_ms=19

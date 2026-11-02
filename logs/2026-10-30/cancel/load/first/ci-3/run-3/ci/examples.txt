@@ -1,0 +1,18 @@
+$ bash examples/run.sh
+Build completed successfully (66 jobs).
+GET 200 application/json {"greeting": "hello"}
+POST 200 33 bytes: {"name": "lean-http", "stars": 5}
+refused: could not connect: 127.0.0.1:1 (round 0): no such thing (error code: 111, connection refused); the server cannot have seen the request: sending it again is safe
+gave up: the call was cancelled (cancel); the server may have acted on the request: send it again only if that is harmless
+PASS request-example.txt: GET 200 application/json {"greeting": "hello"}
+PASS request-example.txt: POST 200 33 bytes: {"name": "lean-http", "stars": 5}
+PASS request-example.txt: the refused connect is reported as not sent
+PASS request-example.txt: gave up: the call was cancelled (cancel); the server may have acted on the request: send it again only if that is harmless
+streamed 200: 588890 bytes in 103 pieces
+PASS stream-example.txt: the whole body, in pieces
+streamed 200 {"bytes": 98890, "lines": 10000, "framing": "chunked"}
+known size 200 {"bytes": 24, "lines": 1, "framing": "length"}
+PASS upload-example.txt: streamed 200 {"bytes": 98890, "lines": 10000, "framing": "chunked"}
+PASS upload-example.txt: known size 200 {"bytes": 24, "lines": 1, "framing": "length"}
+0 failing
+exit status 0, wall 2771 ms

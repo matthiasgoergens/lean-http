@@ -1,0 +1,27 @@
+$ net-client call GET http://dual.test:18083/ok repeat=10 stagger=50 pool=0
+call 0 ok status=200 bytes=5 ms=55.510 rounds=1 lookups=1 address=127.0.0.1:18083 seed=14612665787894908104 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 1 ok status=200 bytes=5 ms=53.807 rounds=1 lookups=1 address=127.0.0.1:18083 seed=11706475144531326274 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 2 ok status=200 bytes=5 ms=59.837 rounds=1 lookups=1 address=127.0.0.1:18083 seed=906570707115766704 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 3 ok status=200 bytes=5 ms=52.732 rounds=1 lookups=1 address=127.0.0.1:18083 seed=5310796659583421157 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 4 ok status=200 bytes=5 ms=52.982 rounds=1 lookups=1 address=127.0.0.1:18083 seed=3763286626488741591 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 5 ok status=200 bytes=5 ms=53.028 rounds=1 lookups=1 address=127.0.0.1:18083 seed=8772174291774316952 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 6 ok status=200 bytes=5 ms=52.881 rounds=1 lookups=1 address=127.0.0.1:18083 seed=12740535320248806582 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 7 ok status=200 bytes=5 ms=53.182 rounds=1 lookups=1 address=127.0.0.1:18083 seed=2775777601172374024 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 8 ok status=200 bytes=5 ms=51.998 rounds=1 lookups=1 address=127.0.0.1:18083 seed=14834794101389345212 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+call 9 ok status=200 bytes=5 ms=52.570 rounds=1 lookups=1 address=127.0.0.1:18083 seed=458685123401642319 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://dual.test:18083/ok tls=none body_start="hello"
+summary calls n=10 min=51.998 p50=53.028 p90=59.837 max=59.837 ms ok=10
+summary later calls n=9 min=51.998 p50=52.982 p90=59.837 max=59.837 ms
+pool idle=0 checked_out=0 allocated=0
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+trace call 4 ok steps=1
+trace call 5 ok steps=1
+trace call 6 ok steps=1
+trace call 7 ok steps=1
+trace call 8 ok steps=1
+trace call 9 ok steps=1
+fds_after_calls=21
+main returning at ms=540.124
+exit status=0 wall_ms=548 exit_after_main_ms=8

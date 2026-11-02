@@ -1,0 +1,12 @@
+$ net-client call GET http://127.0.0.1:18187/sleep?ms=5000 concurrent=2 maxactive=1 cancel=200 after=send:2 log=/w/out/net/cancel-cap.evil.log logtext=GET /sleep cancelfrom=1
+call 0 ok status=200 bytes=10 ms=5009.419 rounds=1 lookups=0 address=127.0.0.1:18187 seed=5183989756841469680 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18187/sleep?ms=5000 tls=none body_start="slept 5000"
+call 1 error delivery=not sent ms=210.884 rounds=0 lookups=0 seed=7622376562503696952 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="cancelled while waiting for a connection: the origin is at maxActivePerOrigin"
+round 0 of 2 calls took ms=5009.606
+summary calls n=2 min=210.884 p50=5009.419 p90=5009.419 max=5009.419 ms ok=1
+cancel fired at ms=207.741
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=5010.871
+exit status=0 wall_ms=5027 exit_after_main_ms=17

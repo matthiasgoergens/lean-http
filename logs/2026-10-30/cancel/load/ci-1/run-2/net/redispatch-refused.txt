@@ -1,0 +1,11 @@
+$ net-client call GET http://127.0.0.1:18104/ok repeat=2 pause=1000 idlecheck=off retries=0
+call 0 ok status=200 bytes=5 ms=1.391 rounds=1 lookups=0 address=127.0.0.1:18104 seed=11670592473888758058 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18104/ok tls=none body_start="hello"
+call 1 error delivery=maybe delivered ms=1.894 rounds=1 lookups=0 seed=11212702486404913224 reused=false redispatched=true hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="could not connect: 127.0.0.1:18104 (round 0): no such thing (error code: 111, connection refused)" detail="" attempts=[127.0.0.1:18104#0:failed(no such thing (error code: 111, connection refused))]
+summary calls n=2 min=1.391 p50=1.894 p90=1.894 max=1.894 ms ok=1
+summary later calls n=1 min=1.894 p50=1.894 p90=1.894 max=1.894 ms
+pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=1003.999
+exit status=0 wall_ms=1011 exit_after_main_ms=8

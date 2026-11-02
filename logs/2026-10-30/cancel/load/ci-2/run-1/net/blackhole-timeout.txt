@@ -1,0 +1,9 @@
+$ net-client call GET http://[::1]:18084/ connect=1000 retries=1 seed=1 linger=9000
+call 0 error delivery=not sent ms=2031.873 rounds=2 lookups=0 seed=1 reused=false redispatched=false hops=0 retries=1 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="could not connect: [::1]:18084 (round 0): timed out; [::1]:18084 (round 1): timed out" detail="" attempts=[[::1]:18084#0:timedOut, [::1]:18084#1:timedOut]
+pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=2
+trace call 0 retry delays=[15] gaps=[16]
+fds_after_calls=13
+fds_after_linger_9000ms=11
+main returning at ms=11032.898
+exit status=0 wall_ms=11068 exit_after_main_ms=36

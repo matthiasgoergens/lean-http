@@ -1,0 +1,10 @@
+      17.3 listening on 127.0.0.1:18181
+      92.2 conn1 accepted from ('127.0.0.1', 53972)
+      93.4 conn1 req1 GET /stall-head?ms=5000 {'host': ['127.0.0.1:18181'], 'connection': ['keep-alive']} body=0B
+    2271.6 conn2 accepted from ('127.0.0.1', 53984)
+    2274.6 conn2 req1 GET /redir/302?to=/stall-head%3Fms%3D5000 {'host': ['127.0.0.1:18181'], 'connection': ['keep-alive']} body=0B
+    2279.3 conn2 req2 GET /stall-head?ms=5000 {'host': ['127.0.0.1:18181'], 'connection': ['keep-alive']} body=0B
+    5095.5 conn1 EOF from client after 1 requests
+    5095.6 conn1 closed by server
+    7279.7 conn2 EOF from client after 2 requests
+    7279.9 conn2 closed by server

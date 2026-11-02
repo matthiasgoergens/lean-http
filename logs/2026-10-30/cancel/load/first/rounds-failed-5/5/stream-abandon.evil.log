@@ -1,0 +1,64 @@
+      19.5 listening on 127.0.0.1:18118
+     672.2 conn1 accepted from ('127.0.0.1', 47272)
+     673.1 conn1 req1 GET /bigbody?n=10000000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+     681.5 conn1 bigbody send failed after 2621440B: ConnectionResetError(104, 'Connection reset by peer')
+     681.6 conn1 closed by server
+     682.1 conn2 accepted from ('127.0.0.1', 47288)
+     682.5 conn2 req1 GET /bigbody?n=10000000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+     717.3 conn2 bigbody send failed after 2621440B: ConnectionResetError(104, 'Connection reset by peer')
+     717.5 conn2 closed by server
+    1602.7 conn3 accepted from ('127.0.0.1', 47320)
+    1603.9 conn3 req1 GET /stall-body?ms=30 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    1687.3 conn3 req2 GET /stall-body?ms=30 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    1718.5 conn3 EOF from client after 2 requests
+    1718.7 conn3 closed by server
+    1758.4 conn4 accepted from ('127.0.0.1', 47344)
+    2366.6 conn4 req1 GET /stall-body?ms=400 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    2474.3 conn5 accepted from ('127.0.0.1', 47370)
+    2475.6 conn5 req1 GET /stall-body?ms=400 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    2776.6 conn4 EOF from client after 1 requests
+    2776.7 conn4 closed by server
+    2876.4 conn5 EOF from client after 1 requests
+    2876.5 conn5 closed by server
+    3084.5 conn6 accepted from ('127.0.0.1', 47388)
+    3085.0 conn6 req1 GET /unread-body?n=30000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    3211.6 conn6 req2 GET /unread-body?n=30000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    3212.9 conn6 EOF from client after 2 requests
+    3213.0 conn6 closed by server
+    3757.2 conn7 accepted from ('127.0.0.1', 47442)
+    3758.7 conn7 req1 GET /unread-body?n=20000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    3778.7 conn7 req2 GET /unread-body?n=20000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    3780.0 conn7 EOF from client after 2 requests
+    3780.1 conn7 closed by server
+    3952.7 conn8 accepted from ('127.0.0.1', 47452)
+    3955.2 conn8 req1 GET /stall-body?ms=30 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    3987.2 conn8 EOF from client after 1 requests
+    3987.3 conn8 closed by server
+    4155.4 conn9 accepted from ('127.0.0.1', 47462)
+    4394.7 conn9 req1 GET /bigbody?n=10000000 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4515.7 conn9 bigbody send failed after 2621440B: ConnectionResetError(104, 'Connection reset by peer')
+    4515.9 conn9 closed by server
+    4531.4 conn10 accepted from ('127.0.0.1', 47500)
+    4531.8 conn10 req1 GET /ok {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4532.3 conn10 EOF from client after 1 requests
+    4532.3 conn10 closed by server
+    4629.1 conn11 accepted from ('127.0.0.1', 47506)
+    4629.7 conn11 req1 GET /cl-mismatch {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4629.8 conn11 closed by server
+    4667.5 conn12 accepted from ('127.0.0.1', 47524)
+    4668.1 conn12 req1 GET /badchunk {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4668.2 conn12 closed by server
+    4986.7 conn13 accepted from ('127.0.0.1', 47532)
+    4992.1 conn13 req1 GET /chain/2 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4993.0 conn13 req2 GET /chain/1 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4993.7 conn13 req3 GET /chain/0 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    4994.9 conn13 EOF from client after 3 requests
+    4994.9 conn13 closed by server
+    5059.5 conn14 accepted from ('127.0.0.1', 47548)
+    5062.6 conn14 req1 GET /trickle?ms=500 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    5352.3 conn15 accepted from ('127.0.0.1', 47556)
+    5352.9 conn15 req1 GET /trickle?ms=100 {'host': ['127.0.0.1:18118'], 'connection': ['keep-alive']} body=0B
+    6065.1 conn14 trickle stopped: BrokenPipeError(32, 'Broken pipe')
+    6065.2 conn14 closed by server
+    6492.6 conn15 trickle stopped: BrokenPipeError(32, 'Broken pipe')
+    6492.7 conn15 closed by server

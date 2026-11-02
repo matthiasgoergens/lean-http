@@ -1,0 +1,14 @@
+      17.3 listening on 127.0.0.1:18113
+      43.8 conn1 accepted from ('127.0.0.1', 47400)
+      46.4 conn1 req1 POST /redir/303?to=/echo {'host': ['127.0.0.1:18113'], 'connection': ['keep-alive'], 'content-length': ['11']} body=11B
+      47.4 conn1 req2 GET /echo {'host': ['127.0.0.1:18113'], 'connection': ['keep-alive']} body=0B
+      48.1 conn1 EOF from client after 2 requests
+      48.1 conn1 closed by server
+     321.5 conn2 accepted from ('127.0.0.1', 47406)
+     515.8 conn2 req1 POST /redir/307?to=/echo {'host': ['127.0.0.1:18113'], 'connection': ['keep-alive'], 'content-length': ['11']} body=11B
+     520.3 conn2 req2 POST /echo {'host': ['127.0.0.1:18113'], 'connection': ['keep-alive'], 'content-length': ['11']} body=11B
+     521.2 conn2 EOF from client after 2 requests
+     521.3 conn2 closed by server
+     633.4 conn3 accepted from ('127.0.0.1', 47422)
+     933.8 conn3 EOF from client after 0 requests
+     934.0 conn3 closed by server

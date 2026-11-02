@@ -1,0 +1,13 @@
+      19.8 listening tls=18172 plain=18173 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+      42.8 conn1 accepted from ('127.0.0.1', 41108)
+      43.6 sni=None
+      45.9 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+      46.1 conn1 GET /close-after {'host': '127.0.0.1:18172', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+      46.1 conn1 sending close_notify, corked with the response
+     247.0 conn1 unwrap: TimeoutError('The read operation timed out')
+     248.3 conn2 accepted from ('127.0.0.1', 41122)
+     248.9 sni=None
+     253.7 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     254.4 conn2 GET /close-after {'host': '127.0.0.1:18172', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+     254.5 conn2 sending close_notify, corked with the response
+     455.3 conn2 unwrap: TimeoutError('The read operation timed out')

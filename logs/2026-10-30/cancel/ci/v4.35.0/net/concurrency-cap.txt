@@ -1,0 +1,19 @@
+$ net-client call GET http://127.0.0.1:18098/sleep?ms=200 concurrent=6 maxactive=2
+call 0 ok status=200 bytes=9 ms=202.774 rounds=1 lookups=0 address=127.0.0.1:18098 seed=10165102679874472256 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 1 ok status=200 bytes=9 ms=202.712 rounds=1 lookups=0 address=127.0.0.1:18098 seed=7975228401172805732 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 2 ok status=200 bytes=9 ms=403.729 rounds=0 lookups=0 address=127.0.0.1:18098 seed=18288453170988718695 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=186 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 3 ok status=200 bytes=9 ms=604.566 rounds=0 lookups=0 address=127.0.0.1:18098 seed=15046718064390793231 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=241 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 4 ok status=200 bytes=9 ms=604.550 rounds=0 lookups=0 address=127.0.0.1:18098 seed=7791854923199779198 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=109 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+call 5 ok status=200 bytes=9 ms=403.694 rounds=0 lookups=0 address=127.0.0.1:18098 seed=1323685592334006645 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=238 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18098/sleep?ms=200 tls=none body_start="slept 200"
+round 0 of 6 calls took ms=604.617
+summary calls n=6 min=202.712 p50=403.729 p90=604.566 max=604.566 ms ok=6
+pool idle=2 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+trace call 4 ok steps=1
+trace call 5 ok steps=1
+fds_after_calls=11
+main returning at ms=605.213
+exit status=0 wall_ms=612 exit_after_main_ms=7
