@@ -1,0 +1,8 @@
+$ net-client call POST http://127.0.0.1:18182/ body=32000000 gap=10000 cancel=100 log=/w/out/net/cancel-write.noread.log logtext=bytes arrived
+call 0 error delivery=maybe delivered ms=111.367 rounds=1 lookups=0 seed=10547878129393020020 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail=""
+cancel fired at ms=110.877
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=12
+main returning at ms=261.481 started_unix_us=1793623558438692 returning_unix_us=1793623558700172
+exit status=0 wall_ms=274 start_ms=9 exit_after_main_ms=4

@@ -1,0 +1,69 @@
+      21.4 listening on 127.0.0.1:18097
+      75.1 conn1 accepted from ('127.0.0.1', 46088)
+     218.5 conn1 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     219.4 conn2 accepted from ('127.0.0.1', 46092)
+     220.2 conn2 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     220.3 conn3 accepted from ('127.0.0.1', 46096)
+     220.6 conn3 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     220.6 conn4 accepted from ('127.0.0.1', 46098)
+     220.7 conn4 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     224.0 conn5 accepted from ('127.0.0.1', 46108)
+     224.4 conn5 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     224.5 conn6 accepted from ('127.0.0.1', 46112)
+     228.9 conn6 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     229.1 conn7 accepted from ('127.0.0.1', 46124)
+     229.7 conn8 accepted from ('127.0.0.1', 46128)
+     230.0 conn7 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     230.2 conn8 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3218.9 conn1 answering after 3000 ms
+    3220.7 conn2 answering after 3000 ms
+    3220.9 conn3 answering after 3000 ms
+    3221.1 conn4 answering after 3000 ms
+    3230.3 conn7 answering after 3000 ms
+    3230.7 conn8 answering after 3000 ms
+    3232.7 conn8 EOF from client after 1 requests
+    3232.9 conn8 closed by server
+    3233.7 conn7 EOF from client after 1 requests
+    3233.8 conn7 closed by server
+    3300.2 conn5 answering after 3000 ms
+    3300.5 conn6 answering after 3000 ms
+    3301.6 conn5 EOF from client after 1 requests
+    3301.8 conn5 closed by server
+    3302.2 conn6 EOF from client after 1 requests
+    3302.3 conn6 closed by server
+    3303.6 conn9 accepted from ('127.0.0.1', 41092)
+    3304.9 conn3 req2 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3305.0 conn1 req2 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3305.5 conn2 req2 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3305.6 conn10 accepted from ('127.0.0.1', 41106)
+    3306.0 conn11 accepted from ('127.0.0.1', 41120)
+    3306.7 conn9 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3306.8 conn4 req2 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3306.9 conn11 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3306.9 conn10 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3307.0 conn12 accepted from ('127.0.0.1', 41130)
+    3329.0 conn12 req1 GET /sleep?ms=3000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    6305.1 conn1 answering after 3000 ms
+    6305.6 conn2 answering after 3000 ms
+    6306.1 conn3 answering after 3000 ms
+    6306.9 conn4 answering after 3000 ms
+    6307.5 conn9 answering after 3000 ms
+    6307.8 conn10 answering after 3000 ms
+    6307.8 conn11 answering after 3000 ms
+    6309.4 conn10 EOF from client after 1 requests
+    6309.5 conn10 closed by server
+    6310.4 conn4 EOF from client after 2 requests
+    6310.5 conn4 closed by server
+    6310.8 conn9 EOF from client after 1 requests
+    6310.9 conn9 closed by server
+    6329.2 conn12 answering after 3000 ms
+    6332.5 conn12 EOF from client after 1 requests
+    6332.7 conn12 closed by server
+    6335.0 conn3 EOF from client after 2 requests
+    6335.2 conn3 closed by server
+    6335.4 conn1 EOF from client after 2 requests
+    6335.4 conn1 closed by server
+    6335.5 conn2 EOF from client after 2 requests
+    6335.5 conn2 closed by server
+    6335.6 conn11 EOF from client after 1 requests
+    6335.7 conn11 closed by server

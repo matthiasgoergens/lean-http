@@ -1,0 +1,11 @@
+$ net-client call GET https://127.0.0.1:18158/hello ca=/w/out/net/tls-certs/ca.pem repeat=2 pause=3000 idletimeout=60000
+call 0 ok status=200 bytes=15 ms=16.762 rounds=1 lookups=0 address=127.0.0.1:18158 seed=11443057744673157153 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18158/hello tls=TLSv1.3 body_start="hello over tls\n"
+call 1 ok status=200 bytes=15 ms=8.190 rounds=1 lookups=0 address=127.0.0.1:18158 seed=8206993126692693110 failed_attempts=[] conn=(some 1) reused=false discarded=1 check_us=663 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18158/hello tls=TLSv1.3 body_start="hello over tls\n"
+summary calls n=2 min=8.190 p50=16.762 p90=16.762 max=16.762 ms ok=2
+summary later calls n=1 min=8.190 p50=8.190 p90=8.190 max=8.190 ms
+pool idle=1 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=3025.991 started_unix_us=1793621886663781 returning_unix_us=1793621889689772
+exit status=0 wall_ms=3041 start_ms=12 exit_after_main_ms=3

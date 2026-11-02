@@ -1,0 +1,61 @@
+Runs behind holding the real-socket suite under load and the early timers (branch suite-load),
+2026-11-02, on the shared build host (128 CPUs; its load average is recorded with each run), in
+localhost/b8perf-lean with v4.34.1 from b8perf-elan unless said otherwise, uv's CPython 3.14.8 for
+the servers, every container under batchrun.  From the laptop, in the worktree.
+
+The final wave, on 0fd0567 (commit), at load average 126 to 374, median 248 (loadavg.txt, every
+15 s); the suite's final commit (6e43e20) adds the second review's fixes, checked by verify/:
+  $ bash logs/2026-11-02/suite-load/wave.sh 3 12
+ci-1/ ci-2/ ci-3/  three copies of the full CI script at once, each three times in a row (run-1..3),
+                   each from a clean build:
+                   $ CTR_EXTRA='--sysctl net.ipv4.tcp_syn_retries=2' LEAN_HTTP_REMOTE_DIR=lean-http-load-N \
+                       scripts/remote.sh bash -c 'rm -rf .lake out && lean --version && bash scripts/ci.sh'
+                   console.txt the output, ci/ and net/ the outputs (without tls-certs/).
+ci-v4.35.0/        once on v4.35.0 alongside them (LEAN_HTTP_TOOLCHAIN=v4.35.0 LEAN_HTTP_ELAN=b8perf-elan,
+                   LEAN_HTTP_REMOTE_DIR=lean-http-load-435).
+rounds-4..6.txt    at the same time, 12 rounds each of the scenarios whose checks changed, with the
+                   cancellation and shutdown scenarios (rounds.sh, without blackhole-first, which
+                   was added for verify/; in lean-http-load-4..6), each round's load average and
+                   verdicts; no round failed, so no rounds-failed-N/.
+controls/          $ bash logs/2026-11-02/suite-load/controls/run.sh
+                   15 planted defects (controls/mutate.py) against the checks each targets, built from
+                   the committed tree (0fd0567) in a directory of its own; out.txt, run during the wave.
+
+verify/  on 6e43e20, after the second review: $ bash logs/2026-11-02/suite-load/verify/run.sh
+         one full CI run from a clean build (ci/), two copies of rounds.sh, 8 rounds each
+         (rounds-4.txt, rounds-5.txt), load average 43 to 168; controls.txt:
+         $ bash logs/2026-11-02/suite-load/controls/run.sh none helper-missing
+
+The earlier waves, each stopped once it had shown what to change; only each run's summary, console
+and the outputs of failing scenarios are kept:
+first/   on the suite's first version (bc78588, not kept: a slack of 1.5 s, concurrency timed),
+         load average 288 to 479: run-1 of the three CI copies and v4.35.0, three rounds each.
+second/  on 8bf6054 (not kept: the slack of 3 s, counts at the server), load average up to 1100:
+         run-1 of each copy, v4.35.0, seven rounds each, and controls-out.txt.
+third/   on 3d6e652 (not kept: with the since helpers moved, upload-race and cancel-tls-body
+         changed), load average up to 1130: three runs of each copy (ci-3 run-2 failed on
+         connect-deadline, held up 8.3 s, ci-1 run-2 on the crash at exit, ci-3 run-3 on
+         blackhole-first's log order), v4.35.0, 12 rounds each,
+         rounds-failed-N/ (the failed rounds' outputs) and controls-out.txt.
+
+repro/   the early timers, before and after the fix, and the crash at exit.
+         timer-probe/: a bare Std.Async.Sleep probe (TimerProbe.lean) and what delays exit
+           (ExitProbe.lean, exit-test.sh), built and run on the build host with run.sh, e.g.
+           $ bash repro/timer-probe/run.sh bash -c 'lake build && ./starveloop.sh 101 32 .lake/build/bin/timerprobe pinloop=101 sleepers=4 ms=200 rounds=20 hammer=4'
+           out-starveloop-32.txt that run (a 200 ms sleep ended after 21 ms); out-earlier.txt the
+           earlier variants (the whole process held up, or contention alone: late, or a few ms
+           early) and exit-test.sh's result.
+         timers-before-fix.txt, timers-after-fix.txt: five rounds of net-client timers with the
+           loop's thread pinned beside 32 busy loops and four threads using the loop, on 9fccccd's
+           library (with this branch's Tests/Net.lean) and on the fix; in the build container, from
+           the tree: $ bash repro-timers.sh 5 4 101 32
+         handshake-before-fix-*.txt, tls-hang-before-fix-starved.txt: the tls-hang call under the
+           same conditions (repro-hs.sh, which needs the intermediate test client that took
+           hammer= and pinloop= on call; those options are timers' only now) and the tls-handshake
+           scenarios with the whole suite held up (repro-tls-hang.sh): late, never early end to end.
+         try-timers.sh: the timers scenario's busy loops (8, 16, 32) against its running time.
+         crash-loop.sh: tls-partial-wild's call N times, counting crashes; crash-loop-9fccccd.txt and
+           crash-loop-branch.txt 1000 runs each (one crash each), the -200 files 200 runs (none);
+           crash-fails/ the crashes' outputs.  The branch's build was 3d6e652's library.
+         segv/: segv.c, preloaded to print a crash's backtrace, and segv-run.sh; out-*.txt 3000
+           runs each, no crash.

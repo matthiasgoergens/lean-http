@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18138/hello ca=/w/out/net/tls-certs/ca.pem
+call 0 error delivery=not sent ms=10.826 rounds=1 lookups=0 seed=11957401438568453572 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS certificate verification failed: certificate has expired" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=11.778 started_unix_us=1793621396874378 returning_unix_us=1793621396886157
+exit status=0 wall_ms=158 start_ms=8 exit_after_main_ms=138

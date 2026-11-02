@@ -1,0 +1,6 @@
+      16.6 listening on 127.0.0.1:18119
+    1974.3 conn1 accepted from ('127.0.0.1', 59346)
+    2541.8 conn1 req1 POST /idle-408?ms=100&linger=5000&unlisten=1 {'host': ['127.0.0.1:18119'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    2644.2 conn1 sent 408
+    2644.4 stopped listening
+    7974.4 conn1 closed by server

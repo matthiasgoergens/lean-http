@@ -1,0 +1,11 @@
+$ net-client stream GET http://127.0.0.1:18118/stall-body?ms=8000 stop=1 repeat=2
+stream 0 ok status=200 read=3 pulls=1 max_pull=3 ms=106.267 conn=(some 0) reused=false hops=0 retries=0 uri=http://127.0.0.1:18118/stall-body?ms=8000
+callback entered at ms=3.671
+after stream 0: pool idle=0 checked_out=0 allocated=1
+stream 1 ok status=200 read=3 pulls=1 max_pull=3 ms=105.927 conn=(some 1) reused=false hops=0 retries=0 uri=http://127.0.0.1:18118/stall-body?ms=8000
+after stream 1: pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+rss_peak_kb=18820 rss_kb=18820
+main returning at ms=213.199 started_unix_us=1793621356783317 returning_unix_us=1793621356996516
+exit status=0 wall_ms=256 start_ms=10 exit_after_main_ms=33

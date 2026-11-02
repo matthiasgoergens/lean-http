@@ -1,0 +1,29 @@
+      25.0 listening on 127.0.0.1:18183
+      47.6 conn1 accepted from ('127.0.0.1', 56986)
+      49.2 conn1 req1 GET /trickle?ms=5 {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+     358.0 conn1 trickle stopped: BrokenPipeError(32, 'Broken pipe')
+     358.2 conn1 closed by server
+     460.7 conn2 accepted from ('127.0.0.1', 56990)
+     461.5 conn2 req1 GET /trickle?ms=5 {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+     575.7 conn2 trickle stopped: BrokenPipeError(32, 'Broken pipe')
+     575.9 conn2 closed by server
+     670.2 conn3 accepted from ('127.0.0.1', 57000)
+     685.7 conn3 req1 GET /trickle?ms=5 {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+    1094.7 conn3 trickle stopped: ConnectionResetError(104, 'Connection reset by peer')
+    1094.8 conn3 closed by server
+    2143.9 conn4 accepted from ('127.0.0.1', 57008)
+    2145.5 conn4 req1 GET /bigbody?n=10000000 {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+    2551.8 conn4 bigbody send failed after 2621440B: ConnectionResetError(104, 'Connection reset by peer')
+    2551.9 conn4 closed by server
+    2593.6 conn5 accepted from ('127.0.0.1', 57024)
+    2594.8 conn5 req1 GET /ok {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+    3001.0 conn5 EOF from client after 1 requests
+    3001.2 conn5 closed by server
+    3002.1 conn6 accepted from ('127.0.0.1', 57040)
+    3002.8 conn6 req1 GET /ok {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+    3406.3 conn6 EOF from client after 1 requests
+    3406.6 conn6 closed by server
+    3715.4 conn7 accepted from ('127.0.0.1', 57052)
+    3716.8 conn7 req1 GET /ok {'host': ['127.0.0.1:18183'], 'connection': ['keep-alive']} body=0B
+    4122.0 conn7 EOF from client after 1 requests
+    4122.2 conn7 closed by server

@@ -1,0 +1,11 @@
+      68.9 listening tls=18144 plain=18145 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+     143.9 conn1 accepted from ('127.0.0.1', 56976)
+     146.4 sni=None
+     152.3 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     153.2 conn1 GET /stray {'host': '127.0.0.1:18144', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+     154.7 conn2 accepted from ('127.0.0.1', 56992)
+     155.3 conn1 read failed: ConnectionResetError(104, 'Connection reset by peer')
+     158.2 sni=None
+     160.3 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     160.7 conn2 GET /stray {'host': '127.0.0.1:18144', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+     162.4 conn2 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

@@ -1,0 +1,2 @@
+tests/net/run.sh: line 85:  7888 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1
+tests/net/run.sh: line 85:  7924 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1

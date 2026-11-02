@@ -1,0 +1,75 @@
+$ /w/.lake/build/bin/core-tests traces
+PASS a chunked upload: each chunk pulled once the bytes before it are written, then the end
+PASS an upload of a declared size: the chunks written as they are, the end writes nothing
+PASS a chunk written in slices: the next pull only once the whole chunk is written
+PASS a declared size given in full: a response before the producer has ended is reusable
+PASS a declared size given in full, then more: the exchange fails while it is still going
+PASS a body abandoned and drained while the producer fails its last pull: not reusable
+PASS a chunk of 26 bytes goes out with its size in lower-case hex
+PASS an empty chunk is skipped: the producer is asked again
+PASS an answer with no pull in flight is ignored
+PASS a producer that gives more than declared fails the exchange before the excess is written
+PASS a producer that ends short of the declared size fails the exchange
+PASS a producer that raises an error fails the exchange, maybe delivered
+PASS an early response while a chunk is pulled: delivered, not reusable, the answer ignored
+PASS an early response, then the upload ends: still not reusable
+PASS no read gap while the producer is slow; it counts once the upload is over
+PASS the deadline while a pull is in flight fails the exchange, maybe delivered
+PASS a streamed request whose deadline has passed fails not sent, with nothing pulled
+PASS a cancel with the first write in flight: fails, maybe delivered, the write given up
+PASS a cancel while the head is awaited: fails, maybe delivered, the read given up
+PASS a cancel mid-body: fails with the response received and its status
+PASS a cancel while an abandoned body is drained: finishes, not reusable
+PASS a cancel with a chunk of the upload pulled: fails, the producer's answer ignored
+PASS a cancel before the deadline wins over the deadline; after it, nothing
+PASS a cancel after the exchange finished changes nothing
+PASS bytes before the request head is written are never parsed
+PASS bytes after part of the request head was written are never parsed either
+PASS a second response in the same read: the first is delivered, the connection is not reusable
+PASS a second response in a later read: the exchange has ended and ignores it
+PASS HEAD with stray body bytes in the same read: not reusable
+PASS HEAD, then stray bytes in a later read: the exchange has ended and ignores them
+PASS an early response during an upload is read to its end, delivered, and not reusable
+PASS an early response whose upload then completes is still not reusable
+PASS an early response whose upload stalls: the upload stops, the response completes
+PASS an early response whose upload fails: the response still completes
+PASS a failed write before the request head is out fails the exchange, maybe delivered
+PASS a failed write after the request head stops the upload; the end of input then fails the exchange
+PASS a failed write after the request head: an early response waiting to be read is still delivered
+PASS abandoning mid-body: the read gap ends the drain, not reusable
+PASS write slices: one write in flight, a partial write is resumed where it stopped
+PASS abandoning mid-body: the rest arrives within the drain limit, reusable
+PASS abandoning mid-body: the rest takes longer than the drain time, not reusable
+PASS abandoning mid-body: more than the drain limit is announced, not reusable at once
+PASS abandoning a chunked body: the drained bytes overrun the limit, not reusable
+PASS abandoning without keep-alive ends at once, not reusable
+PASS abandoning before the response head fails the exchange as a local close
+PASS end of input mid-body fails, with the response received
+PASS a Content-Length over the body limit fails at once, with the response received and its status
+PASS a Content-Length above 2^62 fails the same way, not before the head
+PASS a body with a transfer coding before chunked is refused when the head arrives, with the response received
+PASS a HEAD response naming another transfer coding has no body to decode, and completes
+PASS end of input before any response byte fails, maybe delivered
+PASS a close-delimited body ends with the input, not reusable
+PASS Connection: close from the server: not reusable
+PASS without keep-alive a complete response is not reusable
+PASS an interim response is not delivered; the final one is
+PASS body credit: nothing is read while the caller wants no more
+PASS body credit used up exactly by a chunked body: its end is noticed without more credit
+PASS body credit used up and then the end of input mid-body: the failure is not left for the deadline
+PASS a close-delimited body read with exactly enough credit ends when the caller asks once more
+PASS a stalled write that fails late does not restart the read gap
+PASS a stale tick changes nothing; the write gap is the next deadline
+PASS empty reads change nothing before the read gap, and the read gap still ends the exchange
+PASS an empty read before the request head is written is no unsolicited response
+PASS a tick from the past changes nothing
+PASS the deadline ends an exchange waiting for the head
+PASS the deadline ends an exchange mid-body, with the response received
+PASS the deadline has passed when the exchange begins: nothing sent
+PASS the read gap ends a silent exchange
+PASS the read gap and the deadline at the same instant: the deadline wins
+PASS bytes that complete the response at the deadline: delivered
+PASS bytes at the deadline that leave the response incomplete: delivered so far, then the deadline
+PASS a write that completes after the deadline: the deadline, nothing more written
+72 traces, 0 failing
+exit status 0, wall 12 ms

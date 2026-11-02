@@ -1,0 +1,7 @@
+$ net-client upload PUT http://127.0.0.1:18124/sink size=2000 chunk=1000 declare=3000
+upload call 0 error delivery=maybe delivered ms=6.663 rounds=1 lookups=0 seed=12239794227414232095 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="request body: the producer ended after 2000 of the declared 3000 bytes" detail="" pulls=3 produced=2000
+after upload 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=14708 rss_kb=14720
+main returning at ms=7.542 started_unix_us=1793620749869750 returning_unix_us=1793620749877289
+exit status=0 wall_ms=32 start_ms=10 exit_after_main_ms=14

@@ -1,0 +1,8 @@
+$ net-client call GET http://127.0.0.1:18180/ok cancel=0
+call 0 error delivery=not sent ms=195.405 rounds=0 lookups=0 seed=17204242777956652097 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="cancelled before the request was sent"
+cancel fired at ms=0.002
+pool idle=0 checked_out=0 allocated=0
+trace call 0 ok steps=1
+fds_after_calls=10
+main returning at ms=196.029 started_unix_us=1793620851872729 returning_unix_us=1793620852068757
+exit status=0 wall_ms=221 start_ms=13 exit_after_main_ms=11

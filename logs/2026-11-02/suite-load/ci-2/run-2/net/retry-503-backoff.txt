@@ -1,0 +1,9 @@
+$ net-client call GET http://127.0.0.1:18115/flaky?key=e&n=2 retry503=1 seed=3 base=4000 cap=4000
+call 0 ok status=200 bytes=17 ms=7454.749 rounds=1 lookups=0 address=127.0.0.1:18115 seed=3 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=363 redispatched=false hops=0 retries=2 uri=http://127.0.0.1:18115/flaky?key=e&n=2 tls=none body_start="recovered after 2"
+summary idle checks of reused connections n=1 min=0.363 p50=0.363 p90=0.363 max=0.363 ms
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=3
+trace call 0 retry delays=[3670, 3728] gaps=[3693, 3746]
+fds_after_calls=11
+main returning at ms=7455.934 started_unix_us=1793621335293121 returning_unix_us=1793621342749055
+exit status=0 wall_ms=7466 start_ms=7 exit_after_main_ms=2

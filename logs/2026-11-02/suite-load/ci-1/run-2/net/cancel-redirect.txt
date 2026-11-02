@@ -1,0 +1,8 @@
+$ net-client call GET http://127.0.0.1:18181/redir/302?to=/stall-head%3Fms%3D5000 cancel=100 log=/w/out/net/cancel-head.evil.log logtext=GET /stall-head
+call 0 error delivery=response received ms=109.695 rounds=1 lookups=0 seed=420281330265416945 reused=true redispatched=false hops=1 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail=""
+cancel fired at ms=106.292
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=2
+fds_after_calls=11
+main returning at ms=111.466 started_unix_us=1793621405842253 returning_unix_us=1793621405953720
+exit status=0 wall_ms=142 start_ms=6 exit_after_main_ms=24

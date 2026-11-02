@@ -1,0 +1,10 @@
+$ net-client upload PUT http://127.0.0.1:18128/die-on-next?ms=2000 size=1000 chunk=500 repeat=2
+upload call 0 ok status=200 bytes=2 ms=2004.275 rounds=1 lookups=0 address=127.0.0.1:18128 seed=14360340032776805178 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18128/die-on-next?ms=2000 tls=none body_start="ok" pulls=3 produced=1000 response="ok"
+after upload 0: pool idle=1 checked_out=0 allocated=1
+upload call 1 error delivery=maybe delivered ms=1.584 rounds=0 lookups=0 seed=1832548634861174444 reused=true redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.delivered status=none cause="the connection closed before a complete response" detail="a write failed earlier: resource vanished (error code: 32, broken pipe)" pulls=2 produced=1000
+after upload 1: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+rss_peak_kb=11208 rss_kb=11216
+main returning at ms=2006.744 started_unix_us=1793620792615237 returning_unix_us=1793620794621981
+exit status=0 wall_ms=2021 start_ms=11 exit_after_main_ms=2

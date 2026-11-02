@@ -1,0 +1,8 @@
+$ net-client stream GET http://127.0.0.1:18117/bigbody?n=200000000 pull=4096
+stream 0 ok status=200 read=200000000 pulls=48841 max_pull=4096 ms=664.963 conn=(some 0) reused=false hops=0 retries=0 uri=http://127.0.0.1:18117/bigbody?n=200000000
+callback entered at ms=4.264
+after stream 0: pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=22948 rss_kb=22948
+main returning at ms=666.351 started_unix_us=1793620724259583 returning_unix_us=1793620724925934
+exit status=0 wall_ms=677 start_ms=8 exit_after_main_ms=2

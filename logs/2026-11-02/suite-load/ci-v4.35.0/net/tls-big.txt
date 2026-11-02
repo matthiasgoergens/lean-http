@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18130/big?n=200000000 ca=/w/out/net/tls-certs/ca.pem maxbody=300000000
+call 0 ok status=200 bytes=200000000 ms=809.095 rounds=1 lookups=0 address=127.0.0.1:18130 seed=17185398471146743999 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18130/big?n=200000000 tls=TLSv1.3 body_start="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=810.189 started_unix_us=1793620768940677 returning_unix_us=1793620769750867
+exit status=0 wall_ms=860 start_ms=10 exit_after_main_ms=39

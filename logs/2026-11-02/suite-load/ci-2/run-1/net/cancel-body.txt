@@ -1,0 +1,8 @@
+$ net-client call GET http://127.0.0.1:18183/trickle?ms=5 cancel=300 after=deliver
+call 0 error delivery=response received ms=309.999 rounds=1 lookups=0 seed=15104318151459631528 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the call was cancelled (cancel)" detail=""
+cancel fired at ms=305.992
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=311.121 started_unix_us=1793620845805745 returning_unix_us=1793620846116867
+exit status=0 wall_ms=328 start_ms=13 exit_after_main_ms=3

@@ -1,0 +1,34 @@
+Build completed successfully (59 jobs).
+=== round 1 2026-11-02T10:37:08Z loadavg 431.12 378.83 374.70 528/20450 63
+### 2026-11-02T10:37:15Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL upload-race: a streamed PUT whose pooled connection closes as it is sent is not sent again (no match for: upload call 1 error delivery=maybe delivered .*reused=true redispatched=false .*not_retried=LeanHttp.Call.NoRetry.delivered )
+KNOWN dns-timeout: exit status 139, 8373 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 10072 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 291 passed, 1 failed, 2 known limitations, 0 skipped
+=== round 2 2026-11-02T10:41:04Z loadavg 510.38 443.62 402.09 502/20312 2701
+### 2026-11-02T10:41:15Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 7907 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9291 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 292 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 3 2026-11-02T10:45:19Z loadavg 457.81 460.62 420.59 445/20175 5367
+### 2026-11-02T10:45:27Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8428 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9282 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 292 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 4 2026-11-02T10:49:07Z loadavg 400.47 439.95 422.34 298/19593 7938
+### 2026-11-02T10:49:09Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL upload-race: a streamed PUT whose pooled connection closes as it is sent is not sent again (no match for: upload call 1 error delivery=maybe delivered .*reused=true redispatched=false .*not_retried=LeanHttp.Call.NoRetry.delivered )
+KNOWN dns-timeout: exit status 139, 8505 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9048 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 291 passed, 1 failed, 2 known limitations, 0 skipped
+=== round 5 2026-11-02T10:52:08Z loadavg 378.28 409.96 413.63 307/19156 10494
+### 2026-11-02T10:52:11Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8037 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9513 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 292 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 6 2026-11-02T10:54:59Z loadavg 332.02 385.80 404.63 269/19416 13084
+### 2026-11-02T10:55:00Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8330 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9257 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 292 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 7 2026-11-02T10:58:10Z loadavg 318.16 351.86 387.44 277/19443 15667

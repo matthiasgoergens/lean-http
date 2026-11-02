@@ -1,0 +1,8 @@
+$ net-client call GET https://127.0.0.1:18185/hello ca=/w/out/net/tls-certs/ca.pem tlshs=5000 cancel=100 log=/w/out/net/cancel-tls.tls.log logtext=the ClientHello arrived
+call 0 error delivery=not sent ms=116.464 rounds=1 lookups=0 seed=5206773362512854192 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="cancelled during the TLS handshake"
+cancel fired at ms=115.833
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=117.323 started_unix_us=1793620862026778 returning_unix_us=1793620862144100
+exit status=0 wall_ms=165 start_ms=42 exit_after_main_ms=5

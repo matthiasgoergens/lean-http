@@ -1,0 +1,8 @@
+$ net-client stream GET http://127.0.0.1:18118/bigbody?n=10000000 stop=1 throw=1
+stream 0 threw "thrown inside the callback" ms=86.454
+callback entered at ms=81.796
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=9320 rss_kb=9332
+main returning at ms=87.258 started_unix_us=1793620751368732 returning_unix_us=1793620751455990
+exit status=0 wall_ms=103 start_ms=13 exit_after_main_ms=2

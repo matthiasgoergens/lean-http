@@ -1,0 +1,11 @@
+$ net-client call POST http://127.0.0.1:18093/die-on-next body=5 repeat=2
+call 0 ok status=200 bytes=2 ms=36.143 rounds=1 lookups=0 address=127.0.0.1:18093 seed=13513830458625943147 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18093/die-on-next tls=none body_start="ok"
+call 1 error delivery=maybe delivered ms=4.563 rounds=0 lookups=0 seed=3981024332624757270 reused=true redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.delivered status=none cause="the connection closed before a complete response" detail=""
+summary calls n=2 min=4.563 p50=36.143 p90=36.143 max=36.143 ms ok=1
+summary later calls n=1 min=4.563 p50=4.563 p90=4.563 max=4.563 ms
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=41.780 started_unix_us=1793621811696822 returning_unix_us=1793621811738601
+exit status=0 wall_ms=114 start_ms=68 exit_after_main_ms=3

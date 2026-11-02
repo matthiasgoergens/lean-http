@@ -1,0 +1,5 @@
+loadavg 352.30 409.94 465.63 304/18209 8 n=1000 
+crash-loop.sh: line 16:  1376 Segmentation fault      timeout 60 .lake/build/bin/net-client call GET https://wild.lh.test:18266/hello ca="$certs/ca.pem" > out/crash/call.txt 2>&1
+exit status 139: 1 runs
+exit status 0: 999 runs
+loadavg 304.83 352.67 431.92 344/17890 15460

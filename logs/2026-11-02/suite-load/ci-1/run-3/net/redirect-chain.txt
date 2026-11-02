@@ -1,0 +1,8 @@
+$ net-client call GET http://127.0.0.1:18110/chain/3
+call 0 ok status=200 bytes=67 ms=18.369 rounds=1 lookups=0 address=127.0.0.1:18110 seed=9937065289276333291 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=3262 redispatched=false hops=3 retries=0 uri=http://127.0.0.1:18110/chain/0 tls=none body_start="GET /chain/0 auth=None cookie=None host="
+summary idle checks of reused connections n=1 min=3.262 p50=3.262 p90=3.262 max=3.262 ms
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=4
+fds_after_calls=11
+main returning at ms=19.788 started_unix_us=1793621808264476 returning_unix_us=1793621808284264
+exit status=0 wall_ms=422 start_ms=398 exit_after_main_ms=3

@@ -1,0 +1,8 @@
+$ net-client call GET http://slow.test/ deadline=2000
+call 0 error delivery=not sent ms=2092.817 rounds=0 lookups=1 seed=12711050578426237676 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="deadline timeout" detail="the deadline passed before any connect attempt started (resolving the name, or before)"
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=2093.546 started_unix_us=1793618209112005 returning_unix_us=1793618211205551
+timeout: the monitored command dumped core
+exit status=139 wall_ms=10391 start_ms=13 exit_after_main_ms=8284

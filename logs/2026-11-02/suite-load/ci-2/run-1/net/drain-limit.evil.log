@@ -1,0 +1,18 @@
+      37.1 listening on 127.0.0.1:18120
+     278.4 conn1 accepted from ('127.0.0.1', 36840)
+     279.8 conn1 req1 GET /redir/302?to=/echo&pad=200000 {'host': ['127.0.0.1:18120'], 'connection': ['keep-alive']} body=0B
+     284.1 conn1 read error ConnectionResetError(104, 'Connection reset by peer')
+     284.2 conn1 closed by server
+     284.7 conn2 accepted from ('127.0.0.1', 36852)
+     285.1 conn2 req1 GET /echo {'host': ['127.0.0.1:18120'], 'connection': ['keep-alive']} body=0B
+     287.3 conn2 EOF from client after 1 requests
+     287.4 conn2 closed by server
+     413.4 conn3 accepted from ('127.0.0.1', 36858)
+     414.8 conn3 req1 GET /flaky?key=g&after=0&pad=200000 {'host': ['127.0.0.1:18120'], 'connection': ['keep-alive']} body=0B
+     415.1 conn3 flaky g request 1: 503
+     416.2 conn4 accepted from ('127.0.0.1', 36874)
+     416.4 conn3 read error ConnectionResetError(104, 'Connection reset by peer')
+     417.5 conn3 closed by server
+     418.2 conn4 req1 GET /flaky?key=g&after=0&pad=200000 {'host': ['127.0.0.1:18120'], 'connection': ['keep-alive']} body=0B
+     419.6 conn4 EOF from client after 1 requests
+     419.7 conn4 closed by server

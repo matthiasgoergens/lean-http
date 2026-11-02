@@ -1,0 +1,10 @@
+$ net-client upload POST http://127.0.0.1:18128/idle-408?ms=100&linger=3000 size=5 repeat=2 pause=1400 idlecheck=off
+upload call 0 ok status=200 bytes=2 ms=127.279 rounds=1 lookups=0 address=127.0.0.1:18128 seed=13855539768161789886 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18128/idle-408?ms=100&linger=3000 tls=none body_start="ok" pulls=1 produced=5 response="ok"
+after upload 0: pool idle=0 checked_out=0 allocated=1
+upload call 1 ok status=200 bytes=2 ms=163.836 rounds=1 lookups=0 address=127.0.0.1:18128 seed=11329336046418335432 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18128/idle-408?ms=100&linger=3000 tls=none body_start="ok" pulls=2 produced=5 response="ok"
+after upload 1: pool idle=1 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+rss_peak_kb=13776 rss_kb=13776
+main returning at ms=1743.480 started_unix_us=1793614736212608 returning_unix_us=1793614737956089
+exit status=0 wall_ms=1802 start_ms=52 exit_after_main_ms=5

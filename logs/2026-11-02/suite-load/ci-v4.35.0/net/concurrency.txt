@@ -1,0 +1,40 @@
+$ net-client call GET http://127.0.0.1:18097/sleep?ms=3000 concurrent=8 repeat=2
+call 0 ok status=200 bytes=10 ms=3108.292 rounds=1 lookups=0 address=127.0.0.1:18097 seed=3130323449096374875 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 1 ok status=200 bytes=10 ms=3107.471 rounds=1 lookups=0 address=127.0.0.1:18097 seed=8151452886509540603 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 2 ok status=200 bytes=10 ms=3108.662 rounds=1 lookups=0 address=127.0.0.1:18097 seed=14876217087707612063 failed_attempts=[] conn=(some 2) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 3 ok status=200 bytes=10 ms=3109.415 rounds=1 lookups=0 address=127.0.0.1:18097 seed=3670877769663078963 failed_attempts=[] conn=(some 3) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 4 ok status=200 bytes=10 ms=3108.269 rounds=1 lookups=0 address=127.0.0.1:18097 seed=3505185833284957185 failed_attempts=[] conn=(some 4) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 5 ok status=200 bytes=10 ms=3109.863 rounds=1 lookups=0 address=127.0.0.1:18097 seed=9706551564745347714 failed_attempts=[] conn=(some 5) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 6 ok status=200 bytes=10 ms=3107.262 rounds=1 lookups=0 address=127.0.0.1:18097 seed=18096624406228643463 failed_attempts=[] conn=(some 6) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 7 ok status=200 bytes=10 ms=3108.646 rounds=1 lookups=0 address=127.0.0.1:18097 seed=3138732801211112095 failed_attempts=[] conn=(some 7) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+round 0 of 8 calls took ms=3109.908
+call 8 ok status=200 bytes=10 ms=3003.675 rounds=0 lookups=0 address=127.0.0.1:18097 seed=3207671731333102295 failed_attempts=[] conn=(some 1) reused=true discarded=0 check_us=193 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 9 ok status=200 bytes=10 ms=3004.466 rounds=0 lookups=0 address=127.0.0.1:18097 seed=3807076008257342570 failed_attempts=[] conn=(some 2) reused=true discarded=0 check_us=211 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 10 ok status=200 bytes=10 ms=3004.158 rounds=0 lookups=0 address=127.0.0.1:18097 seed=17577260850693406018 failed_attempts=[] conn=(some 6) reused=true discarded=0 check_us=116 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 11 ok status=200 bytes=10 ms=3004.417 rounds=0 lookups=0 address=127.0.0.1:18097 seed=8279752414961105269 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=1346 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 12 ok status=200 bytes=10 ms=3009.210 rounds=1 lookups=0 address=127.0.0.1:18097 seed=1477631057495015896 failed_attempts=[] conn=(some 8) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 13 ok status=200 bytes=10 ms=3038.294 rounds=1 lookups=0 address=127.0.0.1:18097 seed=11490593696676586306 failed_attempts=[] conn=(some 9) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 14 ok status=200 bytes=10 ms=3014.635 rounds=1 lookups=0 address=127.0.0.1:18097 seed=5851804086935272482 failed_attempts=[] conn=(some 10) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+call 15 ok status=200 bytes=10 ms=3010.303 rounds=1 lookups=0 address=127.0.0.1:18097 seed=4176964095836719323 failed_attempts=[] conn=(some 11) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18097/sleep?ms=3000 tls=none body_start="slept 3000"
+round 1 of 8 calls took ms=3038.627
+summary calls n=16 min=3003.675 p50=3107.262 p90=3109.415 max=3109.863 ms ok=16
+pool idle=4 checked_out=0 allocated=12
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+trace call 4 ok steps=1
+trace call 5 ok steps=1
+trace call 6 ok steps=1
+trace call 7 ok steps=1
+trace call 8 ok steps=1
+trace call 9 ok steps=1
+trace call 10 ok steps=1
+trace call 11 ok steps=1
+trace call 12 ok steps=1
+trace call 13 ok steps=1
+trace call 14 ok steps=1
+trace call 15 ok steps=1
+fds_after_calls=11
+main returning at ms=6154.538 started_unix_us=1793620684588682 returning_unix_us=1793620690743219
+exit status=0 wall_ms=6176 start_ms=10 exit_after_main_ms=11

@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18134/hello ca=/w/out/net/tls-certs/ca.pem
+call 0 error delivery=not sent ms=21.869 rounds=1 lookups=0 seed=7325948582815713788 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS certificate verification failed: IP address mismatch" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=22.824 started_unix_us=1793620812724045 returning_unix_us=1793620812746869
+exit status=0 wall_ms=57 start_ms=27 exit_after_main_ms=6

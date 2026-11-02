@@ -1,0 +1,20 @@
+Build completed successfully (59 jobs).
+=== round 1 2026-11-02T10:09:56Z loadavg 423.45 410.18 408.66 316/20518 493
+### 2026-11-02T10:10:00Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL concurrency-cap: the round took 4577 ms, expected 2990 to 4500
+FAIL stream-deadline: a body still coming at the deadline fails the call (no match for: stream call 0 error delivery=response received .*status=\(some 200\) cause="deadline timeout")
+KNOWN dns-timeout: exit status 139, 8801 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9222 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 290 passed, 2 failed, 2 known limitations, 0 skipped
+=== round 2 2026-11-02T10:14:20Z loadavg 453.11 437.12 420.30 193/20322 3169
+### 2026-11-02T10:14:21Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8402 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9201 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 292 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 3 2026-11-02T10:17:30Z loadavg 358.93 402.66 410.11 222/20558 5797
+### 2026-11-02T10:17:31Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL upload-408: a streamed POST answered by the 408 of an idle connection: delivered, not sent again (no match for: upload call 1 ok status=408 .*redispatched=false)
+KNOWN dns-timeout: exit status 139, 8300 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9283 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 291 passed, 1 failed, 2 known limitations, 0 skipped
+=== round 4 2026-11-02T10:20:16Z loadavg 304.18 359.69 392.37 240/20629 8417

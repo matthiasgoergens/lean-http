@@ -1,0 +1,8 @@
+$ net-client upload PUT http://127.0.0.1:18184/sink size=1000000 chunk=1000 delay=100 cancel=50 after=pull:4 stall=5000
+upload call 0 error delivery=maybe delivered ms=363.141 rounds=1 lookups=0 seed=3987162241997301974 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="" pulls=4 produced=3000
+after upload 0: pool idle=0 checked_out=0 allocated=1
+cancel fired at ms=362.561
+trace call 0 ok steps=1
+rss_peak_kb=15316 rss_kb=15320
+main returning at ms=364.000 started_unix_us=1793621955630783 returning_unix_us=1793621955994781
+exit status=0 wall_ms=381 start_ms=11 exit_after_main_ms=6

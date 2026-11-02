@@ -1,0 +1,7 @@
+$ net-client upload PUT http://127.0.0.1:18125/close?after=100000 size=10000000 chunk=16384
+upload call 0 error delivery=maybe delivered ms=8.361 rounds=1 lookups=0 seed=6809439544381872668 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.delivered status=none cause="the connection closed before a complete response" detail="" pulls=10 produced=163840
+after upload 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=13264 rss_kb=13264
+main returning at ms=9.287 started_unix_us=1793621347969183 returning_unix_us=1793621347978471
+exit status=0 wall_ms=34 start_ms=21 exit_after_main_ms=3

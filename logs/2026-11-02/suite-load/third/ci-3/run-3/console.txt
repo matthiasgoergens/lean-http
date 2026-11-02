@@ -1,0 +1,58 @@
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+ok   vendor (vendor/ is at 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b)
+ok   toolchain (400 ms)
+ok   build (86737 ms)
+ok   build-tests (106220 ms)
+ok   axioms-control (2858 ms)
+ok   axioms (20012 ms)
+skip tls-abi: github.com is unreachable, so OpenSSL's headers cannot be fetched (the check of native/openssl-min.h did not run)
+ok   unit (6176 ms)
+ok   codec (161 ms)
+ok   response-codec (248 ms)
+ok   core-traces (89 ms)
+ok   core-props (3881 ms)
+ok   core-explore (28041 ms)
+ok   core-compare (1584 ms)
+ok   pool-traces (27 ms)
+ok   pool-props (15855 ms)
+ok   pool-explore (19628 ms)
+ok   pool-control (33866 ms)
+ok   call-tests (14139 ms)
+ok   call-diff (45539 ms)
+ok   codec-diff (5134 ms)
+ok   codec-diff-control (2362 ms)
+ok   fuzz-seeds (519 ms)
+ok   readme-blocks (83 ms)
+ok   examples (2717 ms)
+FAIL net (exit status 1); the end of /w/out/ci/net.txt:
+     PASS cancel-wait: at once, not after the 3670 ms backoff: 0 ms
+     PASS cancel-deliver: process exited 6 ms after main returned
+     PASS cancel-deliver: cancelled as the response is handed to the callback: its first read raises
+     PASS cancel-deliver: its connection is closed, not pooled
+     PASS cancel-follow: every call's steps replay through the planner
+     PASS cancel-wait: every call's steps replay through the planner
+     PASS cancel-deliver: every call's steps replay through the planner
+     PASS timers: process exited 8 ms after main returned
+     PASS timers: control: the client's waits saw 24 timers fire early and started them again (and 7 of 40 bare timers ended more than 1 ms early)
+     PASS timers: no wait through awaitFirst ends before its time
+     PASS timers: no wait through race ends before its time
+     PASS dns-once: process exited 3 ms after main returned
+     PASS dns-once: three rounds of connect attempts to one name, after one lookup
+     PASS dns-once-redirect: process exited 671 ms after main returned
+     PASS dns-once-redirect: two redirects to the same name, each on a connection of its own, after one lookup
+     PASS dns-once-literal: process exited 6 ms after main returned
+     PASS dns-once-literal: an IP literal is not looked up
+     PASS dns-once: every call's steps replay through the planner
+     PASS dns-once-redirect: every call's steps replay through the planner
+     PASS dns-once-literal: every call's steps replay through the planner
+     tests/net/run.sh: line 85:  7557 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1
+     KNOWN dns-timeout: exit status 139, 8732 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+     PASS dns-timeout: a name server that never answers: the call ends at the deadline; nothing sent
+     PASS dns-timeout: at the 2 s deadline: 2011 ms
+     KNOWN dns-cancel: exit status 0, 8942 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+     PASS dns-cancel: a call cancelled while its name is looked up: not sent
+     PASS dns-cancel: at the cancellation: 3 ms
+     PASS traces: every call's steps replay through the planner (867 calls)
+     ### 642 passed, 1 failed, 2 known limitations, 0 skipped
+     exit status 1, wall 280246 ms
+failed: net

@@ -1,0 +1,3 @@
+listening on 127.0.0.1:18087
+     306.5 conn1 accepted ('127.0.0.1', 40324); not reading
+     309.1 conn1 bytes arrived; not reading

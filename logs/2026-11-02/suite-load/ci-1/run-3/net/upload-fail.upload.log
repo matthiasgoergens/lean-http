@@ -1,0 +1,7 @@
+listening on 127.0.0.1:18124
+     103.4 conn0 accepted ('127.0.0.1', 47742)
+     104.7 conn0 EOF from client
+     151.7 conn1 accepted ('127.0.0.1', 47754)
+     153.3 conn1 EOF from client
+     200.9 conn2 accepted ('127.0.0.1', 47766)
+     201.9 conn2 EOF from client

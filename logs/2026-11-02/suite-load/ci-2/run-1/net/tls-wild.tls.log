@@ -1,0 +1,4 @@
+      18.9 listening tls=18166 plain=18167 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+     545.6 conn1 accepted from ('127.0.0.1', 52368)
+     558.2 sni=wild.lh.test
+     561.6 conn1 handshake failed: SSLError(1, '[SSL: SSLV3_ALERT_BAD_CERTIFICATE] ssl/tls alert bad certificate (_ssl.c:1082)')
