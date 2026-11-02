@@ -1,0 +1,1 @@
+ssh <host> 'cd ~/lean-http-cost && batchrun bash out/bench/probe.sh 5 200 2200 100 101 main cancel ceiling flagfinish cache'

@@ -1,0 +1,28 @@
+From af8baa0d47f90f86953c023b96517605166339b9 Mon Sep 17 00:00:00 2001
+From: Matthias Goergens <matthias.goergens@gmail.com>
+Date: Mon, 2 Nov 2026 16:30:16 +0800
+Subject: [PATCH] Leave finish with nothing to do for a call given no token
+
+Such a call registered with no token, and the client drops it from its table
+before finishing it, so the writes that release its bell and hooks are skipped.
+---
+ LeanHttp/Cancel.lean | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/LeanHttp/Cancel.lean b/LeanHttp/Cancel.lean
+index a423433..0e25cec 100644
+--- a/LeanHttp/Cancel.lean
++++ b/LeanHttp/Cancel.lean
+@@ -136,6 +136,9 @@ Ends the watch, once the call has ended: later cancellations of the tokens do no
+ last bell and the hooks, with whatever they hold, are dropped.
+ -/
+ def finish (c : Cancel) : BaseIO Unit := do
++  -- A call that registered with no token is dropped as a whole once it has left the client's
++  -- table: nothing to release here.
++  if c.waiters.isEmpty then return
+   c.state.modify fun
+     | none => some none
+     | other => other
+-- 
+2.53.0
+

@@ -1,0 +1,11 @@
+rounds=12000 epochs=60 cells=cancel ceiling main mainpert
+cancel/main: median ratio=1.0501 95% interval=1.0265..1.0755 (epoch bootstrap); cancel slower in 7076 of 12000 rounds; per-epoch medians 0.870..1.282; lower load half: 1.0424, upper: 1.0599
+ceiling/main: median ratio=1.0000 95% interval=0.9825..1.0176 (epoch bootstrap); ceiling slower in 5998 of 12000 rounds; per-epoch medians 0.851..1.187; lower load half: 0.9962, upper: 1.0035
+mainpert/main: median ratio=1.0010 95% interval=0.9837..1.0197 (epoch bootstrap); mainpert slower in 6020 of 12000 rounds; per-epoch medians 0.855..1.196; lower load half: 1.0017, upper: 1.0000
+ceiling/cancel: median ratio=0.9552 95% interval=0.9325..0.9753 (epoch bootstrap); ceiling slower in 4936 of 12000 rounds; per-epoch medians 0.766..1.145; lower load half: 0.9650, upper: 0.9459
+mainpert/main: median ratio=1.0010 95% interval=0.9837..1.0197 (epoch bootstrap); mainpert slower in 6020 of 12000 rounds; per-epoch medians 0.855..1.196; lower load half: 1.0017, upper: 1.0000
+load average per round: min=178 median=220 max=269
+cancel: median call 523.6 us utime/call=244.1us stime/call=293.7us nvcsw/call=122.0 nivcsw/call=83.3
+ceiling: median call 483.2 us utime/call=227.4us stime/call=274.6us nvcsw/call=112.5 nivcsw/call=76.9
+main: median call 483.6 us utime/call=218.8us stime/call=280.6us nvcsw/call=113.9 nivcsw/call=76.8
+mainpert: median call 487.2 us utime/call=221.1us stime/call=276.3us nvcsw/call=115.1 nivcsw/call=77.7

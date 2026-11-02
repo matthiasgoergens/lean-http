@@ -1,0 +1,28 @@
+From a3effbc9b63a88ed78d996f71979c28801c90f92 Mon Sep 17 00:00:00 2001
+From: Matthias Goergens <matthias.goergens@gmail.com>
+Date: Mon, 2 Nov 2026 16:25:29 +0800
+Subject: [PATCH] Add an unused function before the client, a layout control
+
+The same program as main with its code placed differently, to measure how
+much the placement alone moves a benchmark.
+---
+ LeanHttp/Client.lean | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/LeanHttp/Client.lean b/LeanHttp/Client.lean
+index b366363..4083f45 100644
+--- a/LeanHttp/Client.lean
++++ b/LeanHttp/Client.lean
+@@ -232,6 +232,9 @@ structure Client where
+ 
+ namespace Client
+ 
++/-- Unused: moves the code that follows. -/
++def layoutPad (n : Nat) : Nat := (List.range n).foldl (fun a b => a * 31 + b * b + 7) 3
++
+ /--
+ The pool core's limits for `config`.
+ -/
+-- 
+2.53.0
+

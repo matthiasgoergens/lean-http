@@ -1,0 +1,1 @@
+ssh <host> 'cd ~/lean-http-cost && batchrun bash out/bench/symbols.sh 40000 200003 100 101 main cancel ceiling'   (an earlier run with period 10007 lost samples to the kernel's sample-rate limit and was discarded)

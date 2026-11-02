@@ -1,0 +1,96 @@
+From f20dc26d31c87922eef1c41e93a0015f6acfe96f Mon Sep 17 00:00:00 2001
+From: Matthias Goergens <matthias.goergens@gmail.com>
+Date: Mon, 2 Nov 2026 16:26:02 +0800
+Subject: [PATCH] Skip all cancellation work for a call given no token, a
+ ceiling
+
+An upper bound on what the cancellation machinery costs a call that nothing
+can cancel: such a call watches nothing, is not tracked, is never finished,
+and every check and race returns at once.  shutdownNow no longer reaches it.
+For measurement only.
+---
+ LeanHttp/Cancel.lean | 21 +++++++++++++++++++++
+ LeanHttp/Client.lean |  5 +++++
+ 2 files changed, 26 insertions(+)
+
+diff --git a/LeanHttp/Cancel.lean b/LeanHttp/Cancel.lean
+index a423433..dac9420 100644
+--- a/LeanHttp/Cancel.lean
++++ b/LeanHttp/Cancel.lean
+@@ -76,8 +76,22 @@ structure Cancel where
+   -/
+   hooks : IO.Ref (Array (BaseIO Unit))
+ 
++  /--
++  Ceiling build: `false` for a call that nothing can cancel, for which every operation does nothing.
++  -/
++  active : Bool := true
++
++deriving instance Nonempty for Cancel
++
+ namespace Cancel
+ 
++/--
++Ceiling build: the cancellation of a call that nothing can cancel, made once.
++-/
++initialize inert : Cancel ← do
++  return { tokens := #[], state := ← IO.mkRef none, waiters := #[], bell := ← IO.mkRef none,
++           hooks := ← IO.mkRef #[], active := false }
++
+ /--
+ Wakes what waits for the call's cancellation: rings the current bell and runs the hooks, and with a
+ `reason`, records it first.  The tokens must say so already, or be about to (`reason?` is asked
+@@ -136,6 +150,7 @@ Ends the watch, once the call has ended: later cancellations of the tokens do no
+ last bell and the hooks, with whatever they hold, are dropped.
+ -/
+ def finish (c : Cancel) : BaseIO Unit := do
++  if !c.active then return
+   c.state.modify fun
+     | none => some none
+     | other => other
+@@ -154,6 +169,7 @@ holds as soon as a token is cancelled (or the reason `cancel` gave).  Once the c
+ `none`, unless `cancel` fired it before.
+ -/
+ def reason? (c : Cancel) : BaseIO (Option Std.CancellationReason) := do
++  if !c.active then return none
+   if let some known ← c.state.get then return known
+   for token in c.tokens do
+     if let some reason ← token.getCancellationReason then return some reason
+@@ -166,6 +182,7 @@ cancelled already; never, if the call ends first.  It may run more than once.  I
+ tokens anything (`fire`); what it wakes asks `reason?`.
+ -/
+ def onCancel (c : Cancel) (f : BaseIO Unit) : BaseIO Unit := do
++  if !c.active then return
+   c.hooks.modify (·.push f)
+   -- A firing that read the hooks before this one was added: the tokens say so already.
+   if (← c.reason?).isSome then f
+@@ -199,6 +216,10 @@ timer is stopped when it loses; tasks that lose keep running, and it is up to th
+ them.  A call cancelled already, or cancelled when the wait ends, returns `cancelled`.
+ -/
+ def race {β : Type} (c : Cancel) (tasks : Array (Task β)) (ms : Nat) : Async (Waited β) := do
++  if !c.active then
++    return match ← awaitFirst tasks ms with
++      | some r => .done r
++      | none => .timedOut
+   -- A fresh bell first, then the check: a cancellation the check misses rings the new bell.  The
+   -- last wait's bell, replaced, is dropped, and what was chained on it with it.
+   let bell ← IO.Promise.new
+diff --git a/LeanHttp/Client.lean b/LeanHttp/Client.lean
+index 1c38f46..ba0a8b7 100644
+--- a/LeanHttp/Client.lean
++++ b/LeanHttp/Client.lean
+@@ -1118,6 +1118,11 @@ private def run {α : Type} (client : Client) (req : Request RequestBody) (maxBo
+     | .ok st => pure st
+     | .error e => return refuse (.invalidRequest s!"the planner refuses the request: {reprStr e}") target
+   let number ← client.calls.modifyGet fun n => (n, n + 1)
++  -- Ceiling build: a call given no token watches nothing, is not tracked and checks nothing.
++  if cancel.isNone then
++    let spec : CallSpec := { client, req, xcfg, seed, started, deadline, number, cancel := Cancel.inert }
++    spec.observe (.start config.policy req.line kind framing seed deadline xcfg.keepAlive)
++    return ← spec.loop st {} "before the request was sent" k
+   -- The caller's token first: a call it cancelled reports its reason, even if the client is shut
+   -- down afterwards.
+   let watch ← Cancel.watch (cancel.toArray.push client.closing) cancel.toArray
+-- 
+2.53.0
+

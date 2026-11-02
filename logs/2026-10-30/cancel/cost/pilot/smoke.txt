@@ -1,0 +1,19 @@
+host=6a58605a14ed nproc=128 calls=200 server_cpu=100 client_cpu=101 cells=main mainpert cancel ceiling token=cancel:cancelon=none flag finish flagfinish flag-token=flag:cancelon=none
+e878309035974de01a015e0ccfefa90014a2a60647bb4fff193cc7122d4a3a30  out/bench/net-client-main
+f9a295975b8cd16c0196c2b0d93d0915b566025224cf79b643c2d77a2150d78d  out/bench/net-client-mainpert
+731792562f8f4b41a27319fabe428a530f4347058837106ec573df4f39530c1a  out/bench/net-client-cancel
+3a7395d7d8447f9116be9e0206298174c2b22695853b2d7c7f9164b12244e595  out/bench/net-client-ceiling
+731792562f8f4b41a27319fabe428a530f4347058837106ec573df4f39530c1a  out/bench/net-client-cancel
+36b5407150d5b4f7f20090c272e01724e194e3b2d5a5513a32b272cec2b9099e  out/bench/net-client-flag
+bc7e3af538eecc617931d3f92a02896cdb3634e8b5f33fd6a2446ca4670df75a  out/bench/net-client-finish
+5274db883fcd3bbc3ed2a7758ead19625c345203a5e7417c0707e02b76354250  out/bench/net-client-flagfinish
+36b5407150d5b4f7f20090c272e01724e194e3b2d5a5513a32b272cec2b9099e  out/bench/net-client-flag
+block=1 variant=flagfinish p50_ms=0.990 load=239.74 ok=200 status=0 utime=0.040 stime=0.058 nvcsw=23137 nivcsw=16000 n=199 min=0.165 p50=0.990 p90=1.315 max=4.715 ms
+block=1 variant=flag p50_ms=0.333 load=239.74 ok=200 status=0 utime=0.038 stime=0.035 nvcsw=20686 nivcsw=13638 n=199 min=0.164 p50=0.333 p90=1.024 max=2.736 ms
+block=1 variant=ceiling p50_ms=0.356 load=239.74 ok=200 status=0 utime=0.038 stime=0.046 nvcsw=22268 nivcsw=15074 n=199 min=0.211 p50=0.356 p90=0.884 max=6.987 ms
+block=1 variant=mainpert p50_ms=0.330 load=239.74 ok=200 status=0 utime=0.040 stime=0.037 nvcsw=19125 nivcsw=11915 n=199 min=0.165 p50=0.330 p90=0.448 max=3.427 ms
+block=1 variant=main p50_ms=0.366 load=239.74 ok=200 status=0 utime=0.040 stime=0.045 nvcsw=19699 nivcsw=12593 n=199 min=0.160 p50=0.366 p90=0.503 max=1.244 ms
+block=1 variant=token p50_ms=0.386 load=239.74 ok=200 status=0 utime=0.037 stime=0.052 nvcsw=21625 nivcsw=14666 n=199 min=0.197 p50=0.386 p90=0.561 max=1.114 ms
+block=1 variant=flag-token p50_ms=0.435 load=239.74 ok=200 status=0 utime=0.042 stime=0.047 nvcsw=21405 nivcsw=14216 n=199 min=0.249 p50=0.435 p90=0.662 max=4.297 ms
+block=1 variant=finish p50_ms=0.521 load=239.74 ok=200 status=0 utime=0.051 stime=0.058 nvcsw=24408 nivcsw=16353 n=199 min=0.318 p50=0.521 p90=0.850 max=2.296 ms
+block=1 variant=cancel p50_ms=0.983 load=239.74 ok=200 status=0 utime=0.065 stime=0.061 nvcsw=26504 nivcsw=18592 n=199 min=0.337 p50=0.983 p90=1.702 max=3.967 ms

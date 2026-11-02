@@ -1,0 +1,119 @@
+### main = 27a0d869f17d7e4e87074b1a431c3fd19aa44145
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [57/57] Built «net-client»:exe (1.1s)
+Build completed successfully (57 jobs).
+e878309035974de01a015e0ccfefa90014a2a60647bb4fff193cc7122d4a3a30  /home/matthias/lean-http-cost/out/bench/net-client-main
+### mainpert = a3effbc9b63a88ed78d996f71979c28801c90f92
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [57/57] Built «net-client»:exe (796ms)
+Build completed successfully (57 jobs).
+f9a295975b8cd16c0196c2b0d93d0915b566025224cf79b643c2d77a2150d78d  /home/matthias/lean-http-cost/out/bench/net-client-mainpert
+### cancel = 86307b0cbf6c264472f62abe915f29aeb5d6382a
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [59/59] Built «net-client»:exe (1.1s)
+Build completed successfully (59 jobs).
+731792562f8f4b41a27319fabe428a530f4347058837106ec573df4f39530c1a  /home/matthias/lean-http-cost/out/bench/net-client-cancel
+### ceiling = f20dc26d31c87922eef1c41e93a0015f6acfe96f
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [59/59] Built «net-client»:exe (3.0s)
+Build completed successfully (59 jobs).
+3a7395d7d8447f9116be9e0206298174c2b22695853b2d7c7f9164b12244e595  /home/matthias/lean-http-cost/out/bench/net-client-ceiling
+### flag = e2a9e810d5efca9b6e2c357262084323ffea6899
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [59/59] Built «net-client»:exe (736ms)
+Build completed successfully (59 jobs).
+36b5407150d5b4f7f20090c272e01724e194e3b2d5a5513a32b272cec2b9099e  /home/matthias/lean-http-cost/out/bench/net-client-flag
+### finish = af8baa0d47f90f86953c023b96517605166339b9
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [59/59] Built «net-client»:exe (492ms)
+Build completed successfully (59 jobs).
+bc7e3af538eecc617931d3f92a02896cdb3634e8b5f33fd6a2446ca4670df75a  /home/matthias/lean-http-cost/out/bench/net-client-finish
+### flagfinish = 410a088abc959725ab18ce09f56fd42d46e5ddaa
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [59/59] Built «net-client»:exe (1.7s)
+Build completed successfully (59 jobs).
+5274db883fcd3bbc3ed2a7758ead19625c345203a5e7417c0707e02b76354250  /home/matthias/lean-http-cost/out/bench/net-client-flagfinish
+### main = 27a0d869f17d7e4e87074b1a431c3fd19aa44145
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [60/60] Built «cost-bench»:exe (999ms)
+Build completed successfully (60 jobs).
+e878309035974de01a015e0ccfefa90014a2a60647bb4fff193cc7122d4a3a30  net-client-main
+45e17bf37a48018866b918ba5293a1091f0545395bdca53e5ce77fd5500b1dce  cost-bench-main
+### cancel = 86307b0cbf6c264472f62abe915f29aeb5d6382a
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [62/62] Built «cost-bench»:exe (1.7s)
+Build completed successfully (62 jobs).
+731792562f8f4b41a27319fabe428a530f4347058837106ec573df4f39530c1a  net-client-cancel
+1d3b206181ee766180e345dadd1c3fcc71eaf90c40143ba42f1df4115149efd0  cost-bench-cancel
+### mainpert = a3effbc9b63a88ed78d996f71979c28801c90f92
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [60/60] Built «cost-bench»:exe (1.1s)
+Build completed successfully (60 jobs).
+f9a295975b8cd16c0196c2b0d93d0915b566025224cf79b643c2d77a2150d78d  net-client-mainpert
+7c64360b325d1aed2f22b2daed6fdee0be3f601a5664d43cba1d7d57d1ae4398  cost-bench-mainpert
+### ceiling = f20dc26d31c87922eef1c41e93a0015f6acfe96f
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [62/62] Built «cost-bench»:exe (660ms)
+Build completed successfully (62 jobs).
+3a7395d7d8447f9116be9e0206298174c2b22695853b2d7c7f9164b12244e595  net-client-ceiling
+57596d7fe12fc30efad0e5b1f7db2c3210f17f25087e26fb208a8cbccd4041b5  cost-bench-ceiling
+### flag = e2a9e810d5efca9b6e2c357262084323ffea6899
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [62/62] Built «cost-bench»:exe (916ms)
+Build completed successfully (62 jobs).
+36b5407150d5b4f7f20090c272e01724e194e3b2d5a5513a32b272cec2b9099e  net-client-flag
+2dbad096f0e6a479193a9bf45218ff8d6b12ef99495f66307bdae64f53ba5b70  cost-bench-flag
+### finish = af8baa0d47f90f86953c023b96517605166339b9
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [62/62] Built «cost-bench»:exe (569ms)
+Build completed successfully (62 jobs).
+bc7e3af538eecc617931d3f92a02896cdb3634e8b5f33fd6a2446ca4670df75a  net-client-finish
+d50bfbe62c292d7d56508742e7e77f69e8fb3bc9e99e9ad6a0c85d196d082d2a  cost-bench-finish
+### flagfinish = 410a088abc959725ab18ce09f56fd42d46e5ddaa
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [62/62] Built «cost-bench»:exe (1.6s)
+Build completed successfully (62 jobs).
+5274db883fcd3bbc3ed2a7758ead19625c345203a5e7417c0707e02b76354250  net-client-flagfinish
+280cb5a113bfeadf00a886bb341a065d8a05d367693171c04f9229dd2703d06c  cost-bench-flagfinish
+### flag = e2a9e810d5efca9b6e2c357262084323ffea6899
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [65/65] Built «cost-scale»:exe (2.1s)
+Build completed successfully (65 jobs).
+36b5407150d5b4f7f20090c272e01724e194e3b2d5a5513a32b272cec2b9099e  net-client-flag
+2dbad096f0e6a479193a9bf45218ff8d6b12ef99495f66307bdae64f53ba5b70  cost-bench-flag
+8f1dde14b68672f2630b2f82374013f982bee816886ac5feebcf93d974a7b5d9  cost-scale-flag
+### cache = 9145f02ce3752f818b810b502849c025811a0e3b
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [65/65] Built «net-client»:exe (1.1s)
+Build completed successfully (65 jobs).
+0ee779da11007584f81bbdf5879c94fb05210e2b540446d76f9f28c838d3e5b9  net-client-cache
+17cf20ea6fb86061a8d16ccd924563832a60fd792a419ea4ae3717c35c8d45a8  cost-bench-cache
+b25d117996371391490ad24211f112d0db15a8f81d7fd4b7a1243b91a15a2e0b  cost-scale-cache
+### sweep = 4331720b83411883bb79dac9244d4fb7ac25197c
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [65/65] Built «cost-scale»:exe (951ms)
+Build completed successfully (65 jobs).
+ffeb357c24cd185437e69f9596d8b22b16c281984d50cd39aa18534c9a490d0e  net-client-sweep
+f11ffcaef9b375444e7a50ad2ffbf27780fa0f359c69b00d82a003c07f9ab25d  cost-bench-sweep
+6c6f848eadf443cb253942d03efb0e509f70046ac197664dc19bce040dc5a31c  cost-scale-sweep
+### cancel = 86307b0cbf6c264472f62abe915f29aeb5d6382a
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [65/65] Built «cost-scale»:exe (3.4s)
+Build completed successfully (65 jobs).
+731792562f8f4b41a27319fabe428a530f4347058837106ec573df4f39530c1a  net-client-cancel
+1d3b206181ee766180e345dadd1c3fcc71eaf90c40143ba42f1df4115149efd0  cost-bench-cancel
+f23d8b25655a365020b456572415fd692cfc6da9b722751c3910dd6fede95c2d  cost-scale-cancel
+### sweep2 = a3dee6ba8696d0c76b543951dfa90bc35ad45107
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [65/65] Built «net-client»:exe (3.1s)
+Build completed successfully (65 jobs).
+388200d9b16c0fced429125df580f3f20ddf04d9663a1424f41fc4614d89c36d  net-client-sweep2
+da4ce04b206b6e593f129d759155ea805276d10d9a8489bcce10a992fae86fa2  cost-bench-sweep2
+44ff1ce2913a7f33207b968bf2279dc2cd257cf43026d6a0ed3373c1c77fdb35  cost-scale-sweep2
+### cancel = 86307b0cbf6c264472f62abe915f29aeb5d6382a
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+✔ [65/65] Built «cost-scale»:exe (4.3s)
+Build completed successfully (65 jobs).
+731792562f8f4b41a27319fabe428a530f4347058837106ec573df4f39530c1a  net-client-cancel
+1d3b206181ee766180e345dadd1c3fcc71eaf90c40143ba42f1df4115149efd0  cost-bench-cancel
+145ff67fa6e753e93ad9a339288301bb6ce70335ad395a8f9593b28184840261  cost-scale-cancel

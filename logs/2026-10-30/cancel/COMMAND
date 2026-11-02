@@ -47,3 +47,5 @@ load/        the scenarios placed at a stage of the call instead of at a time (b
              539 (median 229); only each run's summary and the outputs of failing scenarios kept.
              Its rounds found a correct shutdown-cap 714 ms after the shutdown, which set the final
              bound of 1500 ms and the 5 s sleeps.
+cost/        2 November: how much of the cost of watching for cancellation can be given back;
+             README.md says what was run (PLAN.txt before each run) and what came of it.

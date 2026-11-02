@@ -1,0 +1,1 @@
+k=2048: sweep2/cancel median ratio=0.792 95% interval=0.537..1.201 blocks=10; median round cancel=2612.77 ms sweep2=2160.29 ms
