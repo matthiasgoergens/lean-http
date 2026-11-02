@@ -103,6 +103,12 @@ structure CallInfo where
   connectRounds : Nat
 
   /--
+  How many name lookups the call started: one per host, whatever the rounds of connect attempts to
+  it, unless a lookup raised an exception (a connect failure, which may be retried).
+  -/
+  lookups : Nat := 0
+
+  /--
   The address the call's connection is connected to.
   -/
   address : SocketAddress
@@ -439,6 +445,17 @@ private structure Progress where
   -/
   furthest : Delivery := .notSent
 
+  /--
+  The addresses of each host the call looked up, in the order to try them: every later round of
+  connect attempts to the host uses them rather than look the name up again.
+  -/
+  resolved : List (String × Array IPAddr) := []
+
+  /--
+  Names the call looked up.
+  -/
+  lookups : Nat := 0
+
 /--
 A connection the call holds, from the pool or fresh.
 -/
@@ -628,17 +645,27 @@ private def Attempt.secure (a : Attempt) (socket : TCP.Socket.Client) (session :
       .error (notSent (.cancelled reason) "cancelled during the TLS handshake")
 
 /--
-The addresses of the plan's host, in the order to try them: an IP literal as it is, a name by a
-lookup, for each round of connect attempts.
+The addresses of the plan's host, in the order to try them: an IP literal as it is; for a name, the
+addresses the call found for it already, or else a lookup, recorded in the call's progress so that
+the call looks each name up once (`NOTES.md`, "Name resolution across the rounds of a call").
 -/
 private def Attempt.addresses (a : Attempt) (progress : Progress) :
     Async (Except String (Except ConnectError (Array IPAddr)) × Progress) := do
-  -- `Connect.resolve` reports its failures as values; should it throw anyway, the exception counts
-  -- as a failed connect.
-  let looked : Except String (Except ConnectError (Array IPAddr)) ←
-    try pure (.ok (← Connect.resolve (Target.ofHost a.plan.host) a.deadline a.cancel))
-    catch e => pure (.error (toString e))
-  return (looked, progress)
+  match Target.ofHost a.plan.host with
+  | .literal addr => return (.ok (.ok #[addr]), progress)
+  | target@(.name host) =>
+    if let some addrs := progress.resolved.lookup host then
+      return (.ok (.ok addrs), progress)
+    let progress := { progress with lookups := progress.lookups + 1 }
+    -- `Connect.resolve` reports its failures as values; should it throw anyway, the exception
+    -- counts as a failed connect.
+    let looked : Except String (Except ConnectError (Array IPAddr)) ←
+      try pure (.ok (← Connect.resolve target a.deadline a.cancel))
+      catch e => pure (.error (toString e))
+    match looked with
+    | .ok (.ok addrs) =>
+      return (.ok (.ok addrs), { progress with resolved := (host, addrs) :: progress.resolved })
+    | other => return (other, progress)
 
 /--
 Opens a connection, under pool id `id` if pooling is on, with one round of connect attempts and,
@@ -909,9 +936,9 @@ private def callError (seed : UInt64) (st : Call.State) (progress : Progress) (t
     | .connect _ => .connect progress.attempts
     | c => c
   { cause, delivery := progress.furthest.max f.delivery, written := f.written, target, seed,
-    connectRounds := progress.rounds, status := f.status, detail := f.detail,
-    reused := progress.reused, redispatched := progress.redispatched, hops := st.hops,
-    retries := st.retries, notRetried }
+    connectRounds := progress.rounds, lookups := progress.lookups, status := f.status,
+    detail := f.detail, reused := progress.reused, redispatched := progress.redispatched,
+    hops := st.hops, retries := st.retries, notRetried }
 
 /--
 `callError` with the call's seed.
@@ -994,7 +1021,8 @@ private partial def CallSpec.loop {α : Type} (spec : CallSpec) (st : Call.State
   | .deliver, .head live head held =>
     spec.observe .deliver
     let info : CallInfo := {
-      seed := spec.seed, connectRounds := progress.rounds, address := held.address,
+      seed := spec.seed, connectRounds := progress.rounds, lookups := progress.lookups,
+      address := held.address,
       failedAttempts := progress.attempts, elapsedMs := (← IO.monoMsNow) - spec.started,
       connection := held.id, reused := held.reused, discarded := progress.discarded,
       idleCheckUs := progress.idleCheckUs, redispatched := progress.redispatched, hops := st.hops,

@@ -175,7 +175,8 @@ LARGE=18088     # onewrite.py, for a large POST
 EARLY=18089     # early.py: answers 413 after the head, then reads no more
 # 18090-18101 and 18104: the pooling scenarios, each with an evil.py of its own; 18102: idle.py
 # 18110-18120: the planner's and the streaming scenarios; 18121-18128: the upload scenarios;
-# 18130-18175: the TLS scenarios (18174-18175 a streamed upload); 18180-18193: cancelling
+# 18130-18175: the TLS scenarios (18174-18175 a streamed upload); 18180-18193: cancelling, and the
+# lookups of a call
 
 # Scenarios the environment cannot run, with the reason.
 declare -A unavailable=()
@@ -186,7 +187,7 @@ if ! grep --quiet 'dual\.test' /etc/hosts || ! grep --quiet 'wild\.lh\.test' /et
   if [ -w /etc/hosts ]; then
     cat "$here/hosts" >> /etc/hosts || exit 1
   else
-    for s in dns-dup dns-dual blackhole-first tls-names; do
+    for s in dns-dup dns-dual blackhole-first tls-names dns-once; do
       unavailable[$s]="/etc/hosts lacks the names of tests/net/hosts and cannot be written"
     done
   fi
@@ -338,7 +339,7 @@ fi
 if scenario refused-backoff; then
   "$BIN" backoff 42 > "$out/refused-backoff.schedule.txt" 2>&1
   client refused-backoff call GET "http://127.0.0.1:$CLOSED/" seed=42
-  expect refused-backoff 'call 0 error delivery=not sent .*rounds=3 seed=42 .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*could not connect' \
+  expect refused-backoff 'call 0 error delivery=not sent .*rounds=3 lookups=0 seed=42 .*retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit .*could not connect' \
     "refused three times (two retries by the planner); nothing sent"
   expect refused-backoff 'attempts=\[127\.0\.0\.1:18085#0:failed\([^]]*\), 127\.0\.0\.1:18085#1:failed\([^]]*\), 127\.0\.0\.1:18085#2:failed\([^]]*\)\]' \
     "one connect round per attempt"
@@ -1638,6 +1639,20 @@ if scenario cancel-steps; then
   for s in cancel-follow cancel-wait cancel-deliver; do trace_ok $s; done
 fi
 
+# --- The lookups of a call: a name is looked up once per call, whatever its rounds of connect attempts.
+if scenario dns-once; then
+  client dns-once call GET "http://dup.test:$CLOSED/" retries=2 base=0 cap=0
+  expect dns-once 'call 0 error delivery=not sent .*rounds=3 lookups=1 .*retries=2 ' \
+    "three rounds of connect attempts to one name, after one lookup"
+  evil dns-once-redirect 18189 || exit 1
+  client dns-once-redirect call GET "http://dup.test:18189/chain/2" pool=0
+  expect dns-once-redirect 'call 0 ok status=200 .*rounds=3 lookups=1 .*hops=2 ' \
+    "two redirects to the same name, each on a connection of its own, after one lookup"
+  client dns-once-literal call GET "http://127.0.0.1:18189/chain/2" pool=0
+  expect dns-once-literal 'call 0 ok status=200 .*rounds=3 lookups=0 .*hops=2 ' "an IP literal is not looked up"
+  for s in dns-once dns-once-redirect dns-once-literal; do trace_ok $s; done
+fi
+
 # Last, because it points the resolver at a name server that never answers.
 if scenario dns-timeout; then
   cp /etc/resolv.conf /tmp/resolv.conf.saved 2>/dev/null || : > /tmp/resolv.conf.saved
@@ -1656,7 +1671,7 @@ if scenario dns-timeout; then
   known_exit="the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)" \
     client dns-cancel call GET "http://slow.test/" deadline=10000 cancel=1000 after=send
   cp /tmp/resolv.conf.saved /etc/resolv.conf
-  expect dns-cancel "call 0 error delivery=not sent .*$cancelled detail=\"cancelled while the name was looked up\"" \
+  expect dns-cancel "call 0 error delivery=not sent .*lookups=1 .*$cancelled detail=\"cancelled while the name was looked up\"" \
     "a call cancelled while its name is looked up: not sent"
   since_fired dns-cancel "$first" 0 1500 "at the cancellation"
 fi

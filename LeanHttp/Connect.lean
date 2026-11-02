@@ -15,8 +15,8 @@ public section
 
 Name resolution (`resolve`), bounded only by the call's deadline, its cancellation and the
 resolver's own timeouts, and one round of connect attempts over the addresses found (`run`).  The
-client resolves the name for each round, as Go's dialer does for each dial, so that a retry sees a
-changed answer.
+client looks a name up once per call and gives every round of the call to that host the same
+addresses (`NOTES.md` says why).
 
 Within a round the addresses are tried in order, each with its own time limit
 (`Config.connectTimeoutMs`).  The next attempt starts when the current one fails, or when it has not
@@ -261,7 +261,7 @@ def resolve (target : Target) (deadline : Nat) (cancel : Cancel) :
 /--
 Connects to one of `addrs` (as `resolve` ordered them) at `port`: one round of attempts, numbered
 `roundIndex` in their records, within `deadline` (a value of `IO.monoMsNow`), unless `cancel` comes
-first.  The name is looked up by the caller (`resolve`), not here.
+first.  The name is looked up by the caller, once per call (`Client`), not here.
 -/
 def run (config : Config) (addrs : Array IPAddr) (port : UInt16) (roundIndex : Nat) (deadline : Nat)
     (cancel : Cancel) : Async (Except ConnectError Connected) := do

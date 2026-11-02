@@ -388,7 +388,7 @@ def describeCall (i : Nat) (ns : Nat) (result : Except Error (Response ByteArray
   | .ok resp =>
     let infoText := match resp.extensions.get CallInfo with
       | some i =>
-        s!"rounds={i.connectRounds} address={i.address} seed={i.seed} " ++
+        s!"rounds={i.connectRounds} lookups={i.lookups} address={i.address} seed={i.seed} " ++
           s!"failed_attempts={attemptsText i.failedAttempts} conn={i.connection} reused={i.reused} " ++
           s!"discarded={i.discarded} check_us={i.idleCheckUs} redispatched={i.redispatched} " ++
           s!"hops={i.hops} retries={i.retries} uri={i.uri} tls={i.tls.getD "none"}"
@@ -400,7 +400,7 @@ def describeCall (i : Nat) (ns : Nat) (result : Except Error (Response ByteArray
     let attempts := match err.cause with
       | .connect a => s!" attempts={attemptsText a}"
       | _ => ""
-    s!"call {i} error delivery={err.delivery.name} ms={fmtMs ns} rounds={err.connectRounds} " ++
+    s!"call {i} error delivery={err.delivery.name} ms={fmtMs ns} rounds={err.connectRounds} lookups={err.lookups} " ++
       s!"seed={err.seed} reused={err.reused} redispatched={err.redispatched} " ++
       s!"hops={err.hops} retries={err.retries} not_retried={(err.notRetried.map reprStr).getD "none"} " ++
       s!"status={err.status.map Status.toCode} cause={repr err.cause.describe} " ++

@@ -336,6 +336,11 @@ structure Error where
   connectRounds : Nat := 0
 
   /--
+  How many name lookups the call started: one per host, unless a lookup raised an exception.
+  -/
+  lookups : Nat := 0
+
+  /--
   The status of the final response, when one arrived.
   -/
   status : Option Std.Http.Status := none
