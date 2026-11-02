@@ -2,6 +2,7 @@ module
 
 public import Std.Net.Addr
 public import Std.Http.Data.Status
+public import Std.Sync.CancellationToken
 
 public section
 
@@ -174,6 +175,15 @@ inductive Cause where
   | localClose
 
   /--
+  The call was cancelled: a cancellation token it was given was cancelled, with `reason`, or the
+  client was shut down (`Client.shutdownNow`, reason `shutdown`).  Like the call's deadline passing
+  early: it is never retried, and the error's delivery says how far the call got.  The reason is the
+  token's, whatever it is: a token cancelled with the reason `deadline` gives
+  `cancelled .deadline`, not the call's own deadline's `timeout .deadline`.
+  -/
+  | cancelled (reason : Std.CancellationReason)
+
+  /--
   The peer closed the connection, or the connection was lost, before a complete response arrived.
   -/
   | peerClosed
@@ -237,9 +247,10 @@ Why a failed exchange is not retried.
 -/
 inductive NoRetry where
   /--
-  The cause is never retried: the client closed the connection itself, the call's deadline passed,
-  the name did not resolve, the request was invalid, the response was malformed or too large, or TLS
-  failed in a way another attempt would repeat (setup, the certificate, the handshake).
+  The cause is never retried: the client closed the connection itself, the call was cancelled, the
+  call's deadline passed, the name did not resolve, the request was invalid, the response was
+  malformed or too large, or TLS failed in a way another attempt would repeat (setup, the
+  certificate, the handshake).
   -/
   | cause
 
@@ -431,6 +442,7 @@ A one-line description.
 -/
 def describe : Cause → String
   | .localClose => "the client closed the connection"
+  | .cancelled reason => s!"the call was cancelled ({reason})"
   | .peerClosed => "the connection closed before a complete response"
   | .timeout which => s!"{which.name} timeout"
   | .protocol detail => s!"invalid response: {detail}"

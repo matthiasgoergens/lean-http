@@ -793,6 +793,8 @@ private def handle : ExchangeEvent → StepM Unit
     setEx { ex with credit := ex.credit + bytes }
     if ex.phase matches .receiving then absorb
   | .tick => pure ()
+  -- Added with cancellation, so that `compare` can replay runs that cancel: as in the core.
+  | .cancel reason => failOrDrop (.cancelled reason)
   -- The former core takes the whole request as bytes: it never pulls, and ignores answers.
   | .pulled _ | .pullFailed _ => pure ()
   | .abandon => do

@@ -25,7 +25,10 @@ the recorded times.  It checks:
   on a connection from the pool, at most once per request, and that a failure after a re-dispatch
   that may have reached the server is not reported as not sent;
 - that a retry waited until the time the planner's delay ends (or the deadline), and went out no
-  earlier;
+  earlier, unless the call was cancelled while it waited: a call cancelled before a request goes
+  out (before the first, during the wait before a retry, before a redirect is followed) may ask the
+  planner about a failure in place of sending, one whose cause is the cancellation, with nothing
+  sent and no byte written;
 - that the call ended as the last step said, with an error whose cause and reason are the planner's,
   whose hop and retry counts are the planner's, and whose delivery is at least the furthest any
   recorded exchange got.  The record of a delivered call ends at the delivery: an error while the
@@ -221,6 +224,22 @@ def validate (events : Array Event) : Except String Nat := do
         throw s!"{here}: the retry went out at {time}, before its delay ended at {notBefore}"
       lastSend := time
       expect := .decide none
+    | .send _ _, .decide clock (.failure f) step =>
+      -- The call was cancelled before the request went out.
+      unless (f.cause matches .cancelled _) && f.delivery == .notSent && f.written == 0 do
+        throw s!"{here}: the client asked the planner about {reprStr f.cause} ({f.delivery.name}, {f.written} bytes written) without sending the request; only a cancellation, with nothing sent, may come in place of a request"
+      if clock.now < lastSend then
+        throw s!"{here}: the planner was asked at {clock.now}, before the last request went out at {lastSend}"
+      let (st', mine) := plan st clock (.failure f)
+      if reprStr mine != reprStr step then
+        throw s!"{here}: the client took the step {reprStr step}, the planner says {reprStr mine}"
+      steps := steps + 1
+      st := st'
+      expect := match mine with
+        | .deliver => .deliver
+        | .follow _ => .send clock.now true
+        | .retry delay _ => .wait (min (clock.now + delay) deadline)
+        | .fail reason => .fail reason
     | .send _ true, .fail e =>
       -- The client could not send the planner's next request (a target it cannot reach).
       unless e.cause matches .invalidRequest _ do

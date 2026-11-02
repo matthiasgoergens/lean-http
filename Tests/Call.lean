@@ -315,6 +315,12 @@ def retryChecks : Checks Unit := do
     (noRetry? (afterFailure get .none (failureOf .localClose .notSent))) (some .cause)
   checkEq "localClose, maybe delivered: not retried"
     (noRetry? (afterFailure get .none (failureOf .localClose .maybeDelivered 5))) (some .cause)
+  for (name, d, w) in [("nothing sent", Delivery.notSent, 0), ("maybe delivered", .maybeDelivered, 5),
+      ("response received", .responseReceived, 5)] do
+    let st := started get .none {} 42 100000
+    let f := failureOf (.cancelled .cancel) d w
+    checkEq s!"cancelled, {name}: not retried, the state kept"
+      (reprStr (plan st at0 (.failure f))) (reprStr (st, Step.fail (.failure f .cause)))
   for (name, cause) in [("deadline", Cause.timeout .deadline), ("protocol", .protocol "x"),
       ("limit", .limit .body), ("resolve", .resolve "a.test" "x"), ("invalidRequest", .invalidRequest "x")] do
     checkEq s!"{name}: not retried" (noRetry? (afterFailure get .none (failureOf cause .notSent))) (some .cause)
@@ -414,6 +420,7 @@ inductive Mutation where
   | leakCredentials
   | resendDelivered
   | retryLocalClose
+  | retryCancelled
   | delayToDeadline
   | deliverAtLimit
   | keepPostOn303
@@ -423,7 +430,7 @@ inductive Mutation where
 deriving Repr, BEq, Inhabited
 
 /-- All planted bugs. -/
-def mutations : List Mutation := [.leakCredentials, .resendDelivered, .retryLocalClose,
+def mutations : List Mutation := [.leakCredentials, .resendDelivered, .retryLocalClose, .retryCancelled,
   .delayToDeadline, .deliverAtLimit, .keepPostOn303, .keepContentOnChange, .retryAcrossRedirect,
   .keepHost]
 
@@ -440,6 +447,10 @@ def mutatedPlan (m : Mutation) (st : State) (clock : Clock) (outcome : Outcome) 
   | .retryLocalClose, .fail (.failure f .cause), _ =>
     match f.cause with
     | .localClose => (st.retried, .retry 0 .backoff)
+    | _ => (st', step)
+  | .retryCancelled, .fail (.failure f .cause), _ =>
+    match f.cause with
+    | .cancelled _ => (st.retried, .retry 0 .backoff)
     | _ => (st', step)
   | .delayToDeadline, .retry _ k, _ => (st', .retry (st.deadline - clock.now) k)
   | .deliverAtLimit, .fail (.tooManyRedirects _), _ => (st', .deliver)
@@ -555,6 +566,7 @@ def checkCallStep (model : CallModel) (clock : Clock) (outcome : Outcome) (st' :
     match outcome with
     | .failure f =>
       if f.cause matches .localClose then bad := "localClose retried" :: bad
+      if f.cause matches .cancelled _ then bad := "a cancelled call retried" :: bad
       if f.delivery == .responseReceived then bad := "retried after the response arrived" :: bad
     | .response h =>
       let code := h.status.toCode.toNat
@@ -605,7 +617,8 @@ def genOutcome : Gen (Nat × Outcome) := do
     let cause ← pickWeighted [(5, Cause.connect #[]), (5, .peerClosed), (3, .timeout .read),
       (2, .timeout .write), (1, .timeout .deadline), (3, .localClose), (1, .protocol "x"),
       (1, .limit .body), (1, .resolve "a.test" "x"), (1, .invalidRequest "x"), (1, .tls (.closed "x")),
-      (1, .tls .timeout), (1, .tls (.verify "x")), (1, .tls (.handshake "x")), (1, .tls (.setup "x"))]
+      (1, .tls .timeout), (1, .tls (.verify "x")), (1, .tls (.handshake "x")), (1, .tls (.setup "x")),
+      (2, .cancelled .cancel), (1, .cancelled .shutdown)]
     let delivery ← pick [Delivery.notSent, .notSent, .maybeDelivered, .responseReceived]
     let written ← pick [0, 0, 7]
     return (dt, .failure (failureOf cause delivery written))

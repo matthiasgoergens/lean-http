@@ -224,8 +224,48 @@ def streamTraces : List Trace := [
     steps := fun _ => [] }
 ]
 
+/-- The traces of cancelling. -/
+def cancelTraces : List Trace := [
+  { name := "a cancel with the first write in flight: fails, maybe delivered, the write given up"
+    steps := fun _ => [
+      (1, .cancel .cancel, ["fail the call was cancelled (cancel) [maybe delivered, written=0]"]),
+      (2, .written 10, [])] },
+  { name := "a cancel while the head is awaited: fails, maybe delivered, the read given up"
+    steps := fun p => writtenSteps p ++ [
+      (5, .cancel .cancel, [s!"fail the call was cancelled (cancel) [maybe delivered, written={p.bytes.size}]"]),
+      (6, recv okResponse, [])] },
+  { name := "a cancel mid-body: fails with the response received and its status"
+    steps := fun p => writtenSteps p ++ [
+      (2, recv tenHello, ["head 200", "body \"hello\"", "read"]),
+      (3, .cancel .shutdown,
+        [s!"fail the call was cancelled (shutdown) [response received, written={p.bytes.size}, status=200]"])] },
+  { name := "a cancel while an abandoned body is drained: finishes, not reusable"
+    steps := fun p => writtenSteps p ++ [
+      (2, recv tenHello, ["head 200", "body \"hello\"", "read"]),
+      (3, .abandon, []),
+      (4, .cancel .cancel, ["finish reusable=false"]),
+      (5, recv "world", [])] },
+  { name := "a cancel with a chunk of the upload pulled: fails, the producer's answer ignored"
+    method := .post
+    stream := some none
+    steps := fun p => [
+      (1, .written p.bytes.size, ["pull", "read"]),
+      (2, .cancel (.custom "why"),
+        [s!"fail the call was cancelled (custom(\"why\")) [maybe delivered, written={p.bytes.size}]"]),
+      (3, chunk "late", [])] },
+  { name := "a cancel before the deadline wins over the deadline; after it, nothing"
+    deadline := 500
+    steps := fun p => writtenSteps p ++ [
+      (499, .cancel .deadline, [s!"fail the call was cancelled (deadline) [maybe delivered, written={p.bytes.size}]"]),
+      (500, .tick, [])] },
+  { name := "a cancel after the exchange finished changes nothing"
+    steps := fun p => writtenSteps p ++ [
+      (2, recv okResponse, okActions),
+      (3, .cancel .cancel, [])] }
+]
+
 /-- The traces. -/
-def traces : List Trace := streamTraces ++ [
+def traces : List Trace := streamTraces ++ cancelTraces ++ [
   { name := "bytes before the request head is written are never parsed"
     steps := fun _ => [
       (1, recv okResponse,

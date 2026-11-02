@@ -11,8 +11,8 @@ checker's model and the environment, so each distinct state is expanded once.
 The alphabet: complete the write in flight (in full, or one byte of it), fail it; send the next piece
 of the scripted response or all the rest (once the request head is written and a read is in flight),
 end the input, fail the read; send the next piece when no response can be due; ask for one byte of
-body or for all of it; abandon; tick just before the next deadline, at it, or after the deadline of
-the exchange.  Only ticks move time, so the space is finite.
+body or for all of it; abandon; cancel; tick just before the next deadline, at it, or after the
+deadline of the exchange.  Only ticks move time, so the space is finite.
 -/
 
 open Std.Http LeanHttp
@@ -41,6 +41,8 @@ inductive Letter where
   | wantLots
   /-- The caller abandons. -/
   | abandon
+  /-- The call is cancelled. -/
+  | cancel
   /-- A tick just before the next deadline. -/
   | tickBefore
   /-- A tick at the next deadline. -/
@@ -56,7 +58,7 @@ deriving Repr, Inhabited
 /-- Every letter. -/
 def alphabet : List Letter :=
   [.writeAll, .writeOne, .writeFail, .piece, .rest, .eof, .readFail, .unsolicited, .wantOne,
-    .wantLots, .abandon, .tickBefore, .tickDue, .tickLate, .pullNext, .pullFail]
+    .wantLots, .abandon, .cancel, .tickBefore, .tickDue, .tickLate, .pullNext, .pullFail]
 
 /-- One search: a case, and where its response is cut into pieces. -/
 structure Search where
@@ -97,6 +99,7 @@ def letterEvent (s : Search) (n : Node) : Letter → Option (Nat × ExchangeEven
   | .wantOne => some (n.env.now, .wantBody 1, n.env)
   | .wantLots => some (n.env.now, .wantBody 1000000, n.env)
   | .abandon => some (n.env.now, .abandon, n.env)
+  | .cancel => some (n.env.now, .cancel .cancel, n.env)
   | .tickBefore => n.ex.nextDeadline.bind fun due =>
       if due > n.env.now + 1 then some (due - 1, .tick, { n.env with now := due - 1 }) else none
   | .tickDue => n.ex.nextDeadline.map fun due =>

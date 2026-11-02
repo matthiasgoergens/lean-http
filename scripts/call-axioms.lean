@@ -20,6 +20,8 @@ open LeanHttp.Call
 #print axioms plan_hop_limit
 #print axioms plan_no_resend
 #print axioms plan_localClose
+#print axioms plan_cancelled
+#print axioms redispatch?_cancelled
 #print axioms plan_retry_delay
 #print axioms plan_retry_same_hop
 #print axioms plan_follow_303

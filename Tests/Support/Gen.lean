@@ -243,6 +243,9 @@ def genCase (streams : Bool := true) : Gen Case := do
     else pure none
   return { script, method, bodySize, config, deadline, stream }
 
+/-- For drawing a cancellation's reason with `pick`. -/
+instance : Inhabited Std.CancellationReason := ⟨.cancel⟩
+
 /-- What the environment has done so far. -/
 structure Env where
   /-- The time. -/
@@ -293,7 +296,8 @@ def genEvent (c : Case) (ex : Exchange) (m : Model) (env : Env) : Gen (Nat × Ex
         m.acked < m.headBytes }))]
   options := options ++ [
     (10, do return (.wantBody (← pick [1, 3, 1000000]), env)),
-    (if m.headDelivered then 4 else 1, pure (.abandon, env))]
+    (if m.headDelivered then 4 else 1, pure (.abandon, env)),
+    (1, do return (.cancel (← pick [.cancel, .deadline, .shutdown, .custom "test"]), env))]
   let event? ← if options.isEmpty then pure none else some <$> (pickWeighted (options.map fun (w, g) => (w, some g)))
   let tickAt : Gen Nat := do
     let due := ex.nextDeadline.getD env.now

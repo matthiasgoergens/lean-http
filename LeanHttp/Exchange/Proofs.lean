@@ -1329,6 +1329,9 @@ theorem handle_good (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (ht : ex.t
   | tick =>
     simp only [handle, wAfter, rAfter, startOf]
     exact Good.start (ex₀ := ex) (ex' := ex) hf hi ht rfl rfl rfl rfl rfl
+  | cancel reason =>
+    simp only [handle, wAfter, rAfter, startOf]
+    exact failOrDrop_good' _ _ (Good.start (ex₀ := ex) (ex' := ex) hf hi ht rfl rfl rfl rfl rfl)
   | abandon =>
     simp only [handle, wAfter, rAfter, startOf]
     simp only [bind_run, setEx_run]
@@ -1472,6 +1475,7 @@ theorem startOf_keep (ex : Exchange) (e : ExchangeEvent) :
   | received _ => exact ⟨_, _, _, _, _, _, _, rfl⟩
   | wantBody _ => exact ⟨_, _, _, _, _, _, _, rfl⟩
   | tick => exact ⟨_, _, _, _, _, _, _, rfl⟩
+  | cancel _ => exact ⟨_, _, _, _, _, _, _, rfl⟩
   | abandon => exact ⟨_, _, _, _, _, _, _, rfl⟩
   | readFailed _ => exact ⟨_, _, _, _, _, _, _, rfl⟩
   | writeFailed _ => exact ⟨_, _, _, _, _, _, _, rfl⟩
@@ -2574,6 +2578,10 @@ theorem Agrees.start {ex : Exchange} {m : Obs} (ia : Agrees ex m) (hi : Inv ex)
     simp only [Obs.observe, hne, Bool.false_eq_true, ↓reduceIte, startOf, wAfter]
     exact ⟨ia1, ia2, ia3, ia4, by field_close, ia6, ia7,
         ⟨ia8.wire, ia8.known, ia8.complete, ia8.framing, ia8.taken⟩, ia9, ia10⟩
+  | cancel _ =>
+    simp only [Obs.observe, hne, Bool.false_eq_true, ↓reduceIte, startOf, wAfter]
+    exact ⟨ia1, ia2, ia3, ia4, by field_close, ia6, ia7,
+        ⟨ia8.wire, ia8.known, ia8.complete, ia8.framing, ia8.taken⟩, ia9, ia10⟩
   | readFailed d =>
     simp only [Obs.observe, hne, Bool.false_eq_true, ↓reduceIte, startOf, wAfter]
     exact ⟨ia1, ia2, ia3, ia4, by field_close, ia6, ia7,
@@ -2979,6 +2987,7 @@ theorem startOf_pulling (ex : Exchange) (e : ExchangeEvent) : (startOf ex e).pul
   | received _ => rfl
   | wantBody _ => rfl
   | tick => rfl
+  | cancel _ => rfl
   | abandon => rfl
   | readFailed _ => rfl
   | writeFailed _ => rfl
@@ -3116,6 +3125,7 @@ theorem observed_pull {ex : Exchange} {m : Obs} (h : Observed ex m) (now : Times
       | received _ => exact ia.pulling
       | wantBody _ => exact ia.pulling
       | tick => exact ia.pulling
+      | cancel _ => exact ia.pulling
       | abandon => exact ia.pulling
       | readFailed _ => exact ia.pulling
       | writeFailed _ => exact ia.pulling
@@ -3249,6 +3259,7 @@ theorem observe_framed {ex : Exchange} {m : Obs} (ia : Agrees ex m) (hi : Inv ex
     | received _ => exact ⟨hf.length, hf.chunked, hf.whole⟩
     | wantBody _ => exact ⟨hf.length, hf.chunked, hf.whole⟩
     | tick => exact ⟨hf.length, hf.chunked, hf.whole⟩
+    | cancel _ => exact ⟨hf.length, hf.chunked, hf.whole⟩
     | abandon => exact ⟨hf.length, hf.chunked, hf.whole⟩
     | readFailed _ => exact ⟨hf.length, hf.chunked, hf.whole⟩
     | writeFailed _ => exact ⟨hf.length, hf.chunked, hf.whole⟩
@@ -3444,5 +3455,59 @@ theorem step_broken {ex : Exchange} (ht : ex.terminal = false) (hp : ex.pulling 
   simp only [ex', acts, step_run hs, bind_run]
   rw [expire_terminal h1, schedule_terminal h1]
   exact ⟨h1, h2⟩
+
+/--
+**Cancelling ends the exchange at once** (checker: "a cancel ends the exchange at once").  A cancel
+reported to an exchange that has not ended ends it in that step, and the step emits that end and
+nothing else: no write, read or pull.  While an abandoned body is being drained, where nobody waits
+for an error, it finishes with a connection that is not reusable; in every other phase it fails with
+`Cause.cancelled`, the delivery the exchange had reached (so a cancel before any write says not
+sent, and one after the final head says response received) and the bytes written so far.
+-/
+theorem step_cancel {ex : Exchange} (ht : ex.terminal = false) (now : Timestamp)
+    (reason : Std.CancellationReason) :
+    let ex' := (ex.step now (.cancel reason)).1
+    let acts := (ex.step now (.cancel reason)).2
+    ex'.terminal = true ∧
+      (ex.phase = .draining → ex'.phase = .finished false ∧ acts = #[.finish false]) ∧
+      ((ex.phase = .draining → False) →
+        ∃ f, ex'.phase = .failed f ∧ f.cause = .cancelled reason ∧ f.delivery = ex.delivery ∧
+          f.written = ex.written ∧ acts = #[.fail f]) := by
+  intro ex' acts
+  have hs : (ex.terminal || stale ex now (.cancel reason)) = false := by simp [ht, stale]
+  have ht' : (advanced ex now).terminal = false := ht
+  have hrun : ((handle (.cancel reason)).run (advanced ex now, #[])).2.1.terminal = true := by
+    simp only [handle]
+    exact (failOrDrop_phase _ _ "" ht').1
+  simp only [ex', acts, step_run hs, bind_run]
+  rw [expire_terminal hrun, schedule_terminal hrun]
+  simp only [handle, failOrDrop, bind_run, getEx_run]
+  split
+  · rename_i hp
+    rw [finishNow_run]
+    simp only [ht', Bool.false_eq_true, ↓reduceIte, Bool.false_and]
+    exact ⟨by simp [terminal], fun _ => ⟨by simp, by simp⟩, fun hn => absurd hp hn⟩
+  · rename_i hp
+    rw [failNow_run]
+    simp only [ht', Bool.false_eq_true, ↓reduceIte]
+    exact ⟨by simp [terminal], fun hd => absurd hd hp, fun _ => ⟨_, rfl, rfl, rfl, rfl, by simp⟩⟩
+
+/--
+**A cancel never leaves a reusable connection.**  After a step that reports a cancel, the exchange
+is not finished with a reusable connection, unless it already was before the cancel (an exchange
+that has ended ignores every event).  So the shell, which pools a connection only on a reusable
+finish, never pools one whose exchange the cancel ended.
+-/
+theorem step_cancel_not_reusable {ex : Exchange} (now : Timestamp) (reason : Std.CancellationReason)
+    (hr : ex.phase ≠ .finished true) :
+    (ex.step now (.cancel reason)).1.phase ≠ .finished true := by
+  cases ht : ex.terminal
+  · obtain ⟨-, hd, hf⟩ := step_cancel ht now reason
+    by_cases hp : ex.phase = .draining
+    · rw [(hd hp).1]; simp
+    · obtain ⟨f, hf', -⟩ := hf hp
+      rw [hf']; simp
+  · have hs : (ex.terminal || stale ex now (.cancel reason)) = true := by simp [ht]
+    rw [step_ignored hs]; exact hr
 
 end LeanHttp.Exchange

@@ -5,6 +5,7 @@ import all Std.Http.Data.Headers
 import all Std.Http.Data.Headers.Name
 import all Std.Http.Data.URI
 public import LeanHttp.Call
+import all LeanHttp.Wire
 
 /-!
 # Proofs about the per-call planner
@@ -714,6 +715,27 @@ theorem plan_localClose {st : State} {clock : Clock} {f : Failure} (hc : f.cause
     have := (retryFailure_ok hr).1
     simp [hc, retryableCause] at this
   · cases hh
+
+/--
+**A cancelled call is never retried.**  A failure whose cause is the call's cancellation
+(`Cause.cancelled`) fails the call at once, whatever was sent and whatever retries are left: the
+planner keeps its state and its step is to fail, with that failure and the reason `cause`.  Like the
+deadline passing early, cancelling can never make the client send a request again.
+-/
+theorem plan_cancelled {st : State} {clock : Clock} {f : Failure} {reason : Std.CancellationReason}
+    (hc : f.cause = .cancelled reason) :
+    plan st clock (.failure f) = (st, .fail (.failure f .cause)) := by
+  simp [plan, retryFailure, hc, retryableCause]
+
+/--
+**A cancelled exchange is never sent again on a fresh connection.**  `Client.redispatch?`, which
+decides below the planner whether an exchange whose pooled connection turned out closed is sent
+once more, never allows it for an exchange that failed because the call was cancelled.
+-/
+theorem redispatch?_cancelled {method : Method} {replayable : Bool} {f : Failure} {received : Bool}
+    {reason : Std.CancellationReason} (hc : f.cause = .cancelled reason) :
+    Client.redispatch? method replayable (.failure f received) = none := by
+  simp [Client.redispatch?, hc]
 
 /--
 **Delays are bounded.**  Every retry the planner plans waits less than the time left before the

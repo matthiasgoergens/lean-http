@@ -63,3 +63,5 @@ open LeanHttp.Exchange
 #print axioms observed_finish_body
 #print axioms accept_length
 #print axioms step_broken
+#print axioms step_cancel
+#print axioms step_cancel_not_reusable

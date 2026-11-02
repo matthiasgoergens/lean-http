@@ -398,6 +398,9 @@ theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Tim
   | tick =>
     simp only [handle]
     exact h
+  | cancel reason =>
+    simp only [handle]
+    exact failOrDrop_timers _ _ h
   | abandon =>
     simp only [handle, bind_run, setEx_run]
     have h0 := h.agree (b := { ex with abandoned := true }) (by tagree_rfl)

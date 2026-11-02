@@ -691,6 +691,9 @@ theorem handle_sinv (e : ExchangeEvent) {ex : Exchange} {fed : ByteArray} {ab : 
   | tick =>
     simp only [handle, fedAfter, abAfter]
     exact h0
+  | cancel reason =>
+    simp only [handle, fedAfter, abAfter]
+    exact failOrDrop_sinv _ _ h0
   | abandon =>
     simp only [handle, fedAfter, abAfter, bind_run, setEx_run]
     let ex1 : Exchange := { ex with abandoned := true }

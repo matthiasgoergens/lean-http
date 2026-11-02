@@ -173,7 +173,7 @@ def Model.observe (m : Model) (event : ExchangeEvent) : Model :=
   | .pulled c => if m.pullOutstanding then { m.take c with pullOutstanding := false } else m
   | .pullFailed _ =>
     if m.pullOutstanding then { m with pullOutstanding := false, bodyBroken := true } else m
-  | .wantBody _ | .tick => m
+  | .wantBody _ | .tick | .cancel _ => m
 
 /-- A comparable summary of the core's state, for "a stale tick changes nothing". -/
 def fingerprint (ex : Exchange) : String :=
@@ -213,6 +213,7 @@ def renderEvent : ExchangeEvent → String
   | .pulled (some b) => s!"pulled {b.size}"
   | .pulled none => "pulled end"
   | .pullFailed d => s!"pullFailed {repr d}"
+  | .cancel r => s!"cancel {r}"
 
 /--
 Checks one step: the core was in `pre`, the environment reported `event` at time `now`, and the core
@@ -326,6 +327,17 @@ def checkStep (oracle : Oracle) (m : Model) (pre : Exchange) (now : Nat) (event 
   if let some (.length size) := m.framing then
     found := flag found "the body written stays within its declared size" (m.acked > m.start + size)
       fun _ => s!"{m.acked} request bytes written, {m.start} of head and {size} of body declared"
+  -- A cancel ends the exchange in its step, with that end alone: a failure that says the call was
+  -- cancelled, or, while an abandoned body is drained, a finish whose connection is not reusable.
+  if let .cancel reason := event then
+    found := flag found "a cancel ends the exchange at once"
+      (!wasEnded && !(match actions.toList with
+        | [.fail f] =>
+          (match f.cause with | .cancelled r => r == reason | _ => false) &&
+            !(match pre.phase with | .draining => true | _ => false)
+        | [.finish false] => (match pre.phase with | .draining => true | _ => false)
+        | _ => false))
+      fun _ => s!"{actions.map renderAction}"
   found := flag found "the core ends only with an action" (post.terminal != m.ended)
     fun _ => s!"terminal={post.terminal}, ended={m.ended}"
   found := flag found "after the deadline the exchange has ended"

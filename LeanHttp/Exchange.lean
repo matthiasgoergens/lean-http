@@ -50,6 +50,8 @@ What the core guarantees, by construction:
   fails once the request head is out only stops the upload; the connection is not reused
   afterwards.
 - **Errors say how far the request got** (`Failure.delivery`, `Failure.written`).
+- **Cancelling ends the exchange at once** (`ExchangeEvent.cancel`), like the deadline firing
+  early: it fails with `Cause.cancelled` and the delivery so far, and the connection is not reused.
 
 The parser enforces the limits on interim responses and on the body, refuses
 `101 Switching Protocols` and a body with a transfer coding other than chunked, and delivers every
@@ -231,6 +233,14 @@ inductive ExchangeEvent where
   The pull in flight failed: the body's producer raised an error.
   -/
   | pullFailed (detail : String)
+
+  /--
+  The call was cancelled, for `reason`.  The exchange ends at once: it fails with
+  `Cause.cancelled`, or, while an abandoned body is drained (when nobody waits for an error), it
+  finishes with a connection that is not reusable.  Whatever is in flight is given up, so the
+  connection is never reused, whatever it carries.
+  -/
+  | cancel (reason : Std.CancellationReason)
 deriving Inhabited
 
 /--
@@ -921,6 +931,7 @@ private def handle : ExchangeEvent → StepM Unit
       release
       settle
   | .tick => pure ()
+  | .cancel reason => failOrDrop (.cancelled reason)
   | .abandon => do
     let ex ← getEx
     let ex := { ex with abandoned := true }
