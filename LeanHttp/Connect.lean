@@ -198,7 +198,10 @@ def round (config : Config) (roundIndex : Nat) (addrs : Array SocketAddress) (de
       break
     | .done (some .won) => break
     | .done (some .allEnded) =>
-      result := .failed
+      -- An attempt's time limit is capped at the deadline, so an attempt that timed out as the
+      -- deadline passed ended for the deadline: whichever of the two waits ended first, the round
+      -- reports the deadline then (on a loaded host the attempt's could end first).
+      result := if (← remainingMs deadline) == 0 then .deadline else .failed
       break
     | .done (some .attemptEnded) | .done none => pure ()
     | .timedOut =>
