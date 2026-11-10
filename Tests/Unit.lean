@@ -63,6 +63,17 @@ def backoffChecks : Checks Unit := do
   let schedules := (List.range 1000).map fun s => Backoff.schedule base cap s.toUInt64 3
   check "1000 seeds give at least 990 distinct schedules" (schedules.eraseDups.length ≥ 990)
     s!"{schedules.eraseDups.length} distinct"
+  -- After a Retry-After: the wait as a floor, at most a base on top, the cap over all.
+  let afters := (List.range 1000).map fun s => Backoff.afterDelayMs base cap s.toUInt64 0 3000
+  check "after Retry-After: within [3000, 3100] ms for 1000 seeds"
+    (afters.all fun d => 3000 ≤ d && d ≤ 3100)
+  check "after Retry-After: the draws spread over the base" (afters.eraseDups.length ≥ 90)
+    s!"{afters.eraseDups.length} distinct"
+  checkEq "after Retry-After past the cap: the cap" (Backoff.afterDelayMs base cap 42 0 9000) 5000
+  let policy : Backoff.Policy := { retries := 5, baseMs := base, capMs := cap }
+  checkEq "a policy without Retry-After: the backoff" (policy.delayMs 42 2 none) (Backoff.delayMs base cap 42 2)
+  checkEq "a policy with Retry-After: after it" (policy.delayMs 42 2 (some 700))
+    (Backoff.afterDelayMs base cap 42 2 700)
 
 /-! ## Addresses -/
 

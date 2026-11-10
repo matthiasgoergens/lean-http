@@ -168,7 +168,7 @@ The main settings, with their defaults (times in milliseconds):
 | `connectStaggerMs` | 250 | Delay before the next address is tried while an attempt is pending. |
 | `readGapMs` | 30 s | The longest time without progress: between two reads of the response, or for one 64 KiB slice of the request to be accepted. |
 | `maxRetriesPerHop`, `retryBudget` | 2, 4 | Retries of one request, and in the whole call. |
-| `backoffBaseMs`, `backoffCapMs` | 100, 5 s | Exponential backoff with full jitter before each retry.  `backoffSeed` fixes the jitter's seed, which every result and error records. |
+| `backoffBaseMs`, `backoffCapMs` | 100, 5 s | Exponential backoff with full jitter before each retry (`LeanHttp.Backoff`, which also offers a wait after a `Retry-After` with jitter on top, and a retry policy, for callers that retry on their own).  `backoffSeed` fixes the jitter's seed, which every result and error records. |
 | `retry429`, `retry503`, `maxRetryAfterMs` | off, off, 60 s | Retry these statuses after their `Retry-After`, up to the limit, for requests that may be sent again. |
 | `followRedirects`, `maxRedirects` | on, 10 | Follow 301, 302, 303, 307 and 308; one redirect more than the limit fails the call. |
 | `maxBodyBytes` | 64 MiB | The largest body `Client.request` reads; `withResponse` has no limit. |

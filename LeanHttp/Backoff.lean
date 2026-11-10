@@ -5,9 +5,11 @@ public section
 /-!
 # Backoff
 
-The delay before each retry of a failed connect: exponential backoff with full jitter, a uniform draw
-from `[0, min cap (base * 2 ^ attempt)]` milliseconds.  The draw is a pure function of a seed and the
-attempt number, so a call's schedule can be replayed from the seed recorded in its result or error.
+The delay before each retry: exponential backoff with full jitter, a uniform draw from
+`[0, min cap (base * 2 ^ attempt)]` milliseconds (`delayMs`), or, where a server asked for a wait
+(`Retry-After`), that wait with a draw from `[0, base]` on top (`afterDelayMs`), at most the cap; and a
+retry policy that picks between them (`Policy`).  The draw is a pure function of a seed and the attempt
+number, so a schedule can be replayed from the seed recorded in its result or error.
 -/
 
 namespace LeanHttp.Backoff
@@ -76,5 +78,70 @@ The delays before the first `n` retries.
 -/
 def schedule (baseMs capMs : Nat) (seed : UInt64) (n : Nat) : List Nat :=
   (List.range n).map (delayMs baseMs capMs seed)
+
+/--
+The delay in milliseconds before retry number `attempt` when the server asked for a wait of
+`retryAfterMs` (`Retry-After`): that wait as a floor, and on top a draw from `[0, baseMs]`, so that
+clients one response told to wait the same time do not all come back at the same moment; at most
+`capMs`.  Determined by `seed` and `attempt` alone, as `delayMs` is.
+-/
+def afterDelayMs (baseMs capMs : Nat) (seed : UInt64) (attempt retryAfterMs : Nat) : Nat :=
+  min capMs (retryAfterMs + (draw seed attempt).toNat % (baseMs + 1))
+
+/--
+A delay after `Retry-After` never exceeds the cap.
+-/
+theorem afterDelayMs_le_cap (baseMs capMs : Nat) (seed : UInt64) (attempt retryAfterMs : Nat) :
+    afterDelayMs baseMs capMs seed attempt retryAfterMs ≤ capMs :=
+  Nat.min_le_left _ _
+
+/--
+A delay after `Retry-After` waits at least what the server asked for, when that is within the cap.
+-/
+theorem le_afterDelayMs (baseMs capMs : Nat) (seed : UInt64) (attempt retryAfterMs : Nat)
+    (h : retryAfterMs ≤ capMs) : retryAfterMs ≤ afterDelayMs baseMs capMs seed attempt retryAfterMs := by
+  unfold afterDelayMs
+  omega
+
+/--
+A delay after `Retry-After` exceeds what the server asked for by at most the base.
+-/
+theorem afterDelayMs_le (baseMs capMs : Nat) (seed : UInt64) (attempt retryAfterMs : Nat) :
+    afterDelayMs baseMs capMs seed attempt retryAfterMs ≤ retryAfterMs + baseMs := by
+  unfold afterDelayMs
+  have := Nat.mod_lt (draw seed attempt).toNat (show 0 < baseMs + 1 by omega)
+  omega
+
+/--
+A retry policy: at most `retries` retries, each after a full-jitter backoff of base `baseMs` and cap
+`capMs` (`delayMs`), or after what a server asked for (`afterDelayMs`).
+-/
+structure Policy where
+  /-- Retries at most. -/
+  retries : Nat
+  /-- Base of the backoff, in milliseconds. -/
+  baseMs : Nat
+  /-- Ceiling of every delay, in milliseconds. -/
+  capMs : Nat
+  deriving Repr, DecidableEq
+
+/--
+The delay in milliseconds before retry number `attempt` under the policy: after `retryAfterMs` when
+the server asked for a wait, else the backoff.
+-/
+def Policy.delayMs (p : Policy) (seed : UInt64) (attempt : Nat) (retryAfterMs : Option Nat) : Nat :=
+  match retryAfterMs with
+  | some ms => afterDelayMs p.baseMs p.capMs seed attempt ms
+  | none => Backoff.delayMs p.baseMs p.capMs seed attempt
+
+/--
+A policy's delay never exceeds its cap.
+-/
+theorem Policy.delayMs_le_cap (p : Policy) (seed : UInt64) (attempt : Nat) (retryAfterMs : Option Nat) :
+    p.delayMs seed attempt retryAfterMs ≤ p.capMs := by
+  unfold Policy.delayMs
+  split
+  · exact afterDelayMs_le_cap ..
+  · exact Backoff.delayMs_le_cap ..
 
 end LeanHttp.Backoff
