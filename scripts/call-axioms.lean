@@ -13,6 +13,10 @@ Prints the axioms of the main theorems about the per-call planner.  Each must de
 open LeanHttp.Call
 
 #print axioms LeanHttp.Backoff.delayMs_le_cap
+#print axioms LeanHttp.Backoff.afterDelayMs_le_cap
+#print axioms LeanHttp.Backoff.le_afterDelayMs
+#print axioms LeanHttp.Backoff.afterDelayMs_le
+#print axioms LeanHttp.Backoff.Policy.delayMs_le_cap
 #print axioms toList_ofList
 #print axioms plan_follow_credentials
 #print axioms Reachable.credentials
