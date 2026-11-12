@@ -1,4 +1,0 @@
-Independent checks of branch upload (on main 7f80991, last commit amended to drop the TLS tests' generated keys from the logs and scrub host names), 2026-10-30, build host via scripts/remote.sh, fresh dirs:
-- history: no key or certificate text, no private strings; tls-certs/ now ignored
-- lake build; check-axioms.py: proof 50, codec 41, pool 31, call 34, all within propext, Classical.choice, Quot.sound; unit 179, traces 65, props 50000 seed 51, call-tests 139 -> upload-verify.txt
-- real sockets: 522 passed, 0 failed, 1 known (dns-timeout) -> upload-net-verify.txt

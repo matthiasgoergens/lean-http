@@ -1,3 +1,0 @@
-      19.2 listening on 127.0.0.1:18104
-      46.2 conn1 accepted from ('127.0.0.1', 41332)
-      50.0 conn1 req1 GET /ok {'host': ['127.0.0.1:18104'], 'connection': ['keep-alive']} body=0B

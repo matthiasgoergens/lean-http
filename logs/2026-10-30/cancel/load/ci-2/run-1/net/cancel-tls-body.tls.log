@@ -1,6 +1,0 @@
-      24.5 listening tls=18191 plain=18192 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
-      42.0 conn1 accepted from ('127.0.0.1', 41506)
-      43.4 sni=None
-      49.6 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
-      50.0 conn1 GET /trickle?ms=100 {'host': '127.0.0.1:18191', 'connection': 'keep-alive'} body=0B version=TLSv1.3
-     351.0 conn1 trickle stopped: BrokenPipeError(32, 'Broken pipe')

@@ -1,5 +1,0 @@
-      63.6 listening tls=18134 plain=18135 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
-      97.0 conn1 accepted from ('127.0.0.1', 59038)
-     103.1 conn1 handshake failed: SSLError(1, '[SSL: SSLV3_ALERT_BAD_CERTIFICATE] ssl/tls alert bad certificate (_ssl.c:1082)')
-     363.1 conn2 accepted from ('127.0.0.1', 59046)
-     376.5 conn2 handshake failed: SSLError(1, '[SSL: SSLV3_ALERT_BAD_CERTIFICATE] ssl/tls alert bad certificate (_ssl.c:1082)')

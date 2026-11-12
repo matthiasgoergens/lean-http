@@ -1,8 +1,0 @@
-### server=data delay=295ms size=1000 | client variant=closeable arg=0ms hold=300ms n=1
-  [client] bg selector finished: recv: 1000 bytes
-  [client] loop ended: some "recv: 1000 bytes"
-  [client] main returning
-  exit=0 wall=320ms 
-  [server] listening 30272
-  [server] server[0]: sent 1000
-  [server] server[0]: client closed

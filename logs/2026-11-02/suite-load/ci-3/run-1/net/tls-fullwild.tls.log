@@ -1,6 +1,0 @@
-      27.3 listening tls=18168 plain=18169 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
-     437.3 conn1 accepted from ('127.0.0.1', 60472)
-     441.0 sni=wild.lh.test
-     444.6 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
-     445.7 conn1 GET /hello {'host': 'wild.lh.test:18168', 'connection': 'keep-alive'} body=0B version=TLSv1.3
-     448.3 conn1 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

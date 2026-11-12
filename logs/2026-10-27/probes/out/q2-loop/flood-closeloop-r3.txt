@@ -1,6 +1,0 @@
-### server=flood delay=0ms size=65536 | client variant=closeloop arg=0ms hold=300ms n=1
-  [client] loop ended: some ()
-  [client] read 259584 bytes before main returned
-  [client] main returning
-  exit=0 wall=520ms 
-  [server] listening 24603

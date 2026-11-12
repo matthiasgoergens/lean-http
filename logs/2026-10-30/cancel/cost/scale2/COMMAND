@@ -1,1 +1,0 @@
-LEAN_HTTP_REMOTE_DIR=lean-http-cost scripts/remote.sh bash out/bench/scale.sh 10 102 1,4,16,64,128,256,1024,4096 cancel sweep2

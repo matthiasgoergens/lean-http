@@ -1,8 +1,0 @@
-$ net-client call GET http://127.0.0.1:18080/stall-head?ms=10000 gap=1000
-call 0 error delivery=maybe delivered ms=3281.439 rounds=3 lookups=0 seed=13089994470592713083 reused=false redispatched=false hops=0 retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="read timeout" detail=""
-pool idle=0 checked_out=0 allocated=3
-trace call 0 ok steps=3
-trace call 0 retry delays=[69, 150] gaps=[70, 180]
-fds_after_calls=11
-main returning at ms=3282.606 started_unix_us=1793620649688639 returning_unix_us=1793620652971245
-exit status=0 wall_ms=3311 start_ms=10 exit_after_main_ms=18

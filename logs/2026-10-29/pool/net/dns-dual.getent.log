@@ -1,6 +1,0 @@
-::1             STREAM dual.test
-::1             DGRAM  
-::1             RAW    
-127.0.0.1       STREAM 
-127.0.0.1       DGRAM  
-127.0.0.1       RAW    

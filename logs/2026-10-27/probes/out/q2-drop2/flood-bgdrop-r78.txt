@@ -1,4 +1,0 @@
-### server=flood delay=300ms size=65536 | client variant=bgdrop arg=0ms hold=300ms n=1
-  [client] uncaught exception: no such thing (error code: 111, connection refused)
-  exit=1 wall=523ms 
-  [server] listening 26340

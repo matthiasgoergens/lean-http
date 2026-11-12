@@ -1,9 +1,0 @@
-    69.34%  [kernel.kallsyms]
-    26.35%  net-client-main  
-     4.02%  libc.so.6        
-     0.28%  [vdso]           
-
-    66.74%  [kernel.kallsyms]
-    28.94%  net-client-cancel
-     4.12%  libc.so.6        
-     0.20%  [vdso]           

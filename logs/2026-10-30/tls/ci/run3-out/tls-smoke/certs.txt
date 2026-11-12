@@ -1,4 +1,0 @@
-subject=CN = lean-http test good X509v3 Subject Alternative Name:      DNS:localhost, IP Address:127.0.0.1, IP Address:0:0:0:0:0:0:0:1 notBefore=Oct 30 10:27:40 2026 GMT notAfter=Nov  1 10:27:40 2026 GMT 
-subject=CN = lean-http test wrong X509v3 Subject Alternative Name:      DNS:other.example notBefore=Oct 30 10:27:40 2026 GMT notAfter=Nov  1 10:27:40 2026 GMT 
-subject=CN = lean-http test untrusted X509v3 Subject Alternative Name:      DNS:localhost, IP Address:127.0.0.1 notBefore=Oct 30 10:27:40 2026 GMT notAfter=Nov  1 10:27:40 2026 GMT 
-subject=CN = lean-http test expired X509v3 Subject Alternative Name:      DNS:localhost, IP Address:127.0.0.1 notBefore=Jan  1 00:00:00 2020 GMT notAfter=Jan  2 00:00:00 2020 GMT 

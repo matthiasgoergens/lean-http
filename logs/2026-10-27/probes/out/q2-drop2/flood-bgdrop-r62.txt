@@ -1,6 +1,0 @@
-### server=flood delay=300ms size=65536 | client variant=bgdrop arg=0ms hold=300ms n=1
-  [client] main returning
-  exit=0 wall=999ms 
-  [server] listening 20025
-  [server] server[0]: flood stopped after 65536: [Errno 32] Broken pipe
-  [server] server[0]: client closed

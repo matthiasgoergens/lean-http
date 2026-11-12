@@ -1,9 +1,0 @@
-rounds=5000 epochs=100 cells=cancel sweep2 sweep2-token token
-sweep2/cancel: median ratio=0.9791 95% interval=0.9595..1.0018 (epoch bootstrap); sweep2 slower in 2344 of 5000 rounds; per-epoch medians 0.757..1.392; lower load half: 0.9765, upper: 0.9851
-sweep2-token/token: median ratio=1.0012 95% interval=0.9874..1.0172 (epoch bootstrap); sweep2-token slower in 2515 of 5000 rounds; per-epoch medians 0.770..1.404; lower load half: 0.9971, upper: 1.0060
-token/cancel: median ratio=1.0164 95% interval=0.9912..1.0428 (epoch bootstrap); token slower in 2613 of 5000 rounds; per-epoch medians 0.735..1.453; lower load half: 1.0125, upper: 1.0189
-load average per round: min=341 median=471 max=576
-cancel: median call 640.3 us utime/call=322.2us stime/call=308.7us nvcsw/call=125.7 nivcsw/call=88.6
-sweep2: median call 613.5 us utime/call=303.2us stime/call=300.7us nvcsw/call=120.4 nivcsw/call=86.5
-sweep2-token: median call 659.9 us utime/call=342.2us stime/call=313.7us nvcsw/call=122.1 nivcsw/call=89.0
-token: median call 655.0 us utime/call=346.2us stime/call=310.2us nvcsw/call=124.9 nivcsw/call=89.0

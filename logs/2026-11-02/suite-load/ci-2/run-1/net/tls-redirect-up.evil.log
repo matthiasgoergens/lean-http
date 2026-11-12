@@ -1,5 +1,0 @@
-      27.4 listening on 127.0.0.1:18148
-      98.9 conn1 accepted from ('127.0.0.1', 47068)
-     100.4 conn1 req1 GET /redir/302?to=https://127.0.0.1:18146/hello {'host': ['127.0.0.1:18148'], 'connection': ['keep-alive']} body=0B
-     114.0 conn1 EOF from client after 1 requests
-     114.2 conn1 closed by server

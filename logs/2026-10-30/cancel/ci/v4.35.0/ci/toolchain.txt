@@ -1,6 +1,0 @@
-$ bash -c command -v lake && lake --version && lean --version && cat lean-toolchain
-/root/.elan/toolchains/leanprover--lean4---v4.35.0/bin/lake
-Lake version 5.0.0-src+eb6cafb (Lean version 4.35.0)
-Lean (version 4.35.0, x86_64-unknown-linux-gnu, commit eb6cafb7290e8bd5f2937522d8d804f58f02bafc, Release)
-leanprover/lean4:v4.34.1
-exit status 0, wall 68 ms

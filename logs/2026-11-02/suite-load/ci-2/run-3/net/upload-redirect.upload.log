@@ -1,8 +1,0 @@
-listening on 127.0.0.1:18126
-      38.0 conn0 accepted ('127.0.0.1', 55562)
-      40.9 conn0 POST /307 framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
-      41.7 conn0 EOF from client
-      75.6 conn1 accepted ('127.0.0.1', 55574)
-      78.3 conn1 POST /307 framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
-      80.1 conn1 POST /sink framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
-      81.0 conn1 EOF from client

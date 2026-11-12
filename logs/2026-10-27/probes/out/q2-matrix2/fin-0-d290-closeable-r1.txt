@@ -1,8 +1,0 @@
-### server=fin delay=290ms size=0 | client variant=closeable arg=0ms hold=300ms n=1
-  [client] bg selector finished: recv: EOF
-  [client] loop ended: some "recv: EOF"
-  [client] main returning
-  exit=0 wall=1080ms 
-  [server] listening 34161
-  [server] server[0]: FIN
-  [server] server[0]: client closed

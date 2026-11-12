@@ -1,6 +1,0 @@
-### server=data delay=300ms size=1048576 | client variant=bgshut arg=0ms hold=300ms n=1
-  [client] cancelRecv done
-  [client] main returning
-  exit=0 wall=307ms 
-  [server] listening 34102
-  [server] Exception in thread Thread-1 (serve):

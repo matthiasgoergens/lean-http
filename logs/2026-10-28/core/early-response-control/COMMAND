@@ -1,5 +1,0 @@
-Control for the early-response scenario: milestone 1's client (ee18238, which read only after writing everything) against the new scenario and server.
-$ scratch=$(mktemp --directory); git archive ee18238 | tar --extract --directory "$scratch"
-$ cp tests/net/early.py tests/net/run.sh "$scratch/tests/net/"; cp -r vendor "$scratch/"
-$ cd "$scratch" && LEAN_HTTP_REMOTE_DIR=lean-http-core-m1 scripts/remote.sh bash -c "lake build net-client && bash tests/net/run.sh early-response; cat out/net/early-response.txt out/net/early-response.early.log"
-Output in milestone1-ee18238.txt: the call ends with a write timeout after about 1 s and never sees the 413.

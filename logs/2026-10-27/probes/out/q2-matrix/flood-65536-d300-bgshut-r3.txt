@@ -1,7 +1,0 @@
-### server=flood delay=300ms size=65536 | client variant=bgshut arg=0ms hold=300ms n=1
-  [client] cancelRecv done
-  [client] main returning
-  exit=0 wall=309ms 
-  [server] listening 33874
-  [server] server[0]: flood stopped after 65536: [Errno 32] Broken pipe
-  [server] server[0]: client closed

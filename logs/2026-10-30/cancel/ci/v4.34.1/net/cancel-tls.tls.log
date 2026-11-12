@@ -1,3 +1,0 @@
-      15.4 listening tls=18185 plain=18186 mode=hang openssl=OpenSSL 3.5.9 29 Sep 2026
-      45.0 conn1 accepted from ('127.0.0.1', 47180)
-      45.2 conn1 accepted; never answering the handshake

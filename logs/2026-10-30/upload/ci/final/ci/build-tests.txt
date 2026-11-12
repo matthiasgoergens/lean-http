@@ -1,5 +1,0 @@
-$ lake_build_clean unit-tests codec-tests response-codec-tests core-tests codec-diff pool-tests call-tests call-diff fuzz-replay net-client
-✔ [121/126] Built Tests.Net (12s)
-✔ [124/126] Built Tests.Unit (13s)
-Build completed successfully (126 jobs).
-exit status 0, wall 15832 ms

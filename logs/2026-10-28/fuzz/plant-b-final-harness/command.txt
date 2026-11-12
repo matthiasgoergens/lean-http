@@ -1,4 +1,0 @@
-# Plant B: scratch copy of the tree at c82622e with, in vendor/.../H1.lean parseFixedBody's .incomplete branch,
-#   emitBodyChunk machine (.readBody (.fixed (if remaining == 1 then 0 else remaining))) false false #[] body
-# built with fuzz/run.sh fuzz/build.sh (LEAN_HTTP_REMOTE_DIR=lean-http-fuzz-planted-b), then
-# PIN_CPUS=70 fuzz/run.sh env AFL_BENCH_UNTIL_CRASH=1 fuzz/fuzz.sh .lake/fuzz/campaigns/plant-b2 600 1 200

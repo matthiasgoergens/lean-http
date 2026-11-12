@@ -1,4 +1,0 @@
-### server=fin delay=450ms size=0 | client variant=bg arg=0ms hold=300ms n=1
-  [client] main returning
-  exit=0 wall=317ms 
-  [server] listening 23615

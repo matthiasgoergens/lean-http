@@ -1,4 +1,0 @@
-Independent checks of the codec, 2026-10-28, the build host, v4.34.1 container:
-- branch codec at 72c83da, fresh dir lean-http-codec-verify: lake build; codec-axioms (41 theorems: 2 [propext], 39 [propext, Classical.choice, Quot.sound]); response-codec-tests (37 cases, 0 failing) -> codec-verify-mine.txt
-- codec-diff 9 20000 20000 (40037 inputs): every disagreement in the categories the branch classified; the codec never split-dependent -> codec-diff-seed9.txt
-- the combined tree (main + codec, conflicts in DESIGN.md and lakefile.lean resolved), fresh dir lean-http-merge-verify: lake build; 37 exchange and 41 codec theorems; unit 54, codec 40, response-codec 37, traces 44, props 50000 seed 21, all passing -> merge-verify.txt

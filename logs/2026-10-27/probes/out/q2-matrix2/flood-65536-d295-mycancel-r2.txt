@@ -1,8 +1,0 @@
-### server=flood delay=295ms size=65536 | client variant=mycancel arg=0ms hold=300ms n=1
-  [client] bg selector finished: 32768 bytes
-  [client] cancelRecv done
-  [client] main returning
-  exit=0 wall=342ms 
-  [server] listening 27335
-  [server] server[0]: flood stopped after 1769472: [Errno 104] Connection reset by peer
-  [server] server[0]: client closed

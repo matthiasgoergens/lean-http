@@ -1,8 +1,0 @@
-### server=data delay=305ms size=1000 | client variant=closeable arg=0ms hold=300ms n=1
-  [client] bg selector finished: closed
-  [client] loop ended: some "closed"
-  [client] main returning
-  exit=0 wall=413ms 
-  [server] listening 24541
-  [server] server[0]: sent 1000
-  [server] server[0]: client closed

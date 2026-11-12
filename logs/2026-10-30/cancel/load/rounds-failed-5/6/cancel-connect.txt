@@ -1,8 +1,0 @@
-$ net-client call GET http://127.0.0.1:18190/ connect=5000 cancel=1000 after=send
-call 0 error delivery=not sent ms=1016.832 rounds=1 lookups=0 seed=17783598318698173598 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="cancelled while connecting; could not connect: 127.0.0.1:18190 (round 0): abandoned"
-cancel fired at ms=1015.994
-pool idle=0 checked_out=0 allocated=1
-trace call 0 ok steps=1
-fds_after_calls=12
-main returning at ms=1017.403
-exit status=0 wall_ms=1093 exit_after_main_ms=76

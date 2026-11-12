@@ -1,8 +1,0 @@
-# Final build (c82622e): fuzz/run.sh (SKIP_LEAN_BUILD=1) bash -c: for three seeds afl-showmap -q -o <map> -- .lake/fuzz/plain/lean-http-fuzz < seed; comm over edge ids; AFL_DEBUG=1 for the map size
-hand-content-length: 5062 edges
-hand-chunked-ext-trailers: 5895 edges
-hand-empty-eof: 2855 edges
-edges in chunked but not content-length: 1094
-edges in content-length but not chunked: 261
-DEBUG: after guard init: __afl_map_size 77427, __afl_cov_map_size 77427, __afl_set_map_size 77427
-DEBUG: after guard init: __afl_map_size 77427, __afl_cov_map_size 77427, __afl_set_map_size 77427

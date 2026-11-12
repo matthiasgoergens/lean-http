@@ -1,3 +1,0 @@
-GET 200 application/json {"greeting": "hello"}
-POST 200 33 bytes: {"name": "lean-http", "stars": 5}
-refused: could not connect: 127.0.0.1:1 (round 0): no such thing (error code: 111, connection refused); the server cannot have seen the request: sending it again is safe

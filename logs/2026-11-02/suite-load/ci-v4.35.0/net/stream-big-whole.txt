@@ -1,6 +1,0 @@
-$ net-client stream GET http://127.0.0.1:18117/bigbody?n=200000000 whole=1 maxbody=300000000
-call 0 ok status=200 bytes=200000000 ms=702.136 rounds=1 lookups=0 address=127.0.0.1:18117 seed=18159740458354506355 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18117/bigbody?n=200000000 tls=none body_start="zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
-trace call 0 ok steps=1
-rss_peak_kb=430872 rss_kb=430872
-main returning at ms=703.410 started_unix_us=1793620725084602 returning_unix_us=1793620725788013
-exit status=0 wall_ms=946 start_ms=12 exit_after_main_ms=229

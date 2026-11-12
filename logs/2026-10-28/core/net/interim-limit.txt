@@ -1,5 +1,0 @@
-$ net-client call GET http://127.0.0.1:18080/interim-forever?ms=5
-call 0 error delivery=maybe delivered ms=57.066 rounds=1 seed=4067570510018227128 status=none cause="interim responses limit exceeded" detail=""
-fds_after_calls=11
-main returning at ms=57.535
-exit status=0 wall_ms=72 exit_after_main_ms=15

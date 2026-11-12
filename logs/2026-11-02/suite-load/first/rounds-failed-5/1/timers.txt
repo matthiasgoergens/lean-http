@@ -1,3 +1,0 @@
-$ net-client timers n=10 hammer=4 pinloop=127
-uncaught exception: no thread of this process waits in epoll_wait
-exit status=1 wall_ms=911

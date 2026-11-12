@@ -1,3 +1,0 @@
-      24.6 listening tls=18154 plain=18155 mode=tls11 openssl=OpenSSL 3.5.9 29 Sep 2026
-     319.7 conn1 accepted from ('127.0.0.1', 44110)
-     326.3 conn1 handshake failed: SSLError(1, '[SSL: UNSUPPORTED_PROTOCOL] unsupported protocol (_ssl.c:1082)')

@@ -1,7 +1,0 @@
-$ net-client call GET https://127.0.0.1:18140/hello
-call 0 error delivery=not sent ms=116.730 rounds=0 lookups=0 seed=8415850006490474494 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS setup failed: SSL_CERT_FILE names /nonexistent.pem, which is not a file" detail=""
-pool idle=0 checked_out=0 allocated=1
-trace call 0 ok steps=1
-fds_after_calls=10
-main returning at ms=117.342
-exit status=0 wall_ms=132 exit_after_main_ms=15

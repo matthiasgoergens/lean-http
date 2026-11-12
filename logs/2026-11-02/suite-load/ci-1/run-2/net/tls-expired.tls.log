@@ -1,4 +1,0 @@
-      25.6 listening tls=18138 plain=18139 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
-      94.1 conn1 accepted from ('127.0.0.1', 48134)
-     125.3 sni=None
-     128.8 conn1 handshake failed: SSLError(1, '[SSL: SSLV3_ALERT_CERTIFICATE_EXPIRED] ssl/tls alert certificate expired (_ssl.c:1082)')

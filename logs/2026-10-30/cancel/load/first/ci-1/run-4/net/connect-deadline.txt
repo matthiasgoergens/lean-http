@@ -1,7 +1,0 @@
-$ net-client call GET http://[::1]:18086/ deadline=1500
-call 0 error delivery=not sent ms=1521.551 rounds=1 lookups=0 seed=8753190150580290516 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="deadline timeout" detail="could not connect: [::1]:18086 (round 0): abandoned"
-pool idle=0 checked_out=0 allocated=1
-trace call 0 ok steps=1
-fds_after_calls=12
-main returning at ms=1522.129
-exit status=0 wall_ms=2857 exit_after_main_ms=1335

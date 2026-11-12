@@ -1,1 +1,0 @@
-blocks=30 median ratio=1.267 95% interval=1.166..1.350 main p50 median=0.274 ms cancel p50 median=0.353 ms cancel slower in 29 of 30 blocks

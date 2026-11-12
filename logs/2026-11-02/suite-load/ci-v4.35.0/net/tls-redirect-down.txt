@@ -1,7 +1,0 @@
-$ net-client call GET https://127.0.0.1:18146/redirect-http ca=/w/out/net/tls-certs/ca.pem auth=Bearer-secret
-call 0 ok status=200 bytes=12 ms=14.744 rounds=2 lookups=0 address=127.0.0.1:18147 seed=10221094390936826188 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=1 retries=0 uri=http://127.0.0.1:18147/plain tls=none body_start="plain hello\n"
-pool idle=2 checked_out=0 allocated=2
-trace call 0 ok steps=2
-fds_after_calls=11
-main returning at ms=16.308 started_unix_us=1793620777909990 returning_unix_us=1793620777926299
-exit status=0 wall_ms=69 start_ms=46 exit_after_main_ms=6

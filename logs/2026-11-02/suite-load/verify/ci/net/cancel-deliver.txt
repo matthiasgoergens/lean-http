@@ -1,9 +1,0 @@
-$ net-client stream GET http://127.0.0.1:18193/ok cancel=0 after=deliver
-stream call 0 error delivery=response received ms=23.409 rounds=1 lookups=0 seed=56179093283308954 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the call was cancelled (cancel)" detail="" read_before=0
-callback entered at ms=5.999
-after stream 0: pool idle=0 checked_out=0 allocated=1
-cancel fired at ms=5.744
-trace call 0 ok steps=1
-rss_peak_kb=16716 rss_kb=16716
-main returning at ms=24.355 started_unix_us=1793623572997458 returning_unix_us=1793623573021812
-exit status=0 wall_ms=46 start_ms=9 exit_after_main_ms=13

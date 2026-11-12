@@ -1,2 +1,0 @@
-cancel/main: blocks=40 median ratio=1.097 95% interval=1.065..1.117 main p50 median=0.244 ms cancel p50 median=0.260 ms cancel slower in 35 of 40 blocks
-token/main: blocks=40 median ratio=1.137 95% interval=1.086..1.163 main p50 median=0.244 ms token p50 median=0.280 ms token slower in 39 of 40 blocks

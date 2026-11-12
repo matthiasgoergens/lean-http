@@ -1,7 +1,0 @@
-$ net-client upload POST http://127.0.0.1:18121/sink size=0 declare=none
-upload call 0 ok status=200 bytes=46 ms=234.719 rounds=1 lookups=0 address=127.0.0.1:18121 seed=8220452940126819433 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18121/sink tls=none body_start="pattern=ok received=0 framing=chunked ch" pulls=1 produced=0 response="pattern=ok received=0 framing=chunked chunks=0"
-after upload 0: pool idle=1 checked_out=0 allocated=1
-trace call 0 ok steps=1
-rss_peak_kb=9380 rss_kb=9392
-main returning at ms=235.720 started_unix_us=1793620779495396 returning_unix_us=1793620779731117
-exit status=0 wall_ms=258 start_ms=18 exit_after_main_ms=4

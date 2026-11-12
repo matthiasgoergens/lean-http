@@ -1,9 +1,0 @@
-      24.6 listening on 127.0.0.1:18096
-      90.1 conn1 accepted from ('127.0.0.1', 38228)
-      90.8 conn1 req1 HEAD /head-stray {'host': ['127.0.0.1:18096'], 'connection': ['keep-alive']} body=0B
-      92.5 conn1 EOF from client after 1 requests
-      92.6 conn1 closed by server
-      93.4 conn2 accepted from ('127.0.0.1', 38234)
-      94.4 conn2 req1 HEAD /head-stray {'host': ['127.0.0.1:18096'], 'connection': ['keep-alive']} body=0B
-      94.9 conn2 EOF from client after 1 requests
-      95.0 conn2 closed by server

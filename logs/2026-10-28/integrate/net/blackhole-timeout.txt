@@ -1,6 +1,0 @@
-$ net-client call GET http://[::1]:18084/ connect=1000 retries=1 seed=1 linger=9000
-call 0 error delivery=not sent ms=2026.631 rounds=2 seed=1 status=none cause="could not connect: [::1]:18084 (round 0): timed out; [::1]:18084 (round 1): timed out" detail="" attempts=[[::1]:18084#0:timedOut, [::1]:18084#1:timedOut]
-fds_after_calls=13
-fds_after_linger_9000ms=11
-main returning at ms=11027.188
-exit status=0 wall_ms=11037 exit_after_main_ms=10

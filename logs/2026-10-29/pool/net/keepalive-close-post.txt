@@ -1,9 +1,0 @@
-$ net-client call POST http://127.0.0.1:18092/close-after-idle?ms=200 body=5 repeat=2 pause=500 idlecheck=off
-call 0 ok status=200 bytes=2 ms=0.972 rounds=1 address=127.0.0.1:18092 seed=1977786224580546928 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false body_start="ok"
-call 1 error delivery=maybe delivered ms=0.605 rounds=0 seed=5702561903346642038 reused=true redispatched=false status=none cause="the connection closed before a complete response" detail=""
-summary calls n=2 min=0.605 p50=0.972 p90=0.972 max=0.972 ms ok=1
-summary later calls n=1 min=0.605 p50=0.605 p90=0.605 max=0.605 ms
-pool idle=0 checked_out=0 allocated=1
-fds_after_calls=11
-main returning at ms=501.872
-exit status=0 wall_ms=506 exit_after_main_ms=5

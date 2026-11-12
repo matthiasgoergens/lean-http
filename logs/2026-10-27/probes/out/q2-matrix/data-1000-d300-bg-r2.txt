@@ -1,6 +1,0 @@
-### server=data delay=300ms size=1000 | client variant=bg arg=0ms hold=300ms n=1
-  [client] main returning
-  exit=0 wall=314ms 
-  [server] listening 37633
-  [server] server[0]: sent 1000
-  [server] server[0]: recv [Errno 104] Connection reset by peer

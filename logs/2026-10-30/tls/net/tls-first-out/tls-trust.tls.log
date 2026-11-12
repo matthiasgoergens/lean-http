@@ -1,9 +1,0 @@
-      65.1 listening tls=18140 plain=18141 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
-      84.1 conn1 accepted from ('127.0.0.1', 36952)
-      90.7 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
-      91.5 conn1 GET /hello {'host': '127.0.0.1:18140', 'connection': 'keep-alive'} body=0B version=TLSv1.3
-     166.7 conn1 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
-     305.1 conn2 accepted from ('127.0.0.1', 60680)
-     308.1 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
-     313.9 conn2 GET /hello {'host': '127.0.0.1:18140', 'connection': 'keep-alive'} body=0B version=TLSv1.3
-     364.3 conn2 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

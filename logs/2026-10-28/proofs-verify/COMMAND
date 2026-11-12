@@ -1,3 +1,0 @@
-Independent clean build of the proofs (branch proofs at c9ca3eb, same tree as main after the tidy merge), 2026-10-28, the build host, v4.34.1 container, fresh remote dir lean-http-proofs-verify:
-$ LEAN_HTTP_REMOTE_DIR=lean-http-proofs-verify scripts/remote.sh bash -c "lake build; lake env lean scripts/proof-axioms.lean"
-Result: build succeeded; all 24 main theorems depend on [propext, Classical.choice, Quot.sound]; no sorry, admit or axiom in the sources (grep).
