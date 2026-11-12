@@ -1,0 +1,8 @@
+$ net-client call POST http://127.0.0.1:18082/ body=100 repeat=300
+call 0 ok status=200 bytes=12 ms=3.340 rounds=1 address=127.0.0.1:18082 seed=13114152880333594068 failed_attempts=[] body_start="{\"ok\": true}"
+call 1 ok status=200 bytes=12 ms=2.315 rounds=1 address=127.0.0.1:18082 seed=18346087332580496990 failed_attempts=[] body_start="{\"ok\": true}"
+call 2 ok status=200 bytes=12 ms=1.664 rounds=1 address=127.0.0.1:18082 seed=14196392728419769599 failed_attempts=[] body_start="{\"ok\": true}"
+summary calls n=300 min=0.315 p50=1.267 p90=3.854 max=59.816 ms ok=300
+fds_after_calls=11
+main returning at ms=632.706
+exit status=0 wall_ms=652 exit_after_main_ms=20

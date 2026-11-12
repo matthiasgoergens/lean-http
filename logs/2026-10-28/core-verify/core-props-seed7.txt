@@ -1,0 +1,19 @@
+PASS 300000 runs from seed 7: 2066564 steps checked
+  runs with bytes sent when no response could be due: 57320
+  runs with a final head before the request was written in full: 2474
+  runs that drained an abandoned body: 799
+  ended fail: the connection closed before a complete response [maybe delivered]: 51067
+  ended fail: invalid response [maybe delivered]: 48532
+  ended fail: write timeout [maybe delivered]: 40145
+  ended finish reusable=false: 38579
+  ended fail: deadline timeout [maybe delivered]: 35477
+  ended fail: read timeout [maybe delivered]: 22135
+  ended finish reusable=true: 20023
+  ended fail: the client closed the connection [maybe delivered]: 18179
+  ended fail: body size limit exceeded [response received]: 15219
+  ended fail: interim responses limit exceeded [maybe delivered]: 3837
+  ended fail: deadline timeout [response received]: 3784
+  ended fail: the connection closed before a complete response [response received]: 2200
+  ended fail: read timeout [response received]: 823
+  runs per script: [101 without upgrade=15607, 204 with Content-Length=15890, 300-byte body=15892, HEAD, Content-Length=15902, HEAD, chunked=15682, HEAD, then stray bytes=15864, HTTP/1.0=15753, chunked=15569, chunked, extensions and trailers=15703, close-delimited=15663, conflicting Content-Length=15854, content-length=15769, content-length, Connection: close=15827, early 413=15742, early 413, then close=15645, interim responses, then the final one=15915, not HTTP=15920, truncated body=15755, two responses=16048]
+exit 0

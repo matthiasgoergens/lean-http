@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18181/stall-head?ms=5000 cancel=300
+call 0 error delivery=maybe delivered ms=301.612 rounds=1 lookups=0 seed=2261306857662159010 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=302.141
+exit status=0 wall_ms=307 exit_after_main_ms=5

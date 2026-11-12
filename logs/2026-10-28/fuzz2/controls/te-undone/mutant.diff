@@ -1,0 +1,14 @@
+# the transfer-coding refusal is undone
+diff --git a/LeanHttp/Exchange.lean b/LeanHttp/Exchange.lean
+index 65a9c4b..4cc9344 100644
+--- a/LeanHttp/Exchange.lean
++++ b/LeanHttp/Exchange.lean
+@@ -190,7 +190,7 @@ transfer codings its head names: there is nothing they could apply to.
+ def refusal (config : ExchangeConfig) (head : Response.Head) : Framing → Option Cause
+   | .length n => if n > config.maxBody then some (.limit .body) else none
+   | .chunked =>
+-    if onlyChunked head then none
++    if true then none
+     else some (.protocol "a transfer coding other than chunked, which the client cannot decode")
+   | _ => none
+ 

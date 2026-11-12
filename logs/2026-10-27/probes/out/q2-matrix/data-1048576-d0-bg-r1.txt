@@ -1,0 +1,7 @@
+### server=data delay=0ms size=1048576 | client variant=bg arg=0ms hold=300ms n=1
+  [client] bg selector finished: 65536 bytes
+  [client] main returning
+  exit=0 wall=315ms 
+  [server] listening 30559
+  [server] server[0]: sent 1048576
+  [server] server[0]: recv [Errno 104] Connection reset by peer

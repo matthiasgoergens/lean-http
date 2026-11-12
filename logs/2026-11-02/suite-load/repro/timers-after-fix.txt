@@ -1,0 +1,31 @@
+loadavg 413.21 447.73 428.06 444/20061 2 rounds=5 hammer=4 cpu=101 hogs=32
+round 1
+pinned the event loop's thread 39 to CPU 101
+timers sleep waits=80 early=13 early_over_1ms=6 most_ms=46
+timers awaitFirst waits=80 early=0 early_over_1ms=0 most_ms=0
+timers race waits=80 early=0 early_over_1ms=0 most_ms=0
+main returning at ms=5840.291 started_unix_us=1793613276053754 returning_unix_us=1793613281894045
+round 2
+pinned the event loop's thread 100 to CPU 101
+timers sleep waits=80 early=23 early_over_1ms=19 most_ms=49
+timers awaitFirst waits=80 early=0 early_over_1ms=0 most_ms=0
+timers race waits=80 early=0 early_over_1ms=0 most_ms=0
+main returning at ms=9627.209 started_unix_us=1793613282335763 returning_unix_us=1793613291962972
+round 3
+pinned the event loop's thread 155 to CPU 101
+timers sleep waits=80 early=16 early_over_1ms=12 most_ms=98
+timers awaitFirst waits=80 early=0 early_over_1ms=0 most_ms=0
+timers race waits=80 early=0 early_over_1ms=0 most_ms=0
+main returning at ms=6910.414 started_unix_us=1793613292322742 returning_unix_us=1793613299233156
+round 4
+pinned the event loop's thread 226 to CPU 101
+timers sleep waits=80 early=27 early_over_1ms=27 most_ms=99
+timers awaitFirst waits=80 early=0 early_over_1ms=0 most_ms=0
+timers race waits=80 early=0 early_over_1ms=0 most_ms=0
+main returning at ms=4684.797 started_unix_us=1793613299660735 returning_unix_us=1793613304345532
+round 5
+pinned the event loop's thread 281 to CPU 101
+timers sleep waits=80 early=15 early_over_1ms=12 most_ms=80
+timers awaitFirst waits=80 early=0 early_over_1ms=0 most_ms=0
+timers race waits=80 early=0 early_over_1ms=0 most_ms=0
+main returning at ms=11551.356 started_unix_us=1793613305590060 returning_unix_us=1793613317141416

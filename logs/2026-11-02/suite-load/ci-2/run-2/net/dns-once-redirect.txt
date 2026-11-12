@@ -1,0 +1,7 @@
+$ net-client call GET http://dup.test:18189/chain/2 pool=0
+call 0 ok status=200 bytes=66 ms=165.438 rounds=3 lookups=1 address=127.0.0.1:18189 seed=9738895114681959995 failed_attempts=[] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=2 retries=0 uri=http://dup.test:18189/chain/0 tls=none body_start="GET /chain/0 auth=None cookie=None host="
+pool idle=0 checked_out=0 allocated=0
+trace call 0 ok steps=3
+fds_after_calls=11
+main returning at ms=166.611 started_unix_us=1793621450111768 returning_unix_us=1793621450278379
+exit status=0 wall_ms=293 start_ms=45 exit_after_main_ms=80

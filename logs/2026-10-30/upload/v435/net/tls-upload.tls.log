@@ -1,0 +1,13 @@
+      28.7 listening tls=18174 plain=18175 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+      96.0 conn1 accepted from ('127.0.0.1', 50994)
+      97.8 sni=None
+     101.3 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     180.1 conn1 PUT /count {'host': '127.0.0.1:18174', 'connection': 'keep-alive', 'content-length': '1000000'} body=1000000B version=TLSv1.3
+     282.2 conn1 PUT /count {'host': '127.0.0.1:18174', 'connection': 'keep-alive', 'content-length': '1000000'} body=1000000B version=TLSv1.3
+     320.5 conn1 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+     413.5 conn2 accepted from ('127.0.0.1', 51006)
+     419.2 sni=None
+     423.2 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     440.6 conn2 PUT /count {'host': '127.0.0.1:18174', 'connection': 'keep-alive', 'transfer-encoding': 'chunked'} body=1000000B version=TLSv1.3
+     527.2 conn2 PUT /count {'host': '127.0.0.1:18174', 'connection': 'keep-alive', 'transfer-encoding': 'chunked'} body=1000000B version=TLSv1.3
+     597.7 conn2 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

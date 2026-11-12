@@ -1,0 +1,18 @@
+$ bash examples/run.sh
+✔ [49/54] Built StreamExample (2.8s)
+✔ [50/54] Built RequestExample (2.0s)
+✔ [51/54] Built StreamExample:c.o (626ms)
+✔ [52/54] Built RequestExample:c.o (722ms)
+✔ [53/54] Built «stream-example»:exe (1.9s)
+✔ [54/54] Built «request-example»:exe (2.9s)
+Build completed successfully (54 jobs).
+GET 200 application/json {"greeting": "hello"}
+POST 200 33 bytes: {"name": "lean-http", "stars": 5}
+refused: could not connect: 127.0.0.1:1 (round 0): no such thing (error code: 111, connection refused); the server cannot have seen the request: sending it again is safe
+PASS request-example.txt: GET 200 application/json {"greeting": "hello"}
+PASS request-example.txt: POST 200 33 bytes: {"name": "lean-http", "stars": 5}
+PASS request-example.txt: the refused connect is reported as not sent
+streamed 200: 588890 bytes in 104 pieces
+PASS stream-example.txt: the whole body, in pieces
+0 failing
+exit status 0, wall 11638 ms

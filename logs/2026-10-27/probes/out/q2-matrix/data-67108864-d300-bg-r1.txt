@@ -1,0 +1,4 @@
+### server=data delay=300ms size=67108864 | client variant=bg arg=0ms hold=300ms n=1
+  [client] main returning
+  exit=0 wall=311ms 
+  [server] listening 26410

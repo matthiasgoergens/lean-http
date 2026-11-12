@@ -1,0 +1,34 @@
+Runs for the zero-gap fix, the proof that a live exchange has a deadline ahead, and liveness (branch live), on the build host in localhost/b8perf-lean with Lean v4.34.1.
+
+Everything, from a remote dir with its .lake removed first, at the commit in final/COMMIT:
+$ ssh buildhost 'rm --recursive --force lean-http-live/.lake && mkdir --parents lean-http-live/out'
+$ scp run-all.sh ../proofs/core-run.sh gap0/run.sh gap0/gap0.lean gap0/zero.lean clock/clock.lean buildhost:lean-http-live/out/
+$ LEAN_HTTP_REMOTE_DIR=lean-http-live scripts/remote.sh bash out/run-all.sh final
+  final/build.txt     lake build from scratch, LeanHttp.Exchange.Liveness among the modules, no warnings
+  final/axioms.txt    #print axioms for the 24 earlier and 12 new theorems
+  final/unit.txt, codec.txt, traces.txt, props-seed{1,2}.txt (200,000 random runs each), explore-10.txt
+                      the suites of core-run.sh, to compare with ../proofs/final/
+  final/replays.txt   the three replays below
+
+Replays (lake build TestSupport, then lake env lean [--run] on each):
+  gap0/gap0.lean  the earlier gap0 counterexample, unchanged: it no longer elaborates, since a gap
+                  given as a variable carries no proof that it is positive.
+  gap0/zero.lean  a configuration with gapMs := 0 as a literal fails to elaborate (gapMs_pos cannot be
+                  proved); the one with gapMs := 1 elaborates.
+  clock/clock.lean  the checker's "a live exchange has a deadline ahead", stated against its model's
+                  clock, fails when an event (wantBody at 5) comes earlier than a stale tick before it
+                  (at 1999), and holds in the control with wantBody at 1999.  ObservedMono.deadlineAhead
+                  proves the checker's form when no event but a tick is earlier than the latest event.
+
+Comparison with ../proofs/final/ (the runs before this branch): codec, traces, both random runs
+(including their statistics) and explore-10 are identical; unit has the two new checks of the read
+gap and 48 checks instead of 46, all passing.
+
+Review: gemini-review.txt is a cross-family review (Gemini 4 Argon through agy-readonly) of
+gemini-review.diff, the branch before the review fixes.  What came of it: ends_of_fair's fairness
+hypothesis excluded runs that end before any due event, so it now reads "a due event, or the
+exchange has ended"; ended_after_waits is a worst-case bound that no run reaches with a gap of 2 ms
+or more, which its docstring and the module header now say; the docstring of ended_at_deadline
+points to step_of_terminal for "unchanged".  Its point about readChunk = 0 is not fixed here (see
+the report): the theorems still hold, but the core then asks for reads of zero bytes, and an empty
+read resets the read gap.

@@ -1,0 +1,10 @@
+$ net-client call GET http://127.0.0.1:18085/ retries=2 base=4000 cap=4000 seed=3 shutdown=300
+call 0 error delivery=not sent ms=301.625 rounds=1 lookups=0 seed=3 reused=false redispatched=false hops=0 retries=1 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail="cancelled while waiting to retry"
+pool idle=0 checked_out=0 allocated=1
+after shutdown: call 1 error delivery=not sent ms=0.000 rounds=0 lookups=0 seed=3 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail="cancelled before the request was sent"
+after shutdown: pool idle=0 checked_out=0
+trace call 0 ok steps=2
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=302.554
+exit status=0 wall_ms=310 exit_after_main_ms=8

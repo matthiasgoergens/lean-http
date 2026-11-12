@@ -1,0 +1,7 @@
+      25.7 listening tls=18136 plain=18137 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+      42.5 conn1 accepted from ('127.0.0.1', 38242)
+      43.9 sni=None
+      46.4 conn1 handshake failed: SSLError(1, '[SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:1082)')
+     160.0 conn2 accepted from ('127.0.0.1', 38246)
+     161.1 sni=None
+     162.7 conn2 handshake failed: SSLError(1, '[SSL: TLSV1_ALERT_UNKNOWN_CA] tlsv1 alert unknown ca (_ssl.c:1082)')

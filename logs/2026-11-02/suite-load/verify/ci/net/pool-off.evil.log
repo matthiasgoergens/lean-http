@@ -1,0 +1,13 @@
+      20.1 listening on 127.0.0.1:18091
+      41.6 conn1 accepted from ('127.0.0.1', 43992)
+      42.4 conn1 req1 GET /ok {'host': ['127.0.0.1:18091'], 'connection': ['close']} body=0B
+      43.3 conn1 EOF from client after 1 requests
+      43.4 conn1 closed by server
+      44.6 conn2 accepted from ('127.0.0.1', 44002)
+      45.2 conn2 req1 GET /ok {'host': ['127.0.0.1:18091'], 'connection': ['close']} body=0B
+      45.7 conn2 EOF from client after 1 requests
+      45.8 conn2 closed by server
+      46.1 conn3 accepted from ('127.0.0.1', 44016)
+      46.7 conn3 req1 GET /ok {'host': ['127.0.0.1:18091'], 'connection': ['close']} body=0B
+      47.1 conn3 EOF from client after 1 requests
+      47.2 conn3 closed by server

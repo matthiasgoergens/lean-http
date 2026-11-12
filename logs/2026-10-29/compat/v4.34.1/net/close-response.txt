@@ -1,0 +1,11 @@
+$ net-client call GET http://127.0.0.1:18095/close-hdr repeat=2
+call 0 ok status=200 bytes=3 ms=126.243 rounds=1 address=127.0.0.1:18095 seed=7982794896416065636 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18095/close-hdr body_start="bye"
+call 1 ok status=200 bytes=3 ms=42.052 rounds=1 address=127.0.0.1:18095 seed=3382117616843185901 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18095/close-hdr body_start="bye"
+summary calls n=2 min=42.052 p50=126.243 p90=126.243 max=126.243 ms ok=2
+summary later calls n=1 min=42.052 p50=42.052 p90=42.052 max=42.052 ms
+pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=169.151
+exit status=0 wall_ms=186 exit_after_main_ms=17

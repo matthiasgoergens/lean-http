@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18114/infinite-redirect follow=0
+call 0 ok status=302 bytes=0 ms=3.209 rounds=1 lookups=0 address=127.0.0.1:18114 seed=16460051820529717666 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18114/infinite-redirect tls=none body_start=""
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=4.753 started_unix_us=1793621297791275 returning_unix_us=1793621297796029
+exit status=0 wall_ms=22 start_ms=10 exit_after_main_ms=7

@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18080/cl-mismatch
+call 0 error delivery=response received ms=30.388 rounds=1 lookups=0 seed=7952614111710813780 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the connection closed before a complete response" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=30.953 started_unix_us=1793621242566783 returning_unix_us=1793621242597736
+exit status=0 wall_ms=41 start_ms=7 exit_after_main_ms=2

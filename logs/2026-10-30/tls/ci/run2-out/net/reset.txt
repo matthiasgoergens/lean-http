@@ -1,0 +1,8 @@
+$ net-client call GET http://127.0.0.1:18080/rst
+call 0 error delivery=maybe delivered ms=180.269 rounds=3 seed=9259027070078103092 reused=false redispatched=false hops=0 retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="the connection closed before a complete response" detail="resource vanished (error code: 104, connection reset by peer)"
+pool idle=0 checked_out=0 allocated=3
+trace call 0 ok steps=3
+trace call 0 retry delays=[85, 87] gaps=[87, 88]
+fds_after_calls=11
+main returning at ms=181.982
+exit status=0 wall_ms=191 exit_after_main_ms=10

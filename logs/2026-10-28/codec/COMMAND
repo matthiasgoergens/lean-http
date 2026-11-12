@@ -1,0 +1,19 @@
+Runs for the response codec (branch codec), on the build host in localhost/b8perf-lean with Lean v4.34.1.
+
+All from commit c94d1e6, in a fresh remote dir with no .lake (lean-http-codec-final):
+$ scp codec-run.sh buildhost:lean-http-codec-final/out/ && LEAN_HTTP_REMOTE_DIR=lean-http-codec-final scripts/remote.sh bash out/codec-run.sh final
+  final/build.txt          lake build from scratch, the codec and its proofs among the modules built, no warnings
+  final/axioms.txt         #print axioms for the 41 main theorems: none beyond propext, Classical.choice and Quot.sound,
+                           no sorryAx
+  final/shapes-core.txt    codec-tests: the exchange core over the vendored machine, the 37 shapes (unchanged suite)
+  final/shapes-codec.txt   response-codec-tests: the codec over the same shapes, whole, byte by byte and split at
+                           every position; and its byte classes against Std.Http's on all 256 bytes
+  final/diff-seed{1..4}.txt  codec-diff <seed> 60000 60000: 120,037 inputs per seed, every disagreement with its
+                           attributed cause and up to four examples, and the core's outcome histogram
+  final/diff-control.txt   codec-diff 1 20000 20000 control: the codec's limits off by one, so that disagreements
+                           must appear (they do: 119 classes)
+  final/bench.txt          taskset --cpu-list 101 codec-bench 100 1: every observation, medians, and per-block
+                           ratios of codec time to core time
+
+review/gemini-statements.txt  a cross-family review (Gemini 4 Argon through agy-readonly) of the theorem statements at
+                           commit 3c97594; what it found is fixed or recorded in later commits and NOTES.md

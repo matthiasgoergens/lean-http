@@ -1,0 +1,222 @@
+[1;92m[+] [0mEnabled environment variable AFL_SKIP_CPUFREQ with value 1[0m
+[1;92m[+] [0mEnabled environment variable AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES with value 1[0m
+[1;92m[+] [0mEnabled environment variable AFL_NO_AFFINITY with value 1[0m
+[1;92m[+] [0mEnabled environment variable AFL_BENCH_UNTIL_CRASH with value 1[0m
+[1;92m[+] [0mEnabled environment variable AFL_NO_UI with value 1[0m
+[1;94m[*] [0mSpinning up the fork server...[0m
+[1;92m[+] [0mAll right - new fork server model v1 is up.[0m
+[1;94m[*] [0mTarget map size: 124594[0m
+[1;94m[*] [0mUsing SHARED MEMORY FUZZING feature.[0m
+[1;94m[*] [0mUsing futex persistent-mode synchronization.[0m
+[1;94m[*] [0mSpinning up the fork server...[0m
+[1;92m[+] [0mAll right - new fork server model v1 is up.[0m
+[1;94m[*] [0mTarget map size: 15852[0m
+[1;94m[*] [0mUsing SHARED MEMORY FUZZING feature.[0m
+[0;36mafl-fuzz++5.04a[0m
+[0;32mLicensed under AGPL-3.0-or-later. A (good cause donation) commercial license is
+available to companies that do not want to use the AGPL, see LICENSE.COMMERCIAL.
+[0m[1;93m[!] [1;97mWARNING: [0mParameters -d and -D are deprecated, a new enhanced deterministic fuzzing is active by default, to disable it use -z[0m
+[1;92m[+] [0mAFL++ is maintained by Marc "van Hauser" Heuse, Dominik Maier, Andrea Fioraldi and Heiko "hexcoder" Eißfeldt[0m
+[1;92m[+] [0mAFL++ is open source, get it at https://github.com/AFLplusplus/AFLplusplus[0m
+[1;92m[+] [0mNOTE: AFL++ >= v3 has changed defaults and behaviours - see README.md[0m
+[1;94m[*] [0mGetting to work...[0m
+[1;92m[+] [0mUsing exploration-based constant power schedule (EXPLORE)[0m
+[1;92m[+] [0mCmpLog level: 2[0m
+[1;92m[+] [0mEnabled testcache with 50 MB[0m
+[1;92m[+] [0mGenerating fuzz data with a length of min=1 max=2448[0m
+[1;92m[+] [0mFrameShift status: enabled (10% overhead configured)[0m
+[1;94m[*] [0mChecking core_pattern...[0m
+
+[1;91m[-] [0mYour system is configured to send core dump notifications to an
+    external utility. This will cause issues: there will be an extended delay
+    between stumbling upon a crash and having this information relayed to the
+    fuzzer via the standard waitpid() API.
+    If you're just experimenting, set 'AFL_I_DONT_CARE_ABOUT_MISSING_CRASHES=1'.
+
+    To avoid having crashes misinterpreted as timeouts, please 
+    temporarily modify /proc/sys/kernel/core_pattern, like so:
+
+    echo core | sudo tee /proc/sys/kernel/core_pattern
+[1;92m[+] [0mDisabling the UI because AFL_NO_UI is set.[0m
+[1;92m[+] [0mYou have 128 CPU cores and 159 runnable tasks (utilization: 124%).[0m
+[1;94m[*] [0mSetting up output directories...[0m
+[1;93m[!] [1;97mWARNING: [0mNot binding to a CPU core (AFL_NO_AFFINITY set).[0m
+[1;94m[*] [0mValidating target binary...[0m
+[1;92m[+] [0m[1;95mPersistent mode binary detected.[0m
+[1;92m[+] [0m[1;95mDeferred forkserver binary detected.[0m
+[1;94m[*] [0mScanning '.lake/fuzz/campaigns/plant-b-codec/seeds'...[0m
+[1;94m[*] [0mCreating hard links for all input files...[0m
+[1;92m[+] [0mLoaded a total of 56 seeds.[0m
+[1;94m[*] [0mValidating target binary...[0m
+[1;92m[+] [0m[1;95mPersistent mode binary detected.[0m
+[1;92m[+] [0m[1;95mDeferred forkserver binary detected.[0m
+[1;92m[+] [0mCoverage target: .lake/fuzz/plain/lean-http-fuzz (CmpLog: .lake/fuzz/cmplog/lean-http-fuzz)[0m
+[1;94m[*] [0mSpawning cmplog forkserver[0m
+[1;92m[+] [0mCMPLOG forkserver successfully started[0m
+[1;94m[*] [0mNo auto-generated dictionary tokens to reuse.[0m
+[1;94m[*] [0mLoading extra dictionary from 'fuzz/http-response.dict' (level 0)...[0m
+[1;94m[*] [0mLoaded 64 extra tokens, size range 1 B to 24 B.[0m
+[1;92m[+] [0mLoaded a total of 64 extras.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000000,time:0,execs:0,orig:hand-101'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000000,time:0,execs:0,orig:hand-101[0m
+[1;90m    len = 70, map size = 7480, exec speed = 859 us, hash = ef65316db79f1a01
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000001,time:0,execs:0,orig:hand-204-content-length'...[0m
+[1;90m    len = 47, map size = 8218, exec speed = 515 us, hash = 11ee1ede7491e6ef
+[0m[1;94m[*] [0mAttempting dry run with 'id:000002,time:0,execs:0,orig:hand-304-content-length'...[0m
+[1;90m    len = 51, map size = 8220, exec speed = 435 us, hash = 00618282276c26c2
+[0m[1;94m[*] [0mAttempting dry run with 'id:000003,time:0,execs:0,orig:hand-announced-above-2-62'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000003,time:0,execs:0,orig:hand-announced-above-2-62[0m
+[1;90m    len = 64, map size = 8075, exec speed = 500 us, hash = 570bc1331ef4a1b2
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000004,time:0,execs:0,orig:hand-announced-too-large'...[0m
+[1;90m    len = 42, map size = 8065, exec speed = 292 us, hash = 3a19274778f8d971
+[0m[1;94m[*] [0mAttempting dry run with 'id:000005,time:0,execs:0,orig:hand-chunked-bytewise'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000005,time:0,execs:0,orig:hand-chunked-bytewise[0m
+[1;90m    len = 68, map size = 9841, exec speed = 869 us, hash = dfe538388e50ac96
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000006,time:0,execs:0,orig:hand-chunked-ext-trailers'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000006,time:0,execs:0,orig:hand-chunked-ext-trailers[0m
+[1;90m    len = 123, map size = 10145, exec speed = 569 us, hash = b2824a963f54cc4f
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000007,time:0,execs:0,orig:hand-close-delimited'...[0m
+[1;90m    len = 50, map size = 8577, exec speed = 355 us, hash = 327137481c602839
+[0m[1;94m[*] [0mAttempting dry run with 'id:000008,time:0,execs:0,orig:hand-connection-close'...[0m
+[1;90m    len = 61, map size = 8668, exec speed = 350 us, hash = 03497e0f561f70ac
+[0m[1;94m[*] [0mAttempting dry run with 'id:000009,time:0,execs:0,orig:hand-content-length'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000009,time:0,execs:0,orig:hand-content-length[0m
+[1;90m    len = 48, map size = 8986, exec speed = 476 us, hash = 8f3d805c77a43545
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000010,time:0,execs:0,orig:hand-content-length-26'...[0m
+[1;90m    len = 68, map size = 8887, exec speed = 352 us, hash = fc622090831666a9
+[0m[1;94m[*] [0mAttempting dry run with 'id:000011,time:0,execs:0,orig:hand-empty-eof'...[0m
+[1;90m    len = 1, map size = 5171, exec speed = 290 us, hash = 8b501ccf5ba73dfe
+[0m[1;94m[*] [0mAttempting dry run with 'id:000012,time:0,execs:0,orig:hand-eof-in-chunk'...[0m
+[1;90m    len = 54, map size = 9118, exec speed = 489 us, hash = fa46c9791d27c496
+[0m[1;94m[*] [0mAttempting dry run with 'id:000013,time:0,execs:0,orig:hand-gzip-chunked'...[0m
+[1;90m    len = 71, map size = 8880, exec speed = 379 us, hash = 3a5da8a50a615f24
+[0m[1;94m[*] [0mAttempting dry run with 'id:000014,time:0,execs:0,orig:hand-head-chunked'...[0m
+[1;90m    len = 48, map size = 8297, exec speed = 313 us, hash = 33e670121a3cae9f
+[0m[1;94m[*] [0mAttempting dry run with 'id:000015,time:0,execs:0,orig:hand-head-content-length'...[0m
+[1;90m    len = 41, map size = 8213, exec speed = 299 us, hash = da4f75cd6f2f72a7
+[0m[1;94m[*] [0mAttempting dry run with 'id:000016,time:0,execs:0,orig:hand-http10-close-delimited'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000016,time:0,execs:0,orig:hand-http10-close-delimited[0m
+[1;90m    len = 23, map size = 7771, exec speed = 358 us, hash = aad3177568017926
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000017,time:0,execs:0,orig:hand-http10-keep-alive'...[0m
+[1;90m    len = 65, map size = 8878, exec speed = 379 us, hash = e1d3d25f31cec06f
+[0m[1;94m[*] [0mAttempting dry run with 'id:000018,time:0,execs:0,orig:hand-interim-then-final'...[0m
+[1;90m    len = 109, map size = 8878, exec speed = 415 us, hash = 7423f6026e0c546e
+[0m[1;94m[*] [0mAttempting dry run with 'id:000019,time:0,execs:0,orig:hand-options-ows'...[0m
+[1;90m    len = 56, map size = 8679, exec speed = 325 us, hash = 5be00abd74cf17f4
+[0m[1;94m[*] [0mAttempting dry run with 'id:000020,time:0,execs:0,orig:hand-post-417'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000020,time:0,execs:0,orig:hand-post-417[0m
+[1;90m    len = 55, map size = 8563, exec speed = 390 us, hash = 7200f40ff8e2ef9a
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000021,time:0,execs:0,orig:hand-post-chunked'...[0m
+[1;90m    len = 63, map size = 9953, exec speed = 461 us, hash = 3ffaf4526a373cbb
+[0m[1;94m[*] [0mAttempting dry run with 'id:000022,time:0,execs:0,orig:hand-stray-bytes-after'...[0m
+[1;90m    len = 65, map size = 8588, exec speed = 319 us, hash = 25dc006574e76961
+[0m[1;94m[*] [0mAttempting dry run with 'id:000023,time:0,execs:0,orig:httparse-00539ceddba008ef9767f1d77c7dfde61168f068'...[0m
+[1;90m    len = 13, map size = 5770, exec speed = 245 us, hash = cba87b186dc611b0
+[0m[1;94m[*] [0mAttempting dry run with 'id:000024,time:0,execs:0,orig:httparse-050f3c9158d41fd99956f8fda78c8364dcef272f'...[0m
+[1;90m    len = 12, map size = 5946, exec speed = 225 us, hash = e8ebd5eb815864de
+[0m[1;94m[*] [0mAttempting dry run with 'id:000025,time:0,execs:0,orig:httparse-05dba45d42bd9351161374ee2be54f36a29174b3'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000025,time:0,execs:0,orig:httparse-05dba45d42bd9351161374ee2be54f36a29174b3[0m
+[1;90m    len = 10, map size = 5670, exec speed = 281 us, hash = 1f56a1009bf1451e
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000026,time:0,execs:0,orig:httparse-08dacc71ae854a0bf7400629387a3469320457b7'...[0m
+[1;90m    len = 11, map size = 5730, exec speed = 226 us, hash = 762d311ffcfc75ff
+[0m[1;94m[*] [0mAttempting dry run with 'id:000027,time:0,execs:0,orig:httparse-0e12248d1afe79e06d91a059cf67a4419cc861ad'...[0m
+[1;90m    len = 15, map size = 6012, exec speed = 222 us, hash = b0b3ded63b0a0a0c
+[0m[1;94m[*] [0mAttempting dry run with 'id:000028,time:0,execs:0,orig:httparse-105e7f3e37b07d10b31748987c10ef3ed535a9b3'...[0m
+[1;90m    len = 16, map size = 6013, exec speed = 215 us, hash = 16f706f00e9affd2
+[0m[1;94m[*] [0mAttempting dry run with 'id:000029,time:0,execs:0,orig:httparse-107397486877383a9d3cd5e121531b845639937c'...[0m
+[1;90m    len = 8, map size = 5805, exec speed = 212 us, hash = b09b057993941856
+[0m[1;94m[*] [0mAttempting dry run with 'id:000030,time:0,execs:0,orig:httparse-128bb5d3b47352c06632b420bfdef79a6d7a128c'...[0m
+[1;93m[!] [1;97mWARNING: [0minstability detected during calibration: .lake/fuzz/campaigns/plant-b-codec/sync/main/queue/id:000030,time:0,execs:0,orig:httparse-128bb5d3b47352c06632b420bfdef79a6d7a128c[0m
+[1;90m    len = 8, map size = 5611, exec speed = 281 us, hash = c4e1e2a33942f755
+[0m[1;93m[!] [1;97mWARNING: [0mInstrumentation output varies across runs.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000031,time:0,execs:0,orig:httparse-13d06c120b3149bdfc0e4800db73545bea65abf3'...[0m
+[1;90m    len = 7, map size = 5574, exec speed = 213 us, hash = d1577f1068b4e259
+[0m[1;94m[*] [0mAttempting dry run with 'id:000032,time:0,execs:0,orig:httparse-13f311dcb5f2db18944143875d592a10f244797b'...[0m
+[1;90m    len = 11, map size = 5729, exec speed = 214 us, hash = e8b22c59758bacaa
+[0m[1;94m[*] [0mAttempting dry run with 'id:000033,time:0,execs:0,orig:httparse-166338b187d59dbed65a7811dbd58fd00bb05552'...[0m
+[1;90m    len = 13, map size = 5954, exec speed = 221 us, hash = e38075fd60b29fc1
+[0m[1;94m[*] [0mAttempting dry run with 'id:000034,time:0,execs:0,orig:httparse-1808f8e0038611c5eb7c0c29cace6fe7ecabe965'...[0m
+[1;90m    len = 7, map size = 5781, exec speed = 209 us, hash = cc5e6438f1fa1d5a
+[0m[1;94m[*] [0mAttempting dry run with 'id:000035,time:0,execs:0,orig:httparse-182d5def736d12e7507529edaf001aaf150ecae2'...[0m
+[1;90m    len = 10, map size = 5891, exec speed = 211 us, hash = 0acf8d8cc94084cd
+[0m[1;94m[*] [0mAttempting dry run with 'id:000036,time:0,execs:0,orig:httparse-19ba8347177e2e79b7f5b20b792b62274fd6c486'...[0m
+[1;90m    len = 7, map size = 5573, exec speed = 217 us, hash = 71ce157c6d3a8959
+[0m[1;94m[*] [0mAttempting dry run with 'id:000037,time:0,execs:0,orig:httparse-19ea31e159b480211f63fe4c6c29ac30ba88a2fd'...[0m
+[1;90m    len = 6, map size = 5742, exec speed = 219 us, hash = 014c9b9c733c276a
+[0m[1;94m[*] [0mAttempting dry run with 'id:000038,time:0,execs:0,orig:httparse-1a1ae7744a96a0b2fbec0e9310d5fddb9c78b313'...[0m
+[1;90m    len = 12, map size = 5763, exec speed = 222 us, hash = 8c319fd6b36d5b21
+[0m[1;94m[*] [0mAttempting dry run with 'id:000039,time:0,execs:0,orig:httparse-1a57f13a5a7aa37553ed4e603e724b0a2d2dab52'...[0m
+[1;90m    len = 10, map size = 5670, exec speed = 217 us, hash = c9d37e88b7993826
+[0m[1;93m[!] [1;97mWARNING: [0mNo new instrumentation output, test case may be useless.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000040,time:0,execs:0,orig:httparse-1ba3338bd0d397031ae85dc0347d63c94b00e5df'...[0m
+[1;90m    len = 9, map size = 5841, exec speed = 228 us, hash = 6e29587ad5eb844d
+[0m[1;94m[*] [0mAttempting dry run with 'id:000041,time:0,execs:0,orig:httparse-29e6eae8094a4aad725282b8f121d6a060dcc6ec'...[0m
+[1;90m    len = 8, map size = 5611, exec speed = 216 us, hash = 41a4355706388d61
+[0m[1;93m[!] [1;97mWARNING: [0mNo new instrumentation output, test case may be useless.[0m
+[1;94m[*] [0mAttempting dry run with 'id:000042,time:0,execs:0,orig:httparse-2a9a9a70461d9611143e4100ae9ca9de72f09d11'...[0m
+[1;90m    len = 9, map size = 5632, exec speed = 208 us, hash = c4eb3d69a58626f1
+[0m[1;94m[*] [0mAttempting dry run with 'id:000043,time:0,execs:0,orig:httparse-2d70bd46e08eb19843c1ef091ba43ce1e74f8c28'...[0m
+[1;90m    len = 46, map size = 6013, exec speed = 232 us, hash = fff6511b81cb3b81
+[0m[1;94m[*] [0mAttempting dry run with 'id:000044,time:0,execs:0,orig:httparse-44a5d6a04866797f18f359d17d6917f75d66df02'...[0m
+[1;90m    len = 17, map size = 5863, exec speed = 217 us, hash = 64c4f73c16fd2e7b
+[0m[1;94m[*] [0mAttempting dry run with 'id:000045,time:0,execs:0,orig:httparse-50b124ab56490a6d9df7a18ea535254a523883d2'...[0m
+[1;90m    len = 13, map size = 5770, exec speed = 219 us, hash = fb26a0610be299eb
+[0m[1;94m[*] [0mAttempting dry run with 'id:000046,time:0,execs:0,orig:httparse-5379a4ecd23f8bc45ad7ead1ce862a52a58f1bd4'...[0m
+[1;90m    len = 11, map size = 5936, exec speed = 219 us, hash = c7053792d38769db
+[0m[1;94m[*] [0mAttempting dry run with 'id:000047,time:0,execs:0,orig:httparse-581ad15579bfedff31349f9dff953a23493bcf0a'...[0m
+[1;90m    len = 15, map size = 5851, exec speed = 226 us, hash = 67ad0d57fa84821b
+[0m[1;94m[*] [0mAttempting dry run with 'id:000048,time:0,execs:0,orig:httparse-5872dd47a45d80469bcff5e77d2c1025b7b36ff3'...[0m
+[1;90m    len = 12, map size = 5763, exec speed = 214 us, hash = 203445bb6a5b0184
+[0m[1;94m[*] [0mAttempting dry run with 'id:000049,time:0,execs:0,orig:httparse-5be7e3536ff0508d44f8ad8401d98c4cb101943a'...[0m
+[1;90m    len = 18, map size = 6014, exec speed = 227 us, hash = 181fbcccf73bd64f
+[0m[1;94m[*] [0mAttempting dry run with 'id:000050,time:0,execs:0,orig:httparse-80191435889a3d4b4849683e7a96b255df8fa472'...[0m
+[1;90m    len = 16391, map size = 5787, exec speed = 226 us, hash = 897f786491425930
+[0m[1;94m[*] [0mAttempting dry run with 'id:000051,time:0,execs:0,orig:httparse-b12b280751605f0775cf9dc431918cacedc01b54'...[0m
+[1;90m    len = 16, map size = 5845, exec speed = 219 us, hash = a57b0fc14ac40974
+[0m[1;94m[*] [0mAttempting dry run with 'id:000052,time:0,execs:0,orig:httparse-b60263b8230cbb9db70b0c8e5a5028488e7f5d5a'...[0m
+[1;90m    len = 49, map size = 6316, exec speed = 268 us, hash = 1001dbb808ebba5f
+[0m[1;94m[*] [0mAttempting dry run with 'id:000053,time:0,execs:0,orig:httparse-b951c0ccbd2b35943c112743db8c4d242041236d'...[0m
+[1;90m    len = 16, map size = 6237, exec speed = 221 us, hash = bc5e2fba8c3666b5
+[0m[1;94m[*] [0mAttempting dry run with 'id:000054,time:0,execs:0,orig:httparse-c9acf39235d31af3187bdc01eac0ee3a5e2f2bb9'...[0m
+[1;90m    len = 15, map size = 6031, exec speed = 217 us, hash = fbc8938a760008e0
+[0m[1;94m[*] [0mAttempting dry run with 'id:000055,time:0,execs:0,orig:httparse-d411a0274ca79e96549871f1b72c682baedd381a'...[0m
+[1;90m    len = 14, map size = 5997, exec speed = 209 us, hash = 0e39ac0385b464f4
+[0m[1;92m[+] [0mAll test cases processed.[0m
+[1;93m[!] [1;97mWARNING: [0mSome test cases are big (16.0 kB) - see /usr/local/share/doc/afl/fuzzing_in_depth.md#i-improve-the-speed[0m
+[1;93m[!] [1;97mWARNING: [0m[1;91mSome test cases look useless. Consider using a smaller set.[0m
+[1;93m[!] [1;97mWARNING: [0mYou have lots of input files; try starting small.[0m
+[1;92m[+] [0mHere are some useful stats:
+
+[1;90m    Test case count : [0m39 favored, 9 variable, 0 ignored, 56 total
+[1;90m       Bitmap range : [0m5171 to 10145 bits (average: 6944.50 bits)
+[1;90m        Exec timing : [0m208 to 869 us (average: 359 us)
+[0m
+[1;94m[*] [0m-t option specified. We'll use an exec timeout of 200 ms.[0m
+[1;92m[+] [0mAll set and ready to roll![0m
+[1;94m[*] [0mEntering queue cycle 1
+[0m
+[1;94m[*] [0mFuzzing test case #0 (56 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=859, hits=0, map=7480, ascii=1, run_time=0:00:00:00, cvg=11.01%) FS (t=0:00:00:00 (0.00%), st=0, avg=0 ms, found=0/0)...[0m
+[1;94m[*] [0mFuzzing test case #1 (265 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=515, hits=0, map=8218, ascii=1, run_time=0:00:00:04, cvg=11.49%) FS (t=0:00:00:00 (0.00%), st=0, avg=0 ms, found=0/0)...[0m
+[1;94m[*] [0mFuzzing test case #2 (319 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=435, hits=0, map=8220, ascii=1, run_time=0:00:00:08, cvg=11.56%) FS (t=0:00:00:00 (0.15%), st=18, avg=13 ms, found=0/1)...[0m
+[1;94m[*] [0mFuzzing test case #3 (321 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=500, hits=0, map=8075, ascii=1, run_time=0:00:00:08, cvg=11.56%) FS (t=0:00:00:00 (0.21%), st=43, avg=9 ms, found=0/2)...[0m
+[1;94m[*] [0mFuzzing test case #4 (335 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=292, hits=0, map=8065, ascii=1, run_time=0:00:00:09, cvg=11.56%) FS (t=0:00:00:00 (0.80%), st=155, avg=24 ms, found=0/3)...[0m
+[1;94m[*] [0mFuzzing test case #5 (337 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=869, hits=0, map=9841, ascii=1, run_time=0:00:00:09, cvg=11.56%) FS (t=0:00:00:00 (0.85%), st=168, avg=19 ms, found=0/4)...[0m
+[1;94m[*] [0mFuzzing test case #6 (598 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=569, hits=0, map=10145, ascii=1, run_time=0:00:00:30, cvg=11.86%) FS (t=0:00:00:00 (0.73%), st=282, avg=44 ms, found=0/5)...[0m
+[1;94m[*] [0mFuzzing test case #8 (743 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=350, hits=0, map=8668, ascii=1, run_time=0:00:00:34, cvg=12.09%) FS (t=0:00:00:00 (1.30%), st=616, avg=74 ms, found=0/6)...[0m
+[1;94m[*] [0mFuzzing test case #9 (745 total, 0 crashes saved[0m, state: started :-), mode=explore, perf_score=100, weight=1, favorite=1, was_fuzzed=0, exec_us=476, hits=0, map=8986, ascii=1, run_time=0:00:00:34, cvg=12.09%) FS (t=0:00:00:00 (1.33%), st=656, avg=65 ms, found=0/7)...[0m
+[?25h[1;91m
+
++++ Testing aborted programmatically +++
+[0m[1;94m[*] [0mStatistics: 690 new corpus items found, 12.09% coverage achieved, 1 crashes saved, 0 timeouts saved, total runtime 0 days, 0 hrs, 0 min, 34 sec[0m
+[1;94m[*] [0mWriting .lake/fuzz/campaigns/plant-b-codec/sync/main/fastresume.bin ...[0m
+[1;92m[+] [0mfastresume.bin successfully written with 2953274 bytes.[0m
+[1;92m[+] [0mWe're done here. Have a nice day!
+[0m

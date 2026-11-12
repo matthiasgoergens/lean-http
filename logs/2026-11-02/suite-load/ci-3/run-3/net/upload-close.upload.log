@@ -1,0 +1,13 @@
+listening on 127.0.0.1:18125
+      87.4 conn0 accepted ('127.0.0.1', 60754)
+      93.0 conn0 PUT /close framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
+      93.1 conn0 closing after 100000 body bytes, without an answer
+    1105.4 conn1 accepted ('127.0.0.1', 60760)
+    1107.9 conn1 PUT /close framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
+    1107.9 conn1 closing after 100000 body bytes, without an answer
+    1130.9 conn2 accepted ('127.0.0.1', 60762)
+    1173.7 conn2 PUT /close framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
+    1173.8 conn2 closing after 100000 body bytes, without an answer
+    1196.9 conn3 accepted ('127.0.0.1', 60776)
+    1198.8 conn3 PUT /close framing=length received=100000 chunks=0 pattern=ok fields=['connection', 'content-length', 'host']
+    1198.9 conn3 closing after 100000 body bytes, without an answer

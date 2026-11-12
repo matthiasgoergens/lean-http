@@ -1,0 +1,53 @@
+      32.7 listening on 127.0.0.1:18097
+     338.8 conn1 accepted from ('127.0.0.1', 44180)
+     339.8 conn1 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     340.1 conn2 accepted from ('127.0.0.1', 44188)
+     486.8 conn2 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     490.3 conn3 accepted from ('127.0.0.1', 44190)
+     629.9 conn4 accepted from ('127.0.0.1', 44202)
+     630.2 conn3 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+     801.8 conn4 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    1107.3 conn5 accepted from ('127.0.0.1', 44206)
+    1108.9 conn5 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    1109.2 conn6 accepted from ('127.0.0.1', 44216)
+    1109.6 conn7 accepted from ('127.0.0.1', 44222)
+    1109.8 conn6 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    1109.9 conn7 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    1109.9 conn8 accepted from ('127.0.0.1', 44234)
+    1110.1 conn8 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    3168.2 conn8 EOF from client after 1 requests
+    3168.7 conn8 closed by server
+    3473.8 conn1 EOF from client after 1 requests
+    3473.9 conn1 closed by server
+    3699.8 conn5 EOF from client after 1 requests
+    3699.9 conn5 closed by server
+    4209.7 conn7 req2 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    4214.5 conn6 EOF from client after 1 requests
+    4214.8 conn6 closed by server
+    4242.0 conn4 req2 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    4242.7 conn9 accepted from ('127.0.0.1', 44236)
+    4243.4 conn10 accepted from ('127.0.0.1', 44252)
+    5435.5 conn3 req2 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    5483.8 conn9 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    5484.2 conn2 req2 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    5485.1 conn10 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    5485.2 conn11 accepted from ('127.0.0.1', 44256)
+    5486.0 conn11 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    5486.6 conn12 accepted from ('127.0.0.1', 44258)
+    5487.1 conn12 req1 GET /sleep?ms=2000 {'host': ['127.0.0.1:18097'], 'connection': ['keep-alive']} body=0B
+    7489.7 conn11 EOF from client after 1 requests
+    7490.0 conn11 closed by server
+    7490.4 conn9 EOF from client after 1 requests
+    7490.5 conn9 closed by server
+    7490.7 conn12 EOF from client after 1 requests
+    7490.8 conn12 closed by server
+    7491.7 conn4 EOF from client after 2 requests
+    7491.9 conn4 closed by server
+    7492.5 conn10 EOF from client after 1 requests
+    7492.6 conn10 closed by server
+    7492.7 conn7 EOF from client after 2 requests
+    7492.8 conn7 closed by server
+    7492.9 conn3 EOF from client after 2 requests
+    7493.0 conn3 closed by server
+    7493.1 conn2 EOF from client after 2 requests
+    7493.2 conn2 closed by server

@@ -1,0 +1,62 @@
+Fourth-round review (fresh Claude): fixes.diff since 5612056, plus the parts of the tree it touches.
+
+I read the toolchain sources: Std/Sync/CancellationToken.lean, Std/Async/Select.lean, Std/Async/Basic.lean, Init/System/Promise.lean, Init/Core.lean (Task.map/bind `sync`) and Std/Sync/Mutex.lean.  One throwaway probe, probes/Probe1.lean (output in probes/probe1.out), compiled with v4.34.1 `lean --run`.  It settled four points:
+- `import all Std.Async.Select` compiles in a `module` outside Std, and `Waiter.mk` can be used.
+- A `chainTask (sync := true)` continuation on the waiter's promise runs during `token.cancel`, on the cancelling thread (not main), and has finished by the time `cancel` returns.
+- Calling `token.getCancellationReason` inside that continuation deadlocks: `cancel` never returns.  So the "fire asks nothing" rule is necessary, not just tidiness.
+- Racing the waiter and then calling `selector.unregisterFn` takes the consumer count from 1 to 0, and the continuation does not run on the ok path.
+
+CODE: NO DEFECT FOUND IN THE CHANGE.  Checked and holds (in brief):
+
+- Deadlock.  These are the only things that run inline inside a token's `cancel` (mutex held, reason not yet recorded; CancellationToken.lean:108-125):
+  - `fire`: it calls `state.modifyGet`, `bell.get` and `bell.resolve`, and runs the hooks.
+  - The race-bell continuation (Cancel.lean:214), which calls `winner.resolve`.  Its `await winner.result!` continues through `BaseAsync.bind` with sync=false (Basic.lean:437-443), so on a pool task.
+  - The Live hook (Body.lean:392-394): `inbox.modify`, then resolving the mailbox bell, whose awaitFirst continuation (Wait.lean:43) calls `winner.resolve`; that also continues on a pool task.
+  None of these asks a token or takes another mutex.  `shutdownNow` fires outside `inflight.atomically` (Client.lean:353-354).  `observe` is never called under the pool mutex or the table mutex.  The `registerFn` path for an already-cancelled token fires inside `watch` with no bell and no hooks, so it does nothing.  `finish`'s `unregisterFn` runs only in `run`'s `finally`, never inline in a `cancel`.
+- Lost wake-ups.
+  - `race` (Cancel.lean:204-206) against a token fire: the fire runs under the token's mutex before the reason is recorded, so `reason?` after arming either sees the reason or blocks until `cancel` is done.
+  - `race` against `Cancel.cancel`: `state` is written before `bell` is read, and `race` writes `bell` before reading `state`.  All of these are atomic exchanges on shared refs.
+  - `onCancel` (168-171): the push comes before the re-check, against `fire`, which reads `state` and then the hooks.  Same Dekker shape, same answer.
+  - `Live.next` (Body.lean:313-319) against the hook: the bell is set before the inbox is read, and the hook pushes before it reads the bell.  The read-modify-writes on `inbox` are totally ordered.
+- Table versus `shutdownNow`.  A call that registers after the snapshot does so after `closing.cancel` returned, and every check asks `closing`.  A call that ends during the snapshot is fired after (or during) `finish`: `go` is false, or the hooks push into mailboxes that are already dead, which is harmless.  Concurrent `shutdownNow`s only fire twice ("may run more than once").
+- Leaks.  Per wait, the bell is replaced and the old promise dropped, so its continuation runs with `none`.  Per call:
+  - the table entry is erased in `finally`;
+  - the waiter is resolved with an error, which releases its continuation, and unregistered (probe);
+  - `bell` and `hooks` are cleared;
+  - nothing in `Cancel` points back to `Cancel`, so there is no reference-counting cycle.
+  Hooks accumulate one per exchange within a call; that is bounded by the redirect and retry limits, and NOTES lists it.
+- Equivalence with `Selectable.one`/`combine`: the waiter, the race on `finished` and the unregistration are the same protocol.  `combine`'s per-selectable promise and its IO.bindTask hop are what was removed, and nothing relied on them.
+
+FINDINGS (sure)
+
+1. LeanHttp/Cancel.lean:26-33 (module doc) and 103-107 (`watch` docstring).  Severity: low-medium (docs that the brief asks to match the code).  They still describe the removed mechanism:
+   - "The caller's token is watched by one `Selectable.one` per call ... which hands a cancellation on from a worker of the thread pool, a moment after the token was cancelled ... `Selectable.one` unregisters the call from the token".
+   - `watch`: "the watch (`Selectable.one`) covers those in `watched`".
+   The code registers a `Waiter` directly.  A cancellation now fires inline in the cancelling thread, inside `cancel` (the probe confirms this), not a moment later on a worker, and `finish` unregisters.  Line 33, "which costs a call nothing on the way when it is given no token", contradicts verdicts.txt's measured 6-9% slowdown without a token, and the code: `track` takes the table mutex twice per call, `reason?` asks `closing` before each step and in every `Live.next`, every `race` makes a bell promise and a continuation, and every exchange registers a hook.  Commit d162824 ("Describe how a call is woken now") updated DESIGN.md and NOTES.md but not this module doc.
+
+2. DESIGN.md:90 and NOTES.md:331.  Severity: low.  Both still say the client's token is one "which every call watches as well" / "which every call watches besides its own".  Since this change no call watches `closing`: calls ask it in their checks, and `shutdownNow` fires them through the table.  DESIGN.md:94 itself says so, so the section contradicts itself.
+
+3. DESIGN.md:94 ("A call given no token makes no promise and starts nothing for its cancellation").  Severity: low.  Read as a claim about the call this overclaims; it is true only of `Cancel.watch`.  Each `race` wait makes a bell promise and chains a continuation on it, and each exchange's `Live.begin` registers a hook, given a token or not, because `shutdownNow` needs them.  Say "`Cancel.watch` makes no promise" or list the per-wait cost.
+
+4. LeanHttp/Cancel.lean:153-154 (`reason?` docstring, "Once the call has ended, `none` unless it was fired before").  Severity: low.  It is wrong for a call fired by its token: `fire ... none` leaves `state` at `none` (line 95), so `finish` turns it into `some none`, and `reason?` then returns `none`.  Only `Cancel.cancel` records a reason.  No caller asks after `finish` today, so behaviour is unaffected, but the docstring promises something the code does not do.
+
+5. Tests/Unit.lean:653-655.  Severity: low-medium (a test that cannot fail for the property the docs advertise).  "A token cancelled after the call ended does not cancel it" is satisfied by `state = some none` alone (`reason?` returns before asking the tokens).  A waiter left registered with the token, the leak that DESIGN.md:94 and NOTES.md:325 give as the reason for registering directly, would pass every check.  Nothing tests unregistration.  `Std.CancellationToken.state` is a public field, so a check can count `consumers` before and after `finish`, as the probe does (1, then 0).  It is also worth checking that `finish` on a cancelled token, and a token shared by two calls, leave the right count.
+
+6. NOTES.md:325 cites `("The cost", below)`, but NOTES.md has no such section; it is presumably meant to be filled from the RUNS placeholder.  Severity: low.  The figure given there, "given a token was a fifth to a third slower", has no recorded run yet, and verdicts.txt describes the first version as 27% slower *without* a token.  Reconcile the two when RUNS is written.
+
+7. Tests/Unit.lean:622: the comment "seen at once, by the signal too" names the removed signal.  Severity: trivial.
+
+SUSPICIONS / DESIGN
+
+8. Which token's reason a call reports.  Severity: very low, suspect.  `reason?` asks `#[closing] ++ user` in order, and a token fire records nothing in `state`.  So a call whose own token was cancelled, and whose first check after that comes after a `shutdownNow`, reports `shutdown` rather than the caller's reason.  This only arises when both happen, and the first check fixes the reason, so the result stays coherent.
+
+9. LeanHttp/Body.lean:300-302.  Severity: very low.  `report .cancelled` makes up the reason `.cancel`.  It can be reached only if `Live.next` takes a `.cancelled` completion while `reason?` is `none`, which happens only after `finish` (and `release` waits for reads in progress first).  An unreachable branch that invents a reason could be a `panic!` or a comment saying it is unreachable.
+
+10. Design: the inline firing model.  Std resolves consumers while it holds the token's mutex and before it records the reason (CancellationToken.lean:115-125), so anything a fire wakes inline must not ask the token.  The change handles this correctly, and NOTES.md:328 states the rule.  It is fragile, though, and leans on two private internals: `Waiter.mk` through `import all`, and the unspecified point inside `cancel` at which consumers run.  Prior art differs:
+   - .NET's `CancellationToken.Register` also runs callbacks synchronously on the cancelling thread, but after the token is marked cancelled and outside its lock, and returns a disposable registration.
+   - Go's `context.AfterFunc` runs the callback in a goroutine of its own and returns `stop()`.
+   Either shape, as a public Std API (a "register; returns an unregister handle" function), would remove both the `import all` and the "ask nothing inside cancel" constraint.  That is worth raising upstream; locally there is no better public route on v4.34.1, since `Selectable.one`/`combine` are the only public makers of a `Waiter`.
+
+NOT CHECKED: the project's build and tests (not runnable here); whether the residual-cost numbers hold (no runs recorded).
+
+DEFECTS FOUND (documentation and test coverage only: stale Cancel.lean module and `watch` docs, the "every call watches" wording in DESIGN and NOTES, overclaims about cost, a wrong `reason?` docstring, and no check of unregistration; no concurrency defect found in the code).

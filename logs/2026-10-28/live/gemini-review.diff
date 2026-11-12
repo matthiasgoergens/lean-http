@@ -1,0 +1,1232 @@
+diff --git a/DESIGN.md b/DESIGN.md
+index 56c8582..f4bee82 100644
+--- a/DESIGN.md
++++ b/DESIGN.md
+@@ -79,7 +79,7 @@ In order of value per effort; each stage stands alone.
+ 
+ ## From fuzzed properties to proved ones
+ 
+-Every property the fuzzer or the random runs check should end up as a theorem, with fuzzing kept as the cheap first line (Matthias, 2026-10-28).  The exchange core's properties hold whatever the HTTP/1.1 machine returns, so they can be proved about `Exchange.step` directly, treating the machine as opaque.  The codec's properties (termination, body length within `Content-Length`, no body after HEAD, 204 or 304, split invariance) live inside the vendored machine, whose `partial def`s no proof can unfold; proving them needs a codec of our own written for proof, with total functions, and the vendored machine and h11 then serve as its differential oracles under the fuzzer.
++Every property the fuzzer or the random runs check should end up as a theorem, with fuzzing kept as the cheap first line (Matthias, 2026-10-28).  The exchange core's properties hold whatever the HTTP/1.1 machine returns, so they can be proved about `Exchange.step` directly, treating the machine as opaque.  `LeanHttp/Exchange/Proofs.lean` and `LeanHttp/Exchange/Liveness.lean` do so for the single-step properties, for "a live exchange has a deadline ahead", and for liveness under the deadline; liveness assumes only that the shell, whenever the exchange is live, eventually reports an event at or after its next deadline, which a shell that sleeps until that deadline and then ticks does, as long as its sleep returns.  The codec's properties (termination, body length within `Content-Length`, no body after HEAD, 204 or 304, split invariance) live inside the vendored machine, whose `partial def`s no proof can unfold; proving them needs a codec of our own written for proof, with total functions, and the vendored machine and h11 then serve as its differential oracles under the fuzzer.
+ 
+ ## Not yet
+ 
+diff --git a/LeanHttp/Client.lean b/LeanHttp/Client.lean
+index c44fee0..fcb7aa0 100644
+--- a/LeanHttp/Client.lean
++++ b/LeanHttp/Client.lean
+@@ -140,12 +140,18 @@ private def cancelReceive (socket : TCP.Socket.Client) : Async Unit :=
+   (socket.recvSelector 0).unregisterFn
+ 
+ /--
+-The exchange core's settings for one call of `config`: no reuse in this version.
++The exchange core's settings for one call of `config`: no reuse in this version.  Fails with
++`invalidRequest` if `readGapMs` is zero, which would make every write and read due the moment it is
++issued.
+ -/
+-def exchangeConfig (config : Config) : ExchangeConfig :=
+-  { h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
+-    maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes,
+-    writeChunk := config.writeChunkBytes, gapMs := config.readGapMs }
++def exchangeConfig (config : Config) : Except Cause ExchangeConfig :=
++  if h : 0 < config.readGapMs then
++    .ok {
++      h1 := config.h1, keepAlive := false, maxInterim := config.maxInterimResponses,
++      maxBody := config.maxBodyBytes, readChunk := config.readChunkBytes,
++      writeChunk := config.writeChunkBytes, gapMs := config.readGapMs, gapMs_pos := h }
++  else
++    .error (.invalidRequest "readGapMs must be positive")
+ 
+ /--
+ A socket operation the shell started for the exchange core, once it has completed.
+@@ -295,7 +301,7 @@ def request (client : Client) (req : Request ByteArray) :
+     | .ok plan => pure plan
+     | .error msg => return fail (.invalidRequest msg) .notSent
+   let target := s!"{plan.host}:{plan.port}"
+-  let prepared ← match Exchange.prepare (exchangeConfig config) plan.head req.body with
++  let prepared ← match exchangeConfig config >>= (Exchange.prepare · plan.head req.body) with
+     | .ok prepared => pure prepared
+     | .error cause => return fail cause .notSent target
+   let connected ← match ← Connect.run config (.ofHost plan.host) plan.port seed deadline with
+diff --git a/LeanHttp/Config.lean b/LeanHttp/Config.lean
+index b2980fb..65d4520 100644
+--- a/LeanHttp/Config.lean
++++ b/LeanHttp/Config.lean
+@@ -41,7 +41,7 @@ structure Config where
+   /--
+   Longest time without progress on the connection (default: 30 s): between two reads of the
+   response, where every byte resets it, or for one slice of the request (`writeChunkBytes`) to be
+-  accepted by the kernel.
++  accepted by the kernel.  Must be positive: `Client.request` refuses zero as an invalid request.
+   -/
+   readGapMs : Nat := 30 * 1000
+ 
+diff --git a/LeanHttp/Exchange.lean b/LeanHttp/Exchange.lean
+index 6cf9886..fbb45db 100644
+--- a/LeanHttp/Exchange.lean
++++ b/LeanHttp/Exchange.lean
+@@ -96,6 +96,12 @@ structure ExchangeConfig where
+   -/
+   gapMs : Nat := 30 * 1000
+ 
++  /--
++  The gap is positive.  A write or read issued with no time to complete would be due the moment it
++  was issued, and the exchange would have no deadline ahead for the shell to wait for.
++  -/
++  gapMs_pos : 0 < gapMs := by omega
++
+   /--
+   When the caller abandons a body, how many more decoded body bytes may be read and discarded to
+   keep the connection reusable.
+@@ -104,7 +110,8 @@ structure ExchangeConfig where
+ 
+   /--
+   When the caller abandons a body, how long the rest may take to arrive and keep the connection
+-  reusable.
++  reusable.  Zero keeps the connection only if the rest has already arrived: the drain's deadline
++  passes in the step that starts it.
+   -/
+   drainMs : Nat := 100
+ 
+diff --git a/LeanHttp/Exchange/Liveness.lean b/LeanHttp/Exchange/Liveness.lean
+new file mode 100644
+index 0000000..4eee13f
+--- /dev/null
++++ b/LeanHttp/Exchange/Liveness.lean
+@@ -0,0 +1,1033 @@
++module
++
++import all LeanHttp.Exchange
++import all LeanHttp.Exchange.Proofs
++
++/-!
++# Deadlines ahead, and liveness
++
++Two properties of the exchange core beyond those of `LeanHttp.Exchange.Proofs`, which this module
++builds on.  Like those, they hold whatever the HTTP/1.1 machine does.
++
++- **A live exchange has a deadline ahead** (`Reachable.deadlineAhead`).  Every reachable exchange
++  that has not ended has a next deadline strictly after its clock and no later than the deadline of
++  the whole exchange.  It rests on the gap being positive (`ExchangeConfig.gapMs_pos`) and on a
++  companion invariant of the timers (`Timers`): a write's deadline is set only while a write is in
++  flight, and the drain's only while draining, when the whole request has been written.  The
++  checker states the property against its model's clock rather than the exchange's;
++  `ObservedMono.deadlineAhead` proves that form for runs in which no event but a tick is earlier
++  than the latest event before it, and it is false without that condition.
++- **Liveness.**  An event the shell reports at or after the next deadline (a *due* event) either
++  ends the exchange or moves its clock strictly forward (`Reachable.due_advances`), and the clock of
++  a live exchange stays before its deadline.  So `deadline - now` ranks every run: once that many
++  due events have come, whatever else the shell reported in between, the exchange has ended
++  (`Reachable.ended_after_waits`).  If, whenever the exchange is live, the shell eventually delivers
++  a due event, the exchange ends (`Reachable.ends_of_fair`); if every event is due, within
++  `deadline - now` events (`Reachable.ends_of_allDue`); and the first event at or after the
++  deadline ends it in any case (`Reachable.ended_at_deadline`).
++
++What is assumed about the shell is the hypothesis of each theorem and nothing more.  A run is any
++sequence of events at any times (the shell's clock may even go backwards); termination needs the
++shell to deliver due events, which it always can, since the next deadline is ahead and no later than
++the deadline (`Reachable.tick_due`).  That a real shell does (that its sleep returns, and its clock
++reaches the next deadline) is not proved.
++-/
++
++namespace LeanHttp.Exchange
++
++open Std.Http LeanHttpProto.Http.Protocol
++
++/-! ## The timers' invariant -/
++
++/-- The invariant of the timers, at every point of every step from `begin`. -/
++structure Timers (ex : Exchange) : Prop where
++  /-- A write's deadline is set only while a write is in flight. -/
++  writeBy : ex.writeBy.isSome = true → ex.writeInFlight.isSome = true
++  /-- The write in flight is not empty. -/
++  inFlightPos : ∀ k, ex.writeInFlight = some k → 0 < k
++  /-- The drain's deadline is set only while draining. -/
++  drainBy : ex.drainBy.isSome = true → ex.phase = .draining
++  /-- While draining, the whole request has been written, -/
++  drainingWritten : ex.phase = .draining → ex.written = ex.request.size
++  /-- no write is in flight, -/
++  drainingIdle : ex.phase = .draining → ex.writeInFlight = none
++  /-- and the final head was delivered. -/
++  drainingHead : ex.phase = .draining → ex.head.isSome = true
++
++/-- The fields `Timers` depends on. -/
++structure TAgree (a b : Exchange) : Prop where
++  phase : b.phase = a.phase
++  written : b.written = a.written
++  request : b.request = a.request
++  head : b.head = a.head
++  writeInFlight : b.writeInFlight = a.writeInFlight
++  writeBy : b.writeBy = a.writeBy
++  drainBy : b.drainBy = a.drainBy
++
++/-- `TAgree` for an update of other fields. -/
++macro "tagree_rfl" : tactic => `(tactic| exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩)
++
++theorem Timers.agree {a b : Exchange} (h : Timers a) (ha : TAgree a b) : Timers b where
++  writeBy := by rw [ha.writeBy, ha.writeInFlight]; exact h.writeBy
++  inFlightPos := by rw [ha.writeInFlight]; exact h.inFlightPos
++  drainBy := by rw [ha.drainBy, ha.phase]; exact h.drainBy
++  drainingWritten := by rw [ha.phase, ha.written, ha.request]; exact h.drainingWritten
++  drainingIdle := by rw [ha.phase, ha.writeInFlight]; exact h.drainingIdle
++  drainingHead := by rw [ha.phase, ha.head]; exact h.drainingHead
++
++/-- An exchange that ended, with its timers cleared. -/
++theorem Timers.stop {ex : Exchange} (h : Timers ex) {p : Phase} (hp : p = .draining → False) :
++    Timers { ex with phase := p, writeBy := none, readBy := none, drainBy := none } where
++  writeBy := by simp
++  inFlightPos := h.inFlightPos
++  drainBy := by simp
++  drainingWritten := fun h' => absurd h' hp
++  drainingIdle := fun h' => absurd h' hp
++  drainingHead := fun h' => absurd h' hp
++
++theorem failNow_timers {s : S} (c : Cause) (d : String) (h : Timers s.1) :
++    Timers ((failNow c d).run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  rw [failNow_run]
++  split
++  · exact h
++  · exact Timers.stop h (fun h' => (by cases h'))
++
++theorem finishNow_timers {s : S} (r : Bool) (h : Timers s.1) :
++    Timers ((finishNow r).run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  rw [finishNow_run]
++  split
++  · exact h
++  · exact Timers.stop h (fun h' => (by cases h'))
++
++theorem failOrDrop_timers {s : S} (c : Cause) (d : String) (h : Timers s.1) :
++    Timers ((failOrDrop c d).run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [failOrDrop, bind_run, getEx_run]
++  split
++  · exact finishNow_timers false h
++  · exact failNow_timers c d h
++
++theorem stopUpload_timers {s : S} (h : Timers s.1) : Timers (stopUpload.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [stopUpload, modifyEx_run]
++  exact ⟨by simp, h.inFlightPos, h.drainBy, h.drainingWritten, h.drainingIdle, h.drainingHead⟩
++
++/-- Delivering the final head: no head yet, so not draining, so no drain deadline. -/
++theorem Timers.receive {ex : Exchange} (h : Timers ex) (hh : ex.head.isSome = false)
++    (head : Response.Head) (fr : Framing) (early : Bool) :
++    Timers { ex with head := some head, framing := fr, phase := .receiving, early } := by
++  have hdb : ex.drainBy.isSome = false := by
++    cases hd : ex.drainBy.isSome
++    · rfl
++    · have := h.drainingHead (h.drainBy hd)
++      rw [hh] at this
++      cases this
++  exact ⟨h.writeBy, h.inFlightPos, fun h' => (by simp only at h'; rw [hdb] at h'; cases h'),
++    fun h' => (by cases h'), fun h' => (by cases h'), fun h' => (by cases h')⟩
++
++theorem handleH1Event_timers {s : S} (e : H1.Event .sending) (h : Timers s.1) :
++    Timers ((handleH1Event e).run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  cases e with
++  | endHeaders head =>
++    simp only [handleH1Event, bind_run, getEx_run]
++    rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;> simp only [ht, ↓reduceIte]
++    · exact h
++    rcases Bool.eq_false_or_eq_true head.status.isInformational with hi | hi <;>
++      simp only [hi, ↓reduceIte, Bool.false_eq_true]
++    · rcases Bool.eq_false_or_eq_true (head.status.toCode == 101) with hc | hc <;>
++        simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
++      · exact failNow_timers _ _ h
++      · have h' := h.agree (b := { ex with interim := ex.interim + 1 }) (by tagree_rfl)
++        by_cases hn : ex.interim + 1 > ex.config.maxInterim <;> simp only [hn, ↓reduceIte, bind_run]
++        · exact failNow_timers _ _ h'
++        · exact h'
++    · rcases Bool.eq_false_or_eq_true ex.head.isSome with hh | hh <;>
++        simp only [hh, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
++      · exact failNow_timers _ _ h
++      · have h' := h.receive hh head (Framing.ofResponse ex.method head)
++          (decide (ex.written < ex.request.size))
++        split
++        · rename_i n _
++          by_cases hn : n > ex.config.maxBody <;> simp only [hn, ↓reduceIte, bind_run]
++          · exact failNow_timers _ _ h'
++          · exact h'
++        · exact h'
++  | closeBody =>
++    simp only [handleH1Event, bind_run, getEx_run]
++    rcases Bool.eq_false_or_eq_true ex.head.isSome with hh | hh <;>
++      simp only [hh, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
++    · exact h.agree (by tagree_rfl)
++    · exact h
++  | failed err =>
++    simp only [handleH1Event, bind_run]
++    exact failOrDrop_timers _ _ h
++  | _ => exact h
++
++theorem handleH1Events_timers {s : S} (events : Array (H1.Event .sending)) (h : Timers s.1) :
++    Timers ((handleH1Events events).run s).2.1 := by
++  unfold handleH1Events
++  rw [← Array.foldlM_toList]
++  generalize events.toList = l
++  generalize false = b
++  induction l generalizing s b with
++  | nil => exact h
++  | cons e l ih =>
++    simp only [List.foldlM_cons, bind_run]
++    exact ih (handleH1Event_timers e h) _
++
++theorem pullOnce_timers {s : S} (h : Timers s.1) : Timers (pullOnce.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [pullOnce, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true (ex.terminal || ex.bodyDone || !ex.machine.canPullBodyNow)
++    with hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
++  · exact h
++  split
++  · rcases Bool.eq_false_or_eq_true (ex.credit == 0) with hc | hc <;>
++      simp only [hc, ↓reduceIte, Bool.false_eq_true]
++    · split
++      · rename_i pulled _
++        rcases Bool.eq_false_or_eq_true (!pulled.chunk.data.isEmpty) with he | he <;>
++          simp only [he, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
++        · exact h
++        · exact h.agree (by tagree_rfl)
++      · simp only [bind_run, setEx_run]
++        exact h.agree (by tagree_rfl)
++    · rcases Bool.eq_false_or_eq_true (ex.announcedOver ex.bodyBytes ex.config.maxBody) with ho | ho <;>
++        simp only [ho, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
++      · exact failNow_timers _ _ h
++      · have h1 := h.agree (b := { ex with machine := ex.machine.pullBody.1 }) (by tagree_rfl)
++        split
++        · rename_i pulled _
++          by_cases hn : ex.bodyBytes + pulled.chunk.data.size > ex.config.maxBody <;>
++            simp only [hn, ↓reduceIte, bind_run, setEx_run]
++          · exact failNow_timers _ _ h1
++          · have h2 := h1.agree (b := { ex with
++              machine := ex.machine.pullBody.1,
++              credit := ex.credit - min ex.credit pulled.chunk.data.size,
++              bodyBytes := ex.bodyBytes + pulled.chunk.data.size,
++              bodyDone := ex.bodyDone || pulled.final }) (by tagree_rfl)
++            rcases Bool.eq_false_or_eq_true pulled.chunk.data.isEmpty with he | he <;>
++              simp only [he, ↓reduceIte, Bool.false_eq_true, bind_run, emit_run]
++            · exact h2
++            · exact h2
++        · exact h1
++  · rcases Bool.eq_false_or_eq_true (ex.announcedOver ex.drained ex.config.drainBytes) with ho | ho <;>
++      simp only [ho, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
++    · exact finishNow_timers false h
++    · have h1 := h.agree (b := { ex with machine := ex.machine.pullBody.1 }) (by tagree_rfl)
++      split
++      · rename_i pulled _
++        simp only [bind_run, setEx_run]
++        have h2 := h1.agree (b := { ex with
++          machine := ex.machine.pullBody.1,
++          drained := ex.drained + pulled.chunk.data.size,
++          bodyDone := ex.bodyDone || pulled.final }) (by tagree_rfl)
++        by_cases hn : ex.drained + pulled.chunk.data.size > ex.config.drainBytes <;>
++          simp only [hn, ↓reduceIte, bind_run]
++        · exact finishNow_timers false h2
++        · exact h2
++      · exact h1
++  · exact h
++
++theorem pullAvailable_timers {s : S} (p : Bool) (h : Timers s.1) :
++    Timers ((pullAvailable p).run s).2.1 := by
++  show Timers (loopWhile pullRound (p, s)).1.2.1
++  apply loopWhile_inv pullRound (fun x => Timers x.2.1) _ (p, s) h
++  intro ⟨q, s'⟩ hs
++  simp only [pullRound]
++  have := pullOnce_timers (s := s') hs
++  split <;> simp_all
++
++theorem settle_timers {s : S} (h : Timers s.1) : Timers (settle.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [settle, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;> simp only [ht, ↓reduceIte]
++  · exact h
++  cases hp : ex.phase <;>
++    simp only [Bool.false_eq_true, ↓reduceIte, Bool.true_and, Bool.false_and]
++  all_goals
++    first
++    | (rcases Bool.eq_false_or_eq_true ex.bodyDone with hb | hb <;>
++        simp only [hb, ↓reduceIte, Bool.false_eq_true]
++       · exact finishNow_timers true h)
++    | skip
++  all_goals
++    rcases Bool.eq_false_or_eq_true ex.inputEnded with hi | hi <;>
++      simp only [hi, ↓reduceIte, Bool.false_eq_true]
++  all_goals
++    first
++    | exact h
++    | (rcases Bool.eq_false_or_eq_true (ex.credit == 0 && ex.machine.canPullBodyNow) with hc | hc <;>
++        simp only [hc, ↓reduceIte, Bool.false_eq_true]
++       · exact h)
++    | skip
++  all_goals
++    rcases Bool.eq_false_or_eq_true ex.machine.failed with hf | hf <;>
++      simp only [hf, ↓reduceIte, Bool.false_eq_true] <;> exact failOrDrop_timers _ _ h
++
++theorem absorbOnce_timers {s : S} (h : Timers s.1) : Timers (absorbOnce.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [absorbOnce, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
++    simp only [ht, ↓reduceIte, Bool.false_eq_true]
++  · exact h
++  simp only [bind_run, setEx_run]
++  have h1 := h.agree (b := { ex with machine := ex.machine.step.1 }) (by tagree_rfl)
++  have h2 := handleH1Events_timers ex.machine.step.2.events (s := ({ ex with machine := ex.machine.step.1 }, acts)) h1
++  generalize (handleH1Events ex.machine.step.2.events).run
++    ({ ex with machine := ex.machine.step.1 }, acts) = x at h2 ⊢
++  have h3 := pullAvailable_timers false h2
++  generalize (pullAvailable false).run x.2 = y at h3 ⊢
++  simp only [getEx_run]
++  have h4 := h3.agree (b := { y.2.1 with machine := y.2.1.machine.takeEvents.1 }) (by tagree_rfl)
++  have h5 := handleH1Events_timers y.2.1.machine.takeEvents.2
++    (s := ({ y.2.1 with machine := y.2.1.machine.takeEvents.1 }, y.2.2)) h4
++  generalize (handleH1Events y.2.1.machine.takeEvents.2).run
++    ({ y.2.1 with machine := y.2.1.machine.takeEvents.1 }, y.2.2) = z at h5 ⊢
++  exact h5
++
++theorem absorb_timers {s : S} (h : Timers s.1) : Timers (absorb.run s).2.1 := by
++  show Timers (settle.run (loopWhile absorbOnce.run s).1).2.1
++  apply settle_timers
++  exact loopWhile_inv _ (fun x => Timers x.1) (fun _ h => absorbOnce_timers h) s h
++
++theorem expireOne_timers {s : S} (h : Timers s.1) : Timers (expireOne.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [expireOne, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
++    simp only [ht, ↓reduceIte, Bool.false_eq_true]
++  · exact h
++  split
++  · split
++    · simp only [bind_run]; exact finishNow_timers false h
++    · exact h
++  · split
++    · exact h
++    · split
++      · simp only [bind_run]; exact stopUpload_timers h
++      · simp only [bind_run]; exact failNow_timers _ _ h
++    · simp only [bind_run]; exact failNow_timers _ _ h
++
++theorem expire_timers {s : S} (h : Timers s.1) : Timers (expire.run s).2.1 := by
++  simp only [expire, bind_run]
++  have h1 := expireOne_timers h
++  generalize expireOne.run s = x at h1 ⊢
++  obtain ⟨b, x⟩ := x
++  cases b
++  · exact h1
++  · simp only [↓reduceIte]
++    exact expireOne_timers h1
++
++theorem schedule_timers {s : S} (h : Timers s.1) : Timers (schedule.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  change Timers ex at h
++  simp only [schedule, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
++    simp only [ht, ↓reduceIte, Bool.false_eq_true]
++  · exact h
++  have hr : ∀ s' : S, Timers s'.1 →
++      Timers ((do
++        let ex ← getEx
++        if !ex.readInFlight && ex.wantsInput then
++          let readBy := if ex.uploadOver then some (ex.now + ex.config.gapMs) else none
++          setEx { ex with readInFlight := true, readBy }
++          emit (.read ex.config.readChunk) : StepM Unit).run s').2.1 := by
++    intro ⟨ex', acts'⟩ h'
++    simp only [getEx_bind_run]
++    rcases Bool.eq_false_or_eq_true (!ex'.readInFlight && ex'.wantsInput) with hc | hc <;>
++      simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
++    · exact h'.agree (by tagree_rfl)
++    · exact h'
++  rcases Bool.eq_false_or_eq_true
++      (!ex.uploadStopped && ex.writeInFlight.isNone && decide (ex.written < ex.request.size)) with
++    hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
++  · simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, Option.isNone_iff_eq_none,
++      decide_eq_true_eq] at hc
++    obtain ⟨⟨_, _⟩, hlt⟩ := hc
++    let stop := min ex.request.size (ex.written + max 1 ex.config.writeChunk)
++    let slice := if ex.written == 0 && stop == ex.request.size then ex.request
++      else ex.request.extract ex.written stop
++    let ex' : Exchange := { ex with
++      writeInFlight := some (stop - ex.written), writeBy := some (ex.now + ex.config.gapMs),
++      sentAny := true }
++    have key : Timers ex' := by
++      refine ⟨by simp [ex'], fun k hk => ?_, h.drainBy, h.drainingWritten, fun hp => ?_,
++        h.drainingHead⟩
++      · simp only [ex', Option.some.injEq] at hk
++        have := Nat.le_max_left 1 ex.config.writeChunk
++        simp only [stop] at hk
++        omega
++      · have := h.drainingWritten hp
++        omega
++    exact hr (ex', acts.push (.write slice)) key
++  · exact hr _ h
++
++/-- `Timers` holds where `begin` starts. -/
++theorem initial_timers (req : PreparedRequest) (now deadline : Timestamp) :
++    Timers (initial req now deadline) :=
++  ⟨by simp [initial], by simp [initial], by simp [initial], fun h => (by cases h),
++    fun h => (by cases h), fun h => (by cases h)⟩
++
++/-- A step's handler keeps `Timers`. -/
++theorem handle_timers (e : ExchangeEvent) {ex : Exchange} (hi : Inv ex) (h : Timers ex) :
++    Timers ((handle e).run (ex, #[])).2.1 := by
++  cases e with
++  | received bytes =>
++    simp only [handle, bind_run, setEx_run]
++    have h1 := h.agree (b := { ex with readInFlight := false, readBy := none }) (by tagree_rfl)
++    split
++    · exact failNow_timers _ _ h1
++    · rcases Bool.eq_false_or_eq_true bytes.isEmpty with hb | hb <;>
++        simp only [hb, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run]
++      · exact h1
++      · exact absorb_timers (h1.agree (by tagree_rfl))
++  | endOfInput =>
++    simp only [handle, bind_run, setEx_run]
++    have h1 := h.agree (b := { ex with readInFlight := false, readBy := none, inputEnded := true })
++      (by tagree_rfl)
++    split
++    · exact failNow_timers _ _ h1
++    · simp only [bind_run, setEx_run]
++      exact absorb_timers (h1.agree (by tagree_rfl))
++  | written count =>
++    simp only [handle, getEx_bind_run]
++    cases hl : ex.writeInFlight with
++    | none => exact h
++    | some len =>
++      simp only [setEx_run]
++      have hnd : ex.phase = .draining → False := fun hp => by rw [h.drainingIdle hp] at hl; cases hl
++      have hdb : ex.drainBy = none := by
++        cases hd : ex.drainBy with
++        | none => rfl
++        | some _ => exact absurd (h.drainBy (by simp [hd])) hnd
++      have leaf : ∀ ex' : Exchange, ex'.writeInFlight = none → ex'.writeBy = none →
++          ex'.drainBy = none → (ex'.phase = .draining → False) → Timers ex' :=
++        fun ex' hw hwb hd hp => ⟨by simp [hwb], by simp [hw], by simp [hd], fun h' => absurd h' hp,
++          fun h' => absurd h' hp, fun h' => absurd h' hp⟩
++      cases hp : ex.phase <;> simp only
++      case draining => exact absurd hp hnd
++      case sending =>
++        by_cases hd : ex.written + min count len ≥ ex.headBytes <;> simp only [hd, ↓reduceIte]
++        · split
++          · exact leaf _ rfl rfl hdb (fun h' => (by cases h'))
++          · exact leaf _ rfl rfl hdb (fun h' => (by cases h'))
++        · split
++          · exact leaf _ rfl rfl hdb (fun h' => (by cases h'))
++          · exact leaf _ rfl rfl hdb (fun h' => (by cases h'))
++      all_goals
++        split
++        · exact leaf _ rfl rfl hdb (fun h' => (by cases h'))
++        · exact leaf _ rfl rfl hdb (fun h' => (by cases h'))
++  | writeFailed detail =>
++    simp only [handle, getEx_bind_run]
++    rcases Bool.eq_false_or_eq_true ex.writeInFlight.isNone with hn | hn <;>
++      simp only [hn, ↓reduceIte, Bool.false_eq_true]
++    · exact h
++    · simp only [bind_run, setEx_run]
++      have h1 : Timers { ex with writeInFlight := none, writeBy := none } :=
++        ⟨by simp, by simp, h.drainBy, h.drainingWritten, fun _ => rfl, h.drainingHead⟩
++      split
++      · exact failNow_timers _ _ h1
++      · rcases Bool.eq_false_or_eq_true ex.uploadStopped with hu | hu <;>
++          simp only [hu, ↓reduceIte, Bool.false_eq_true, bind_run, getEx_run, setEx_run]
++        · exact h1.agree (by tagree_rfl)
++        · exact stopUpload_timers (h1.agree (by tagree_rfl))
++  | readFailed detail =>
++    simp only [handle, bind_run, modifyEx_run]
++    exact failOrDrop_timers _ _ (h.agree (by tagree_rfl))
++  | wantBody bytes =>
++    simp only [handle, bind_run, setEx_run]
++    have h1 := h.agree (b := { ex with credit := ex.credit + bytes }) (by tagree_rfl)
++    split
++    · simp only [↓reduceIte]; exact absorb_timers h1
++    · simp only [Bool.false_eq_true, ↓reduceIte]; exact h1
++  | tick =>
++    simp only [handle]
++    exact h
++  | abandon =>
++    simp only [handle, getEx_bind_run]
++    split
++    · exact failNow_timers _ _ h
++    · exact failNow_timers _ _ h
++    · rename_i hp
++      split
++      · rename_i hw
++        simp only [bind_run, setEx_run]
++        have hwr : ex.written = ex.request.size := by
++          simp only [Bool.and_eq_true, beq_iff_eq] at hw
++          exact hw.1.1.2
++        have hidle : ex.writeInFlight = none := by
++          cases hk : ex.writeInFlight with
++          | none => rfl
++          | some k =>
++            have := hi.inFlightLe k hk
++            have := h.inFlightPos k hk
++            omega
++        have hhd := hi.hasHead (by simp [hp, Phase.isBody])
++        exact absorb_timers ⟨h.writeBy, h.inFlightPos, fun _ => rfl, fun _ => hwr, fun _ => hidle,
++          fun _ => hhd⟩
++      · exact finishNow_timers false h
++    · exact h
++
++/-- Every step keeps `Timers`. -/
++theorem step_timers {ex : Exchange} (hi : Inv ex) (h : Timers ex) (now : Timestamp)
++    (e : ExchangeEvent) : Timers (ex.step now e).1 := by
++  rcases step_cases ex now e with ⟨_, hs⟩ | ⟨hc, _⟩
++  · rw [hs]; exact h
++  · rw [step_run hc]
++    simp only [bind_run]
++    apply schedule_timers
++    apply expire_timers
++    exact handle_timers e ⟨hi.headWritten, hi.hasHead, hi.writtenLe, hi.inFlightLe⟩
++      (h.agree (by tagree_rfl))
++
++/-- `begin` establishes `Timers`. -/
++theorem begin_timers (req : PreparedRequest) (now deadline : Timestamp) :
++    Timers (Exchange.begin req now deadline).1 := by
++  rw [begin_def]
++  simp only [bind_run]
++  apply schedule_timers
++  apply expire_timers
++  exact initial_timers req now deadline
++
++/--
++**The timers' invariant** holds for every reachable exchange: a write's deadline is set only while a
++write is in flight, which is never empty, and the drain's only while draining, when the whole request
++has been written, no write is in flight and the final head was delivered.
++-/
++theorem Reachable.timers {ex : Exchange} (h : Reachable ex) : Timers ex := by
++  induction h with
++  | begin req now deadline => exact begin_timers req now deadline
++  | @step ex now e hr ih => exact step_timers hr.inv ih now e
++
++/-! ## Deadlines ahead -/
++
++/-- Every deadline still set is strictly after the exchange's clock. -/
++structure Ahead (ex : Exchange) : Prop where
++  /-- The deadline of the whole exchange. -/
++  deadline : ex.now < ex.deadline
++  /-- The write's. -/
++  writeBy : ∀ t, ex.writeBy = some t → ex.now < t
++  /-- The read's. -/
++  readBy : ∀ t, ex.readBy = some t → ex.now < t
++  /-- The drain's. -/
++  drainBy : ∀ t, ex.drainBy = some t → ex.now < t
++
++/-- When the fold of `expireOne` picks nothing, no candidate has passed. -/
++theorem none_passed {l : List (Timestamp × Nat × TimeoutKind)} {now : Timestamp}
++    (h : (l.filter fun x => decide (x.1 ≤ now)).foldl (init := none) (fun best c =>
++      match best with
++      | none => some c
++      | some b => if c.1 < b.1 || (c.1 == b.1 && c.2.1 < b.2.1) then some c else some b) = none) :
++    ∀ c ∈ l, now < c.1 := by
++  intro c hc
++  apply Nat.lt_of_not_le
++  intro hle
++  have hm : c ∈ l.filter fun x => decide (x.1 ≤ now) := List.mem_filter.mpr ⟨hc, by simpa using hle⟩
++  exact first_ne_none (List.ne_nil_of_mem hm) h
++
++/--
++One round of `expireOne` on an exchange that has not ended: it ends the exchange, or acts on nothing
++and leaves every deadline ahead, or stops the upload, which clears the write's deadline.
++-/
++theorem expireOne_ahead {ex : Exchange} {acts : Array ExchangeAction} (ht : ex.terminal = false)
++    (h : Timers ex) :
++    let r := expireOne.run (ex, acts)
++    r.2.1.terminal = true ∨ (r.1 = false ∧ Ahead r.2.1) ∨
++      (r.1 = true ∧ r.2.1.writeBy = none ∧ r.2.1.terminal = false) := by
++  intro r
++  simp only [r, expireOne, getEx_bind_run, ht, Bool.false_eq_true, ↓reduceIte]
++  split
++  · rename_i hp
++    rcases Bool.eq_false_or_eq_true (decide (ex.now ≥ ex.deadline) || ex.drainBy.any (ex.now ≥ ·) ||
++        ex.readBy.any (ex.now ≥ ·)) with hc | hc
++    · left
++      simp only [hc, ↓reduceIte, bind_run, finishNow_run, ht, Bool.false_eq_true]
++      rfl
++    · right; left
++      simp only [hc, Bool.false_eq_true, ↓reduceIte, pure_run]
++      simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Nat.not_le] at hc
++      obtain ⟨⟨h1, h2⟩, h3⟩ := hc
++      refine ⟨trivial, h1, fun t ht' => ?_, fun t ht' => ?_, fun t ht' => ?_⟩
++      · have := h.writeBy (by simp [ht'])
++        rw [h.drainingIdle hp] at this
++        cases this
++      · rw [ht'] at h3; simpa using h3
++      · rw [ht'] at h2; simpa using h2
++  · rename_i hnd
++    split
++    · rename_i heq
++      right; left
++      have hall := none_passed heq
++      have ha : Ahead ex :=
++        ⟨hall (ex.deadline, 0, .deadline) (by simp),
++          fun t ht' => hall (t, 1, .write) (by simp [ht']),
++          fun t ht' => hall (t, 2, .read) (by simp [ht']),
++          fun t ht' => absurd (h.drainBy (by simp [ht'])) hnd⟩
++      exact ⟨rfl, ha⟩
++    · split
++      · right; right
++        simp only [bind_run, stopUpload, modifyEx_run]
++        exact ⟨rfl, rfl, ht⟩
++      · left
++        simp only [bind_run, failNow_run, ht, Bool.false_eq_true, ↓reduceIte]
++        rfl
++    · left
++      simp only [bind_run, failNow_run, ht, Bool.false_eq_true, ↓reduceIte]
++      rfl
++
++/-- With no write deadline, `expireOne` never asks for another round. -/
++theorem expireOne_noWrite {ex : Exchange} {acts : Array ExchangeAction} (hw : ex.writeBy = none) :
++    (expireOne.run (ex, acts)).1 = false := by
++  simp only [expireOne, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
++    simp only [ht, ↓reduceIte, Bool.false_eq_true]
++  · rfl
++  split
++  · split <;> rfl
++  · split
++    · rfl
++    · rename_i t k heq
++      have hm := first_mem heq
++      simp [hw] at hm
++    · simp only [bind_run]; rfl
++
++/-- After `expire`, an exchange that has not ended has every deadline ahead. -/
++theorem expire_ahead {ex : Exchange} {acts : Array ExchangeAction} (ht : ex.terminal = false)
++    (h : Timers ex) :
++    (expire.run (ex, acts)).2.1.terminal = true ∨ Ahead (expire.run (ex, acts)).2.1 := by
++  simp only [expire, bind_run]
++  have h1 := expireOne_ahead (acts := acts) ht h
++  have hT := expireOne_timers (s := (ex, acts)) h
++  generalize expireOne.run (ex, acts) = x at h1 hT ⊢
++  obtain ⟨b, ex', acts'⟩ := x
++  simp only at h1 hT ⊢
++  cases b
++  · rcases h1 with h1 | ⟨_, h1⟩ | ⟨h1, _⟩
++    · left; exact h1
++    · right; exact h1
++    · cases h1
++  · simp only [↓reduceIte]
++    rcases h1 with h1 | ⟨h1, _⟩ | ⟨_, hw, ht'⟩
++    · rw [discard_run, expireOne_terminal (s := (ex', acts')) h1]
++      left; exact h1
++    · cases h1
++    · rw [discard_run]
++      rcases expireOne_ahead (acts := acts') ht' hT with h2 | ⟨_, h2⟩ | ⟨h2, _⟩
++      · left; exact h2
++      · right; exact h2
++      · rw [expireOne_noWrite hw] at h2; cases h2
++
++/-- `schedule` keeps every deadline ahead: the gap is positive. -/
++theorem schedule_ahead {s : S} (h : Ahead s.1) : Ahead (schedule.run s).2.1 := by
++  obtain ⟨ex, acts⟩ := s
++  simp only [schedule, getEx_bind_run]
++  rcases Bool.eq_false_or_eq_true ex.terminal with ht | ht <;>
++    simp only [ht, ↓reduceIte, Bool.false_eq_true]
++  · exact h
++  have hr : ∀ s' : S, Ahead s'.1 →
++      Ahead ((do
++        let ex ← getEx
++        if !ex.readInFlight && ex.wantsInput then
++          let readBy := if ex.uploadOver then some (ex.now + ex.config.gapMs) else none
++          setEx { ex with readInFlight := true, readBy }
++          emit (.read ex.config.readChunk) : StepM Unit).run s').2.1 := by
++    intro ⟨ex', acts'⟩ h'
++    simp only [getEx_bind_run]
++    rcases Bool.eq_false_or_eq_true (!ex'.readInFlight && ex'.wantsInput) with hc | hc <;>
++      simp only [hc, ↓reduceIte, Bool.false_eq_true, bind_run, setEx_run, emit_run]
++    · refine ⟨h'.deadline, h'.writeBy, fun t ht' => ?_, h'.drainBy⟩
++      simp only at ht'
++      split at ht'
++      · cases ht'; exact Nat.lt_add_of_pos_right ex'.config.gapMs_pos
++      · cases ht'
++    · exact h'
++  rcases Bool.eq_false_or_eq_true
++      (!ex.uploadStopped && ex.writeInFlight.isNone && decide (ex.written < ex.request.size)) with
++    hc | hc <;> simp only [hc, ↓reduceIte, Bool.false_eq_true]
++  · let stop := min ex.request.size (ex.written + max 1 ex.config.writeChunk)
++    let slice := if ex.written == 0 && stop == ex.request.size then ex.request
++      else ex.request.extract ex.written stop
++    let ex' : Exchange := { ex with
++      writeInFlight := some (stop - ex.written), writeBy := some (ex.now + ex.config.gapMs),
++      sentAny := true }
++    have key : Ahead ex' := by
++      refine ⟨h.deadline, fun t ht' => ?_, h.readBy, h.drainBy⟩
++      simp only [ex', Option.some.injEq] at ht'
++      subst ht'
++      exact Nat.lt_add_of_pos_right ex.config.gapMs_pos
++    exact hr (ex', acts.push (.write slice)) key
++  · exact hr _ h
++
++/-- Every reachable exchange that has not ended has every deadline ahead. -/
++theorem Reachable.ahead {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = false) : Ahead ex := by
++  induction h with
++  | begin req now deadline =>
++    revert ht
++    rw [begin_def]
++    simp only [bind_run]
++    intro ht
++    rcases expire_ahead (acts := #[]) (ex := initial req now deadline) (by simp [initial, terminal])
++      (initial_timers req now deadline) with h1 | h1
++    · rw [schedule_terminal h1, h1] at ht; cases ht
++    · exact schedule_ahead h1
++  | @step ex now e hr ih =>
++    rcases step_cases ex now e with ⟨_, hs⟩ | ⟨hc, _⟩
++    · rw [hs] at ht ⊢; exact ih ht
++    · revert ht
++      rw [step_run hc]
++      simp only [bind_run]
++      intro ht
++      have hT := handle_timers e (ex := advanced ex now)
++        ⟨hr.inv.headWritten, hr.inv.hasHead, hr.inv.writtenLe, hr.inv.inFlightLe⟩
++        (hr.timers.agree (by tagree_rfl))
++      generalize ((handle e).run (advanced ex now, #[])).2 = s1 at hT ht ⊢
++      obtain ⟨ex1, acts1⟩ := s1
++      cases ht1 : ex1.terminal
++      · rcases expire_ahead (acts := acts1) ht1 hT with h1 | h1
++        · rw [schedule_terminal h1, h1] at ht; cases ht
++        · exact schedule_ahead h1
++      · rw [expire_terminal (s := (ex1, acts1)) ht1, schedule_terminal (s := (ex1, acts1)) ht1] at ht
++        simp only at ht
++        rw [ht1] at ht
++        cases ht
++
++theorem foldl_min_gt {a : Nat} : ∀ (l : List Nat) (b : Nat), (∀ x ∈ l, a < x) → a < b →
++    a < l.foldl min b
++  | [], _, _, hb => hb
++  | x :: l, b, hl, hb =>
++    foldl_min_gt l (min b x) (fun y hy => hl y (List.mem_cons_of_mem _ hy))
++      (Nat.lt_min.mpr ⟨hb, hl x (by simp)⟩)
++
++/-- With every deadline ahead, the next one is ahead, and no later than the exchange's. -/
++theorem Ahead.nextDeadline {ex : Exchange} (h : Ahead ex) (ht : ex.terminal = false) :
++    ∃ t, ex.nextDeadline = some t ∧ ex.now < t ∧ t ≤ ex.deadline := by
++  have hn : ex.nextDeadline =
++      some (([ex.writeBy, ex.readBy, ex.drainBy].filterMap id).foldl min ex.deadline) := by
++    simp only [Exchange.nextDeadline, ht, Bool.false_eq_true, ↓reduceIte]
++  refine ⟨_, hn, foldl_min_gt _ _ ?_ h.deadline, foldl_min_le _ _⟩
++  intro x hx
++  obtain ⟨a, ha, hax⟩ := List.mem_filterMap.mp hx
++  simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
++  rcases ha with rfl | rfl | rfl
++  · exact h.writeBy x hax
++  · exact h.readBy x hax
++  · exact h.drainBy x hax
++
++/--
++**A live exchange has a deadline ahead** (checker: "a live exchange has a deadline ahead").  Every
++reachable exchange that has not ended has a next deadline strictly after its clock, and no later
++than the deadline of the whole exchange: every deadline that has passed was acted on, and the shell
++never sleeps past the exchange's deadline.
++-/
++theorem Reachable.deadlineAhead {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = false) :
++    ∃ t, ex.nextDeadline = some t ∧ ex.now < t ∧ t ≤ ex.deadline :=
++  (h.ahead ht).nextDeadline ht
++
++/-! ## Liveness -/
++
++/-- The exchange after `ex` has taken the first `n` events of `ev`, each at its time. -/
++def stateAt (ex : Exchange) (ev : Nat → Timestamp × ExchangeEvent) : Nat → Exchange
++  | 0 => ex
++  | n + 1 => ((stateAt ex ev n).step (ev n).1 (ev n).2).1
++
++/--
++`true` when an event at `t` comes at or after the exchange's next deadline, i.e. the shell waited
++as long as the core let it; `false` once the exchange has ended.
++-/
++def dueAt (ex : Exchange) (t : Timestamp) : Bool :=
++  match ex.nextDeadline with
++  | some d => decide (d ≤ t)
++  | none => false
++
++/-- How many of the first `n` events of a run were due when they came. -/
++def dueCount (ex : Exchange) (ev : Nat → Timestamp × ExchangeEvent) : Nat → Nat
++  | 0 => 0
++  | n + 1 => dueCount ex ev n + if dueAt (stateAt ex ev n) (ev n).1 then 1 else 0
++
++theorem Reachable.stateAt_reachable {ex : Exchange} (h : Reachable ex) (ev : Nat → Timestamp × ExchangeEvent) :
++    ∀ n, Reachable (stateAt ex ev n)
++  | 0 => h
++  | n + 1 => .step _ _ (h.stateAt_reachable ev n)
++
++theorem Reachable.stateAt_deadline {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent) : ∀ n, (stateAt ex ev n).deadline = ex.deadline
++  | 0 => rfl
++  | n + 1 => by
++    simp only [Exchange.stateAt]
++    rw [(step_fixed (h.stateAt_reachable ev n).inv _ _).2.2]
++    exact h.stateAt_deadline ev n
++
++theorem stateAt_terminal {ex : Exchange} {ev : Nat → Timestamp × ExchangeEvent} {n : Nat}
++    (h : (stateAt ex ev n).terminal = true) : ∀ k, (stateAt ex ev (n + k)).terminal = true
++  | 0 => h
++  | k + 1 => by
++    show ((stateAt ex ev (n + k)).step _ _).1.terminal = true
++    rw [step_of_terminal (stateAt_terminal h k)]
++    exact stateAt_terminal h k
++
++/-- A step never moves the clock back, and moves it to the event's time unless it ignores it. -/
++theorem step_now {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : ExchangeEvent) :
++    ((ex.terminal || stale ex now e) = true ∧ (ex.step now e).1.now = ex.now) ∨
++      ((ex.terminal || stale ex now e) = false ∧ (ex.step now e).1.now = max ex.now now) := by
++  rcases step_cases ex now e with ⟨hc, hs⟩ | ⟨hc, hg⟩
++  · left; rw [hs]; exact ⟨hc, rfl⟩
++  · right
++    refine ⟨hc, ?_⟩
++    rw [(hg hi).fixed.now]
++    cases e <;> simp only [startOf] <;> (try split) <;> rfl
++
++theorem step_now_le {ex : Exchange} (hi : Inv ex) (now : Timestamp) (e : ExchangeEvent) :
++    ex.now ≤ (ex.step now e).1.now := by
++  rcases step_now hi now e with ⟨_, h⟩ | ⟨_, h⟩ <;> rw [h]
++  · exact Nat.le_refl _
++  · exact Nat.le_max_left _ _
++
++theorem terminal_of_nextDeadline {ex : Exchange} {d : Timestamp} (h : ex.nextDeadline = some d) :
++    ex.terminal = false := by
++  unfold Exchange.nextDeadline at h
++  split at h
++  · cases h
++  · rename_i ht; simpa using ht
++
++/--
++**A due event moves the clock forward.**  An event at or after the next deadline of a reachable
++exchange is not ignored, and leaves the exchange's clock strictly later than it was.
++-/
++theorem Reachable.due_advances {ex : Exchange} (h : Reachable ex) {t : Timestamp}
++    (hd : dueAt ex t = true) (e : ExchangeEvent) : ex.now < (ex.step t e).1.now := by
++  unfold dueAt at hd
++  split at hd
++  · rename_i d hn
++    simp only [decide_eq_true_eq] at hd
++    have ht := terminal_of_nextDeadline hn
++    obtain ⟨d', hn', hlt, _⟩ := h.deadlineAhead ht
++    rw [hn] at hn'
++    cases hn'
++    rcases step_now h.inv t e with ⟨hc, _⟩ | ⟨_, hs⟩
++    · exfalso
++      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true] at hc
++      exact Nat.lt_irrefl t (Nat.lt_of_lt_of_le hc hd)
++    · rw [hs]
++      exact Nat.lt_of_lt_of_le hlt (Nat.le_trans hd (Nat.le_max_right _ _))
++  · cases hd
++
++/--
++The ranking of a run: due events, counted, plus the time left before the deadline, never exceed the
++time left at the start.
++-/
++theorem Reachable.dueCount_le {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent) (n : Nat) :
++    dueCount ex ev n + (ex.deadline - (stateAt ex ev n).now) ≤ ex.deadline - ex.now := by
++  induction n with
++  | zero => simp [dueCount, Exchange.stateAt]
++  | succ n ih =>
++    have hr := h.stateAt_reachable ev n
++    have hdl := h.stateAt_deadline ev n
++    simp only [dueCount, Exchange.stateAt]
++    rcases Bool.eq_false_or_eq_true (dueAt (stateAt ex ev n) (ev n).1) with hd | hd <;>
++      simp only [hd, ↓reduceIte, Bool.false_eq_true]
++    · have h1 := hr.due_advances hd (ev n).2
++      have h2 : (stateAt ex ev n).now < (stateAt ex ev n).deadline := by
++        unfold dueAt at hd
++        split at hd
++        · rename_i d hn
++          exact hr.beforeDeadline (terminal_of_nextDeadline hn)
++        · cases hd
++      rw [hdl] at h2
++      dsimp only [Timestamp] at *
++      omega
++    · have h1 := step_now_le hr.inv (ev n).1 (ev n).2
++      dsimp only [Timestamp] at *
++      omega
++
++/--
++**Finitely many waits.**  In every run from a reachable exchange, whatever events the shell reports
++and at whatever times, at most `deadline - now` of them come when due (at or after the next
++deadline of a live exchange).
++-/
++theorem Reachable.dueCount_bound {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent) (n : Nat) : dueCount ex ev n ≤ ex.deadline - ex.now := by
++  have := h.dueCount_le ev n
++  dsimp only [Timestamp] at *
++  omega
++
++/--
++**Ended after `deadline - now` waits.**  In every run from a reachable exchange, once `deadline - now`
++of the events have come when due, whatever else the shell reported in between, the exchange has
++ended.
++-/
++theorem Reachable.ended_after_waits {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent) (n : Nat) (hn : ex.deadline - ex.now ≤ dueCount ex ev n) :
++    (stateAt ex ev n).terminal = true := by
++  cases ht : (stateAt ex ev n).terminal
++  · have h1 := h.dueCount_le ev n
++    have h2 := (h.stateAt_reachable ev n).beforeDeadline ht
++    rw [h.stateAt_deadline ev n] at h2
++    dsimp only [Timestamp] at *
++    omega
++  · rfl
++
++/--
++**The deadline ends the exchange.**  In every run from a reachable exchange, the first event at or
++after the exchange's deadline ends it, and nothing changes after that.
++-/
++theorem Reachable.ended_at_deadline {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent) {n : Nat} (hd : ex.deadline ≤ (ev n).1) :
++    ∀ m, n < m → (stateAt ex ev m).terminal = true := by
++  intro m hm
++  have h1 : (stateAt ex ev (n + 1)).terminal = true := by
++    show ((stateAt ex ev n).step (ev n).1 (ev n).2).1.terminal = true
++    apply step_deadline (h.stateAt_reachable ev n)
++    rw [h.stateAt_deadline ev n]
++    exact Nat.le_trans hd (Nat.le_max_right _ _)
++  have := stateAt_terminal h1 (m - (n + 1))
++  rwa [show n + 1 + (m - (n + 1)) = m by omega] at this
++
++theorem dueCount_mono {ex : Exchange} {ev : Nat → Timestamp × ExchangeEvent} {n m : Nat}
++    (h : n ≤ m) : dueCount ex ev n ≤ dueCount ex ev m := by
++  induction m with
++  | zero => rw [Nat.le_zero.mp h]; exact Nat.le_refl _
++  | succ m ih =>
++    rcases Nat.lt_or_eq_of_le h with h' | h'
++    · simp only [dueCount]
++      have := ih (by omega)
++      omega
++    · rw [h']; exact Nat.le_refl _
++
++/--
++**Liveness under fairness.**  If, whenever the exchange is live, the shell eventually delivers an
++event when it is due (at or after the next deadline), then the exchange ends.  The events in
++between are arbitrary, in kind and time.
++-/
++theorem Reachable.ends_of_fair {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent)
++    (fair : ∀ n, (stateAt ex ev n).terminal = false →
++      ∃ m, n ≤ m ∧ dueAt (stateAt ex ev m) (ev m).1 = true) :
++    ∃ n, (stateAt ex ev n).terminal = true := by
++  apply Classical.byContradiction
++  intro hno
++  have live : ∀ n, (stateAt ex ev n).terminal = false := fun n => by
++    cases ht : (stateAt ex ev n).terminal
++    · rfl
++    · exact absurd ⟨n, ht⟩ hno
++  have grow : ∀ k, ∃ N, k ≤ dueCount ex ev N := by
++    intro k
++    induction k with
++    | zero => exact ⟨0, Nat.zero_le _⟩
++    | succ k ih =>
++      obtain ⟨N, hN⟩ := ih
++      obtain ⟨m, hm, hd⟩ := fair N (live N)
++      refine ⟨m + 1, ?_⟩
++      have := dueCount_mono (ex := ex) (ev := ev) hm
++      simp only [dueCount, hd, ↓reduceIte]
++      omega
++  obtain ⟨N, hN⟩ := grow (ex.deadline - ex.now + 1)
++  have := h.dueCount_bound ev N
++  omega
++
++/--
++**A shell that only waits ends the exchange in time.**  If every event the shell reports while the
++exchange is live is due (a tick at the next deadline, say), the exchange has ended after
++`deadline - now` events.
++-/
++theorem Reachable.ends_of_allDue {ex : Exchange} (h : Reachable ex)
++    (ev : Nat → Timestamp × ExchangeEvent)
++    (hall : ∀ n, (stateAt ex ev n).terminal = false → dueAt (stateAt ex ev n) (ev n).1 = true) :
++    (stateAt ex ev (ex.deadline - ex.now)).terminal = true := by
++  have key : ∀ n, (stateAt ex ev n).terminal = true ∨ dueCount ex ev n = n := by
++    intro n
++    induction n with
++    | zero => right; rfl
++    | succ n ih =>
++      rcases ih with ih | ih
++      · left; exact stateAt_terminal ih 1
++      · cases ht : (stateAt ex ev n).terminal
++        · right
++          simp only [dueCount, hall n ht, ↓reduceIte, ih]
++        · left; exact stateAt_terminal ht 1
++  rcases key (ex.deadline - ex.now) with hk | hk
++  · exact hk
++  · exact h.ended_after_waits ev _ (by rw [hk]; exact Nat.le_refl _)
++
++/--
++**The shell can always wait.**  A reachable exchange that has not ended can be ticked at its next
++deadline: the tick is due, so it is not ignored, and it comes after the exchange's clock and no
++later than its deadline.
++-/
++theorem Reachable.tick_due {ex : Exchange} (h : Reachable ex) (ht : ex.terminal = false) :
++    ∃ t, ex.nextDeadline = some t ∧ dueAt ex t = true ∧ stale ex t .tick = false ∧ ex.now < t ∧
++      t ≤ ex.deadline := by
++  obtain ⟨t, hn, hlt, hle⟩ := h.deadlineAhead ht
++  exact ⟨t, hn, by simp [dueAt, hn], by simp [stale, hn], hlt, hle⟩
++
++/-! ## The checker's clock -/
++
++/--
++A run with the checker's model of it (`Observed`) in which no event but a tick is earlier than the
++model's clock: the shell's clock never goes backwards, except that a tick may come late.  The
++checker's random runs and its exploration are such runs.
++-/
++inductive ObservedMono : Exchange → Obs → Prop where
++  /-- The start. -/
++  | begin (req : PreparedRequest) (now deadline : Timestamp) :
++      ObservedMono (Exchange.begin req now deadline).1
++        ((Exchange.begin req now deadline).2.foldl Obs.see { now })
++  /-- One more step: a tick, or an event no earlier than the model's clock. -/
++  | step {ex : Exchange} {m : Obs} (now : Timestamp) (e : ExchangeEvent)
++      (hm : e = .tick ∨ m.now ≤ now) : ObservedMono ex m →
++      ObservedMono (ex.step now e).1
++        ((ex.step now e).2.foldl Obs.see { m.observe e with now := max m.now now })
++
++theorem ObservedMono.reachable {ex : Exchange} {m : Obs} (h : ObservedMono ex m) : Reachable ex := by
++  induction h with
++  | begin req now deadline => exact .begin req now deadline
++  | step now e _ _ ih => exact .step now e ih
++
++/--
++**A live exchange has a deadline ahead, by the checker's clock** (checker: "a live exchange has a
++deadline ahead", literally).  The checker compares the next deadline with its model's clock, the
++latest time of any event, which a stale tick moves past the exchange's own clock.  When no event but
++a tick is earlier than the model's clock, every reachable exchange that has not ended has a next
++deadline strictly after the model's clock and no later than its deadline.  Without that hypothesis
++the statement is false: an event earlier than a stale tick sets its timers from the exchange's
++older clock (`logs/2026-10-28/live/clock/`).
++-/
++theorem ObservedMono.deadlineAhead {ex : Exchange} {m : Obs} (h : ObservedMono ex m)
++    (ht : ex.terminal = false) : ∃ t, ex.nextDeadline = some t ∧ m.now < t ∧ t ≤ ex.deadline := by
++  induction h with
++  | begin req now deadline =>
++    obtain ⟨t, hn, hlt, hle⟩ := (Reachable.begin req now deadline).deadlineAhead ht
++    refine ⟨t, hn, ?_, hle⟩
++    rw [← Array.foldl_toList, see_now]
++    have := (begin_good req now deadline).fixed.now
++    rw [this] at hlt
++    exact hlt
++  | @step ex m now e hm hob ih =>
++    rw [← Array.foldl_toList, see_now]
++    simp only
++    have hr := hob.reachable
++    rcases step_now hr.inv now e with ⟨hc, _⟩ | ⟨hc, hs⟩
++    · rw [step_ignored hc] at ht ⊢
++      obtain ⟨t, hn, hlt, hle⟩ := ih ht
++      refine ⟨t, hn, ?_, hle⟩
++      cases e <;> simp only [ht, Bool.false_or, stale, hn, decide_eq_true_eq, Bool.false_eq_true] at hc
++      exact Nat.max_lt.mpr ⟨hlt, hc⟩
++    · -- A tick that is not ignored is due, so no earlier than the model's clock either.
++      have hm' : m.now ≤ now := by
++        rcases hm with rfl | hm
++        · have ht0 := not_terminal_of hc
++          obtain ⟨t, hn, hlt, _⟩ := ih ht0
++          simp only [ht0, Bool.false_or, stale, hn, decide_eq_false_iff_not, Nat.not_lt] at hc
++          exact Nat.le_of_lt (Nat.lt_of_lt_of_le hlt hc)
++        · exact hm
++      obtain ⟨t, hn, hlt, hle⟩ := (Reachable.step now e hr).deadlineAhead ht
++      refine ⟨t, hn, ?_, hle⟩
++      rw [hs] at hlt
++      rw [Nat.max_eq_right hm']
++      exact Nat.lt_of_le_of_lt (Nat.le_max_right _ _) hlt
++
++end LeanHttp.Exchange
+diff --git a/LeanHttp/Exchange/Proofs.lean b/LeanHttp/Exchange/Proofs.lean
+index c1cdcff..ac8fa9d 100644
+--- a/LeanHttp/Exchange/Proofs.lean
++++ b/LeanHttp/Exchange/Proofs.lean
+@@ -33,8 +33,8 @@ What they do not cover:
+   complete response", "a finished response delivered its whole body", "the body is the response's",
+   and the clause of "reusable only when safe" that the bytes read are exactly one reusable response)
+   depend on the machine parsing correctly, and are not proved.
+-- "A live exchange has a deadline ahead" is not proved, and is false when `gapMs = 0` (a write's
+-  timeout is then `now`).
++- "A live exchange has a deadline ahead", and liveness under the deadline, are proved in
++  `LeanHttp.Exchange.Liveness`, which builds on this module.
+ 
+ ## Within a step
+ 
+diff --git a/Tests/Support/Gen.lean b/Tests/Support/Gen.lean
+index c1c26ec..fdfa543 100644
+--- a/Tests/Support/Gen.lean
++++ b/Tests/Support/Gen.lean
+@@ -175,16 +175,23 @@ def Case.head (c : Case) : Request.Head :=
+ def Case.prepare (c : Case) : Except Cause PreparedRequest :=
+   Exchange.prepare c.config c.head (ByteArray.mk (Array.replicate c.bodySize 'x'.toUInt8))
+ 
++/-- For drawing positive numbers with `pick`. -/
++instance : Inhabited { n : Nat // 0 < n } := ⟨⟨1, by decide⟩⟩
++
+ /-- A random case. -/
+ def genCase : Gen Case := do
+   let script ← below scripts.size
+   let s := scripts[script]!
+   let method ← if s.forHead then pure .head else pick [Method.get, .post]
+   let bodySize ← if method == .post then pick [0, 10, 100, 300] else pure 0
++  -- Drawn in the order of the fields, as before the gap carried a proof of positivity.
++  let keepAlive := (← below 3) < 2
++  let writeChunk ← pick [16, 64, 65536]
++  let gap ← pick ([⟨50, by decide⟩, ⟨200, by decide⟩, ⟨1000, by decide⟩] : List { n : Nat // 0 < n })
+   let config : ExchangeConfig := {
+-    keepAlive := (← below 3) < 2
+-    writeChunk := ← pick [16, 64, 65536]
+-    gapMs := ← pick [50, 200, 1000]
++    keepAlive, writeChunk
++    gapMs := gap.1
++    gapMs_pos := gap.2
+     drainBytes := ← pick [0, 4, 64]
+     drainMs := ← pick [10, 50]
+     maxBody := ← pick [3, 100, 1024]
+diff --git a/Tests/Unit.lean b/Tests/Unit.lean
+index 9b49e62..b12b23c 100644
+--- a/Tests/Unit.lean
++++ b/Tests/Unit.lean
+@@ -123,6 +123,11 @@ def planChecks : Checks Unit := do
+   check "plan refuses https" (planText "https://example.com/" |>.startsWith "error: unsupported scheme")
+   let origin := Client.plan { method := .get, version := .v11, uri := rootTarget }
+   check "plan refuses an origin-form target" (origin matches .error _)
++  -- A zero read gap would make every write and read due the moment it is issued.
++  check "a zero read gap is an invalid request"
++    (Client.exchangeConfig { readGapMs := 0 } matches .error (.invalidRequest _))
++  check "a read gap of 1 ms is accepted"
++    (match Client.exchangeConfig { readGapMs := 1 } with | .ok c => c.gapMs == 1 | .error _ => false)
+ 
+ /-! ## Error classification -/
+ 
+diff --git a/lakefile.lean b/lakefile.lean
+index 5b28115..ebd492c 100644
+--- a/lakefile.lean
++++ b/lakefile.lean
+@@ -15,7 +15,7 @@ lean_lib LeanHttpProto where
+ lean_lib LeanHttp where
+   leanOptions := #[⟨`autoImplicit, false⟩]
+   -- The proofs about the exchange core are checked by every build, but no other module imports them.
+-  roots := #[`LeanHttp, `LeanHttp.Exchange.Proofs]
++  roots := #[`LeanHttp, `LeanHttp.Exchange.Proofs, `LeanHttp.Exchange.Liveness]
+ 
+ /-- Helpers shared by the test executables. -/
+ lean_lib TestSupport where
+diff --git a/scripts/proof-axioms.lean b/scripts/proof-axioms.lean
+index 4033b10..44decd3 100644
+--- a/scripts/proof-axioms.lean
++++ b/scripts/proof-axioms.lean
+@@ -1,6 +1,7 @@
+ module
+ 
+ import all LeanHttp.Exchange.Proofs
++import all LeanHttp.Exchange.Liveness
+ 
+ /-!
+ Prints the axioms of the main theorems about the exchange core.  Each must depend on no more than
+@@ -35,3 +36,15 @@ open LeanHttp.Exchange
+ #print axioms begin_ends
+ #print axioms begin_write
+ #print axioms begin_fail
++#print axioms Reachable.timers
++#print axioms Reachable.ahead
++#print axioms Reachable.deadlineAhead
++#print axioms ObservedMono.deadlineAhead
++#print axioms Reachable.tick_due
++#print axioms Reachable.due_advances
++#print axioms Reachable.dueCount_le
++#print axioms Reachable.dueCount_bound
++#print axioms Reachable.ended_after_waits
++#print axioms Reachable.ended_at_deadline
++#print axioms Reachable.ends_of_fair
++#print axioms Reachable.ends_of_allDue

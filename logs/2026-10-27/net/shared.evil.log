@@ -1,0 +1,51 @@
+      21.9 listening on 127.0.0.1:18080
+      79.3 conn1 accepted from ('127.0.0.1', 50060)
+      80.3 conn1 req1 GET /ok {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+      81.3 conn1 EOF from client after 1 requests
+      81.4 conn1 closed by server
+     147.3 conn2 accepted from ('127.0.0.1', 50070)
+     149.6 conn2 req1 POST /echo {'host': ['127.0.0.1:18080'], 'connection': ['close'], 'content-length': ['11']} body=11B
+     152.3 conn2 EOF from client after 1 requests
+     152.6 conn2 closed by server
+     221.8 conn3 accepted from ('127.0.0.1', 50074)
+     224.7 conn3 req1 HEAD /head-cl {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+     227.3 conn3 EOF from client after 1 requests
+     227.9 conn3 closed by server
+     295.2 conn4 accepted from ('127.0.0.1', 50090)
+     296.9 conn4 req1 GET /chunked-ext {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+     298.4 conn4 EOF from client after 1 requests
+     298.5 conn4 closed by server
+     343.2 conn5 accepted from ('127.0.0.1', 50102)
+     345.2 conn5 req1 GET /early-hints {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+     347.1 conn5 EOF from client after 1 requests
+     347.4 conn5 closed by server
+   19540.0 conn6 accepted from ('127.0.0.1', 56632)
+   19541.6 conn6 req1 GET /trickle?ms=100 {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   21607.1 conn7 accepted from ('127.0.0.1', 56636)
+   21611.0 conn7 req1 GET /interim-forever?ms=300 {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   21684.1 conn6 trickle stopped: BrokenPipeError(32, 'Broken pipe')
+   21684.3 conn6 closed by server
+   23737.2 conn8 accepted from ('127.0.0.1', 37488)
+   23738.7 conn8 req1 GET /interim-forever?ms=5 {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   23802.4 conn8 interim stream stopped: BrokenPipeError(32, 'Broken pipe')
+   23802.7 conn8 closed by server
+   23873.0 conn9 accepted from ('127.0.0.1', 37498)
+   23877.5 conn9 req1 GET /stall-head?ms=3000 {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   24021.3 conn7 interim stream stopped: BrokenPipeError(32, 'Broken pipe')
+   24021.5 conn7 closed by server
+   24962.4 conn10 accepted from ('127.0.0.1', 37510)
+   24964.5 conn10 req1 GET /bigbody?n=10000000 {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   24966.8 conn10 bigbody send failed after 524288B: ConnectionResetError(104, 'Connection reset by peer')
+   24967.2 conn10 closed by server
+   25085.8 conn11 accepted from ('127.0.0.1', 37514)
+   25092.7 conn11 req1 GET /badstatus {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   25097.8 conn11 EOF from client after 1 requests
+   25098.3 conn11 closed by server
+   25190.3 conn12 accepted from ('127.0.0.1', 37526)
+   25192.7 conn12 req1 GET /cl-mismatch {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   25192.9 conn12 closed by server
+   25263.8 conn13 accepted from ('127.0.0.1', 37542)
+   25269.1 conn13 req1 GET /rst {'host': ['127.0.0.1:18080'], 'connection': ['close']} body=0B
+   25269.3 conn13 closed by server
+   26884.7 conn9 EOF from client after 1 requests
+   26884.9 conn9 closed by server

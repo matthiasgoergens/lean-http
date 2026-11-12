@@ -1,0 +1,5 @@
+$ net-client call GET http://nonexistent.invalid/
+call 0 error delivery=not sent ms=1.325 rounds=0 seed=13700817642343629808 status=none cause="could not resolve nonexistent.invalid: temporary failure (error code: 3001)" detail=""
+fds_after_calls=10
+main returning at ms=1.673
+exit status=0 wall_ms=11 exit_after_main_ms=10

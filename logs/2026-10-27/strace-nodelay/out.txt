@@ -1,0 +1,24 @@
+# on the host of the build host (strace is not in the image), net-client built by scripts/remote.sh, lean-http at 449bb96
+$ ssh buildhost 'cd ~/lean-http && bash tests/net/strace-nodelay.sh'
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:48101/echo body=100 nodelay=1
+call 0 ok status=200 bytes=165 ms=17.863 rounds=1 address=127.0.0.1:48101 seed=2761897953673262735 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=16
+main returning at ms=18.356
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+1532343 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 13
+1532343 connect(13, {sa_family=AF_INET, sin_port=htons(48101), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+1532351 setsockopt(13, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+1532365 write(13, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+PASS nodelay=1: TCP_NODELAY set once on the connected socket (fd 13)
+PASS nodelay=1: the 186-byte request went out in one write (1 writes on the socket)
+$ strace -f -o TRACE -e trace=socket,connect,setsockopt,writev,sendmsg,sendto,write net-client call POST http://127.0.0.1:48101/echo body=100 nodelay=0
+call 0 ok status=200 bytes=165 ms=98.493 rounds=1 address=127.0.0.1:48101 seed=3071956863871649251 failed_attempts=[] body_start="POST /echo auth=None cookie=None host=['"
+fds_after_calls=16
+main returning at ms=102.343
+### TRACE, without the writes to stdout and the runtime's own wake-ups
+1532483 socket(AF_INET, SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK, IPPROTO_IP) = 13
+1532483 connect(13, {sa_family=AF_INET, sin_port=htons(48101), sin_addr=inet_addr("127.0.0.1")}, 16) = -1 EINPROGRESS (Operation now in progress)
+1532501 write(13, "POST /echo HTTP/1.1\r\nHost: 127.0"..., 186) = 186
+PASS nodelay=0 (control): TCP_NODELAY not set (fd 13)
+PASS nodelay=0: the 186-byte request went out in one write (1 writes on the socket)
+### 0 failed

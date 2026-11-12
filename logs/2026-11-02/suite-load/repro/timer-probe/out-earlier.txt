@@ -1,0 +1,30 @@
+Earlier probe runs, copied from the session's console (each started with run.sh; loadavg is the
+build host's when the run started).  timerprobe sleepers=4 ms=50 rounds=40 [hammer=N], the whole
+process pinned with starve.sh to CPU 100 alongside HOGS busy loops, or the loop's thread alone
+with starveloop.sh (pinloop=101).
+
+loadavg 387.20 322.34 267.36
+sleepers=4 ms=50 rounds=40 hammer=0 hammered=0 sleeps=160 early_over_1ms=0 earliest_us=-592 p50_us=542 latest_us=232297
+sleepers=4 ms=50 rounds=40 hammer=16 hammered=88879 sleeps=160 early_over_1ms=0 earliest_us=-522 p50_us=26648 latest_us=365207
+
+loadavg 380.86 336.23 276.83 (starve.sh 100 HOGS)
+hogs=0  sleeps=160 early_over_1ms=0 earliest_us=-682 p50_us=518 latest_us=891533
+hogs=2  sleeps=160 early_over_1ms=0 earliest_us=351 p50_us=465 latest_us=1387975
+hogs=8  sleeps=160 early_over_1ms=0 earliest_us=276 p50_us=965 latest_us=738030
+
+loadavg 367.17 341.07 282.53 (starve.sh 100 HOGS, hammer=N)
+hogs=0 hammer=4   early_over_1ms=7 earliest_us=-4979 p50_us=-15 latest_us=28689
+hogs=0 hammer=16  early_over_1ms=0 earliest_us=-184 p50_us=24954 latest_us=102256
+hogs=4 hammer=4   early_over_1ms=9 earliest_us=-11192 p50_us=1104 latest_us=219938
+hogs=4 hammer=16  early_over_1ms=0 earliest_us=800 p50_us=254386 latest_us=12181515
+
+loadavg 562.97 538.58 423.72 (starveloop.sh 101 HOGS, pinloop=101, hammer=0)
+hogs=0   early_over_1ms=0 earliest_us=-824 p50_us=547 latest_us=281437
+hogs=8   early_over_1ms=6 earliest_us=-4378 p50_us=3045 latest_us=630798
+hogs=16  early_over_1ms=4 earliest_us=-33968 p50_us=3825 latest_us=286166
+
+exit-test.sh (what delays exit after main returns, 3 s of each), loadavg 372.41 416.99 421.76:
+none: 222 ms
+dedicated: 3038 ms   (a task still running delays exit)
+pool: 3251 ms
+timer: 94 ms         (a pending libuv timer does not)

@@ -1,0 +1,81 @@
+      22.9 listening on 127.0.0.1:18083
+     343.7 conn1 accepted from ('127.0.0.1', 38276)
+     346.1 conn1 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+     347.7 conn1 EOF from client after 1 requests
+     347.8 conn1 closed by server
+     604.7 conn2 accepted from ('127.0.0.1', 38290)
+     606.1 conn2 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+     610.9 conn2 EOF from client after 1 requests
+     611.0 conn2 closed by server
+     863.5 conn3 accepted from ('127.0.0.1', 38294)
+     864.7 conn3 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+     865.6 conn3 EOF from client after 1 requests
+     865.7 conn3 closed by server
+    1118.7 conn4 accepted from ('127.0.0.1', 38316)
+    1121.0 conn4 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    1121.9 conn4 EOF from client after 1 requests
+    1122.0 conn4 closed by server
+    1374.8 conn5 accepted from ('127.0.0.1', 38350)
+    1376.8 conn5 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    1377.8 conn5 EOF from client after 1 requests
+    1377.9 conn5 closed by server
+    1632.6 conn6 accepted from ('127.0.0.1', 38374)
+    1635.0 conn6 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    1635.9 conn6 EOF from client after 1 requests
+    1636.0 conn6 closed by server
+    1888.4 conn7 accepted from ('127.0.0.1', 38422)
+    1889.0 conn7 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    1889.9 conn7 EOF from client after 1 requests
+    1890.0 conn7 closed by server
+    2142.5 conn8 accepted from ('127.0.0.1', 38434)
+    2143.3 conn8 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    2144.1 conn8 EOF from client after 1 requests
+    2144.2 conn8 closed by server
+    2396.7 conn9 accepted from ('127.0.0.1', 38438)
+    2408.1 conn9 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    2409.0 conn9 EOF from client after 1 requests
+    2409.1 conn9 closed by server
+    2670.3 conn10 accepted from ('127.0.0.1', 38442)
+    2672.9 conn10 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    2673.5 conn10 EOF from client after 1 requests
+    2673.6 conn10 closed by server
+    4809.7 conn11 accepted from ('127.0.0.1', 38448)
+    4812.1 conn11 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    4812.8 conn11 EOF from client after 1 requests
+    4812.9 conn11 closed by server
+    4864.7 conn12 accepted from ('127.0.0.1', 38456)
+    4866.1 conn12 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    4866.8 conn12 EOF from client after 1 requests
+    4866.9 conn12 closed by server
+    4919.0 conn13 accepted from ('127.0.0.1', 38460)
+    4919.8 conn13 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    4953.6 conn13 EOF from client after 1 requests
+    4953.8 conn13 closed by server
+    5005.5 conn14 accepted from ('127.0.0.1', 38470)
+    5008.1 conn14 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5008.9 conn14 EOF from client after 1 requests
+    5009.0 conn14 closed by server
+    5061.1 conn15 accepted from ('127.0.0.1', 38484)
+    5061.9 conn15 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5062.7 conn15 EOF from client after 1 requests
+    5062.8 conn15 closed by server
+    5117.1 conn16 accepted from ('127.0.0.1', 38496)
+    5117.7 conn16 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5118.4 conn16 EOF from client after 1 requests
+    5118.5 conn16 closed by server
+    5177.2 conn17 accepted from ('127.0.0.1', 38510)
+    5178.0 conn17 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5179.0 conn17 EOF from client after 1 requests
+    5179.1 conn17 closed by server
+    5232.1 conn18 accepted from ('127.0.0.1', 38522)
+    5235.0 conn18 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5235.7 conn18 EOF from client after 1 requests
+    5235.8 conn18 closed by server
+    5292.4 conn19 accepted from ('127.0.0.1', 38526)
+    5293.3 conn19 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5294.0 conn19 EOF from client after 1 requests
+    5294.0 conn19 closed by server
+    5347.7 conn20 accepted from ('127.0.0.1', 38530)
+    5349.2 conn20 req1 GET /ok {'host': ['dual.test:18083'], 'connection': ['close']} body=0B
+    5350.3 conn20 EOF from client after 1 requests
+    5350.4 conn20 closed by server

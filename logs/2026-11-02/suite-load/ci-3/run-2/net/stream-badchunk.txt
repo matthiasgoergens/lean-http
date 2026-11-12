@@ -1,0 +1,8 @@
+$ net-client stream GET http://127.0.0.1:18118/badchunk
+stream call 0 error delivery=response received ms=9.347 rounds=1 lookups=0 seed=12237729414473309761 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="invalid response: Bad message" detail="" read_before=5
+callback entered at ms=9.005
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=15268 rss_kb=15268
+main returning at ms=11.189 started_unix_us=1793621332984667 returning_unix_us=1793621332995856
+exit status=0 wall_ms=66 start_ms=39 exit_after_main_ms=15

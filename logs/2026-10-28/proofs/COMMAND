@@ -1,0 +1,22 @@
+Runs for the proofs of the exchange core (branch proofs), on the build host in localhost/b8perf-lean with Lean v4.34.1.
+
+Behaviour unchanged by the restructuring of the core (the two `partial def` loops as rounds of a certified `loopWhile`, commit ef6b4f3):
+$ scp core-run.sh buildhost:<dir>/out/ && LEAN_HTTP_REMOTE_DIR=<dir> scripts/remote.sh bash out/core-run.sh <tag>
+  base/     the core before the restructuring (git archive 6ae7b67, remote dir lean-http-proofs-base)
+  loops/    the core after it (remote dir lean-http-proofs)
+  Each has unit.txt, codec.txt, traces.txt, props-seed{1,2}.txt (200,000 random runs each), explore-10.txt.
+  The outputs of base/ and loops/ are identical file for file, including the random runs' statistics.
+
+The proofs, on the final tree (commit ff0b2de plus this file), from a fresh remote dir with no .lake (lean-http-proofs-final):
+$ LEAN_HTTP_REMOTE_DIR=lean-http-proofs-final scripts/remote.sh bash -c 'lake build; lake env lean scripts/proof-axioms.lean; bash out/core-run.sh final'
+  final/build.txt    lake build from scratch, LeanHttp.Exchange.Proofs among the modules built, no warnings
+  final/axioms.txt   #print axioms for the 24 main theorems: each [propext, Classical.choice, Quot.sound], no sorryAx
+  final/*.txt        the same suites again; identical to loops/ file for file
+
+Counterexamples, each run with `lake env lean --run` against the TestSupport library (lake build TestSupport first):
+  gap0/        with gapMs := 0 (which Config.readGapMs allows), the checker's "a live exchange has a deadline
+               ahead" fails right after begin: the write's deadline is now + 0.  With gapMs := 1 it holds.
+  unreachable/ the single-step property "no head before the request head is written" does not hold for every
+               exchange: from a hand-built state no run reaches (awaitingHead with nothing written), one step
+               delivers a head.  The theorems therefore assume Inv, which Reachable.inv proves for every
+               reachable exchange.

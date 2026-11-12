@@ -1,0 +1,9 @@
+$ net-client call GET http://slow.test/ deadline=10000 cancel=1000 after=send
+call 0 error delivery=not sent ms=1033.857 rounds=0 lookups=1 seed=13262269518293704826 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="cancelled while the name was looked up"
+cancel fired at ms=1033.137
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=1034.680 started_unix_us=1793621433527803 returning_unix_us=1793621434562483
+timeout: the monitored command dumped core
+exit status=139 wall_ms=10358 start_ms=14 exit_after_main_ms=9309

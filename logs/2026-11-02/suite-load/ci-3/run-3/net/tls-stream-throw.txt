@@ -1,0 +1,8 @@
+$ net-client stream GET https://127.0.0.1:18162/big?n=10000000 ca=/w/out/net/tls-certs/ca.pem stop=1 throw=1
+stream 0 threw "thrown inside the callback" ms=39.756
+callback entered at ms=38.907
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=21180 rss_kb=21192
+main returning at ms=40.753 started_unix_us=1793621895566953 returning_unix_us=1793621895607706
+exit status=0 wall_ms=132 start_ms=76 exit_after_main_ms=15

@@ -1,0 +1,15 @@
+$ net-client call GET http://127.0.0.1:18188/sleep?ms=5000 concurrent=2 maxactive=1 shutdown=200 after=send:2 log=/w/out/net/shutdown.evil.log logtext=GET /sleep
+call 0 error delivery=maybe delivered ms=330.088 rounds=1 lookups=0 seed=12014776375439901843 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+call 1 error delivery=not sent ms=336.486 rounds=0 lookups=0 seed=11931506499213670970 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail="cancelled while waiting for a connection: the origin is at maxActivePerOrigin"
+round 0 of 2 calls took ms=336.547
+summary calls n=2 min=330.088 p50=336.486 p90=336.486 max=336.486 ms ok=0
+shutdown fired at ms=227.852
+pool idle=0 checked_out=0 allocated=1
+after shutdown: call 2 error delivery=not sent ms=0.000 rounds=0 lookups=0 seed=3586302811932502637 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail="cancelled before the request was sent"
+after shutdown: pool idle=0 checked_out=0
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+fds_after_calls=11
+main returning at ms=337.460
+exit status=0 wall_ms=351 exit_after_main_ms=14

@@ -1,0 +1,4 @@
+Independent checks of branch pool at d8b760b (rebased on main a1e5e26), 2026-10-29, the build host, v4.34.1 container, fresh dirs lean-http-pool-verify and lean-http-pool-net:
+- lake build; axioms: proof 41, codec 41, pool 30, call 28, all within propext, Classical.choice, Quot.sound; no sorry, admit or axiom in LeanHttp/
+- unit 77, codec 50, response-codec 41, call-tests 139, traces 48; pool-tests traces 12, props 100000 seed 17 (4000000 operations), explore 7, control 20000 17 6 (5 plants, each caught by the model comparison and by the properties alone) -> pool-verify.txt
+- real sockets: 139 passed, 0 failed, 1 known (dns-timeout) -> pool-net-verify.txt

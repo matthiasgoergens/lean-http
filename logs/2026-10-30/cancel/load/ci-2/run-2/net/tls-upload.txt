@@ -1,0 +1,10 @@
+$ net-client upload PUT https://127.0.0.1:18174/count size=1000000 chunk=4096 ca=/w/out/net/tls-certs/ca.pem repeat=2
+upload call 0 ok status=200 bytes=42 ms=121.146 rounds=1 lookups=0 address=127.0.0.1:18174 seed=3899718337288211915 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18174/count tls=TLSv1.3 body_start="pattern=ok received=1000000 framing=leng" pulls=246 produced=1000000 response="pattern=ok received=1000000 framing=length"
+after upload 0: pool idle=1 checked_out=0 allocated=1
+upload call 1 ok status=200 bytes=42 ms=67.059 rounds=0 lookups=0 address=127.0.0.1:18174 seed=6149620365619675202 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=115 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18174/count tls=TLSv1.3 body_start="pattern=ok received=1000000 framing=leng" pulls=246 produced=1000000 response="pattern=ok received=1000000 framing=length"
+after upload 1: pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+rss_peak_kb=24980 rss_kb=24980
+main returning at ms=189.205
+exit status=0 wall_ms=204 exit_after_main_ms=15

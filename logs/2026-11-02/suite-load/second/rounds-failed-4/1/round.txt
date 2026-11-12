@@ -1,0 +1,301 @@
+### 2026-11-02T10:37:15Z 7.0.0-38-generic; syn_retries=2; uid=0
+PASS blackhole-timeout: process exited 11 ms after main returned
+PASS blackhole-timeout: two connect attempts time out; nothing sent
+PASS blackhole-timeout: two 1 s attempts and one backoff: 2201 ms
+PASS blackhole-timeout: the abandoned attempts' sockets are released later (13, then 11 descriptors)
+PASS refused-backoff: process exited 22 ms after main returned
+PASS refused-backoff: refused three times (two retries by the planner); nothing sent
+PASS refused-backoff: one connect round per attempt
+PASS refused-backoff: at least the 3670 + 3728 ms of backoff for seed 3: 7734 ms
+PASS refused-backoff: the planner's delays are the schedule of seed 3
+PASS refused-backoff: each retry waited its delay, at most 3000 ms more (delays 3670 3728, gaps 3708 3970)
+PASS refused-backoff: every call's steps replay through the planner
+PASS refused-deadline: process exited 6 ms after main returned
+PASS refused-deadline: a retry whose backoff would reach the deadline is not made
+PASS refused-deadline: the call fails at once, not at the deadline: 4 ms
+PASS refused-deadline: every call's steps replay through the planner
+PASS deadline-trickle: process exited 5 ms after main returned
+PASS deadline-trickle: a body trickling one byte per 100 ms ends at the deadline
+PASS deadline-trickle: at the 2 s deadline: 2012 ms
+PASS deadline-interim: process exited 74 ms after main returned
+PASS deadline-interim: interim responses every 300 ms, never a final one, end at the deadline
+PASS deadline-interim: at the 2 s deadline: 2012 ms
+PASS read-gap: process exited 3 ms after main returned
+PASS read-gap: a silent server hits the read gap
+PASS read-gap: after the 1 s gap: 1010 ms
+PASS read-gap-retried: process exited 3 ms after main returned
+PASS read-gap-retried: by default the GET is tried three times
+PASS read-gap-retried: three 1 s gaps and two backoffs: 3055 ms
+PASS connect-deadline: process exited 13 ms after main returned
+PASS connect-deadline: the deadline passes while connecting; nothing sent
+PASS connect-deadline: at the 1.5 s deadline: 1526 ms
+PASS early-response: process exited 77 ms after main returned
+PASS early-response: a server that answers 413 after the head and stops reading: the response is delivered
+PASS early-response: well before the 5 s write gap: 34 ms
+PASS keepalive-close: process exited 274 ms after main returned
+PASS keepalive-close: the idle check finds the closed connection; the call opens a new one
+PASS keepalive-close: and again
+PASS keepalive-close: no call fails
+PASS keepalive-close: three connections: 3
+PASS keepalive-close-nocheck: process exited 5 ms after main returned
+PASS keepalive-close-nocheck: without the idle check, the GET is sent again on a fresh connection
+PASS keepalive-close-post: process exited 4 ms after main returned
+PASS keepalive-close-post: without the idle check, a POST on the closed connection fails, maybe delivered
+PASS idle-408: process exited 5 ms after main returned
+PASS idle-408: the idle check catches the 408 and the close; the POST goes on a new connection
+PASS idle-408: the server sent the 408
+PASS idle-408-nocheck: process exited 5 ms after main returned
+PASS idle-408-nocheck: without the idle check, the 408 read as the response sends the POST again
+PASS concurrency: process exited 7 ms after main returned
+PASS concurrency: eight calls at once: the server had all eight requests of a round before answering any: 8
+PASS concurrency: all sixteen calls succeed
+PASS concurrency: the first round opens eight connections and keeps four; the second reuses those and opens four
+PASS concurrency: twelve connections: 12
+PASS concurrency: four calls reused
+PASS concurrency-cap: process exited 38 ms after main returned
+PASS concurrency-cap: at most two calls at once, and two at once: 2
+PASS concurrency-cap: all six succeed
+PASS concurrency-cap: two connections: 2
+PASS redispatch-refused: process exited 8 ms after main returned
+PASS redispatch-refused: a re-dispatched GET whose fresh connection is refused: maybe delivered
+PASS retry-503: process exited 6 ms after main returned
+PASS retry-503: a 503 with Retry-After: 4 is retried when asked for
+PASS retry-503: after the 4 s it asked for: 4037 ms
+PASS retry-503-off: process exited 105 ms after main returned
+PASS retry-503-off: and delivered when not
+PASS retry-429-date: process exited 154 ms after main returned
+PASS retry-429-date: a 429 with a Retry-After date is retried
+PASS retry-429-date: 4 s after the response's Date: 4151 ms
+PASS retry-503-long: process exited 8 ms after main returned
+PASS retry-503-long: a Retry-After over the 60 s limit is delivered
+PASS retry-503-long: at once, not after the 120 s it asked for: 2 ms
+PASS retry-503-backoff: process exited 19 ms after main returned
+PASS retry-503-backoff: without a Retry-After, the backoff
+PASS retry-503-backoff: of seed 3
+PASS retry-503-backoff: each retry waited its delay, at most 3000 ms more (delays 3670 3728, gaps 3822 3747)
+PASS retry-503-post: process exited 33 ms after main returned
+PASS retry-503-post: a POST is not sent again after a 503
+PASS retry-503-post: the server saw the POST once
+PASS retry-503: every call's steps replay through the planner
+PASS retry-503-off: every call's steps replay through the planner
+PASS retry-429-date: every call's steps replay through the planner
+PASS retry-503-long: every call's steps replay through the planner
+PASS retry-503-backoff: every call's steps replay through the planner
+PASS retry-503-post: every call's steps replay through the planner
+PASS redispatch-408: process exited 131 ms after main returned
+PASS redispatch-408: the re-dispatched POST is refused, and the error says maybe delivered
+PASS redispatch-408: the server stopped listening after its 408
+PASS redispatch-408: every call's steps replay through the planner
+PASS stream-abandon: process exited 3 ms after main returned
+PASS stream-abandon: the first call reads one piece and leaves
+PASS stream-abandon: its connection is closed, not pooled
+PASS stream-abandon: the next call opens a new one
+PASS stream-abandon: the server sees the first connection closed
+PASS stream-drain: process exited 7 ms after main returned
+PASS stream-drain: the first call reads the first 3 bytes and leaves
+PASS stream-drain: the rest is drained and the connection kept
+PASS stream-drain: and reused
+PASS stream-drain-late: process exited 3 ms after main returned
+PASS stream-drain-late: a rest that comes too late: the connection is closed
+PASS stream-drain-late: and the next call opens another
+tests/net/run.sh: line 910: since: command not found
+PASS stream-unread-big: process exited 3 ms after main returned
+PASS stream-unread-big: a body that has arrived in full keeps the connection, whatever the drain limit
+PASS stream-unread: process exited 4 ms after main returned
+PASS stream-unread: a body read in full and left unread keeps the connection
+PASS stream-throw: process exited 76 ms after main returned
+PASS stream-throw: the callback's exception reaches the caller
+PASS stream-throw: after the connection was drained and kept
+PASS stream-throw-big: process exited 103 ms after main returned
+PASS stream-throw-big: or closed
+PASS stream-escape: process exited 169 ms after main returned
+PASS stream-escape: a read after the callback raises an error
+PASS stream-error: process exited 3 ms after main returned
+PASS stream-error: a body cut short is the call's error, with the status
+PASS stream-badchunk: process exited 37 ms after main returned
+PASS stream-badchunk: the five bytes before the malformed chunk are read, then the error
+PASS stream-redirect: process exited 5 ms after main returned
+PASS stream-redirect: the callback gets the response after two redirects
+PASS stream-race: process exited 4 ms after main returned
+PASS stream-race: the callback leaves while the other task reads
+PASS stream-race: the connection was released first
+PASS stream-race: and the other task's read fails
+tests/net/run.sh: line 948: since: command not found
+PASS stream-deadline: process exited 109 ms after main returned
+PASS stream-deadline: a body still coming at the deadline fails the call
+PASS stream-deadline: at the 3 s deadline: 3005 ms
+PASS stream-abandon: every call's steps replay through the planner
+PASS stream-drain: every call's steps replay through the planner
+PASS stream-drain-late: every call's steps replay through the planner
+PASS stream-unread-big: every call's steps replay through the planner
+PASS stream-unread: every call's steps replay through the planner
+PASS stream-throw: every call's steps replay through the planner
+PASS stream-throw-big: every call's steps replay through the planner
+PASS stream-escape: every call's steps replay through the planner
+PASS stream-error: every call's steps replay through the planner
+PASS stream-badchunk: every call's steps replay through the planner
+PASS stream-redirect: every call's steps replay through the planner
+PASS stream-race: every call's steps replay through the planner
+PASS stream-deadline: every call's steps replay through the planner
+PASS upload-early: process exited 3 ms after main returned
+PASS upload-early: an early 413 during a streamed upload is delivered
+PASS upload-early: well before the 5 s write gap: 5 ms
+PASS upload-early: the upload stopped: 131072 of 32000000 bytes produced
+PASS upload-early: every call's steps replay through the planner
+PASS upload-race: process exited 4 ms after main returned
+FAIL upload-race: a streamed PUT whose pooled connection closes as it is sent is not sent again (no match for: upload call 1 error delivery=maybe delivered .*reused=true redispatched=false .*not_retried=LeanHttp.Call.NoRetry.delivered )
+PASS upload-race-bytes: process exited 194 ms after main returned
+PASS upload-race-bytes: control: the same PUT with a byte-array body goes again on a fresh connection
+PASS upload-408: process exited 12 ms after main returned
+PASS upload-408: a streamed POST answered by the 408 of an idle connection: delivered, not sent again
+PASS upload-408-bytes: process exited 13 ms after main returned
+PASS upload-408-bytes: control: with a byte-array body the POST goes again
+PASS upload-race: every call's steps replay through the planner
+PASS upload-race-bytes: every call's steps replay through the planner
+PASS upload-408: every call's steps replay through the planner
+PASS upload-408-bytes: every call's steps replay through the planner
+PASS upload-exit: process exited 5 ms after main returned
+PASS upload-exit: a producer that does not answer: the call ends at its deadline
+PASS upload-exit: at the 3 s deadline, not at the producer's 30 s: 3235 ms
+PASS upload-exit: every call's steps replay through the planner
+PASS tls-hang: process exited 7 ms after main returned
+PASS tls-hang: a server that never answers the handshake: it times out, is retried once, nothing sent
+PASS tls-hang: two 500 ms handshakes and one backoff: 1040 ms
+PASS tls-hang: two connections: 2
+PASS tls-hang-deadline: process exited 4 ms after main returned
+PASS tls-hang-deadline: the deadline during the handshake is the deadline's timeout, never retried
+PASS tls-hang-deadline: at the 3 s deadline, not at the 10 s handshake timeout: 3096 ms
+PASS tls-closed: process exited 3 ms after main returned
+PASS tls-closed: a server that closes during the handshake: retried like a refused connect, nothing sent
+PASS tls-closed: three connections: 3
+PASS tls-version: process exited 20 ms after main returned
+PASS tls-version: a server that offers TLS 1.1 at most is refused, not retried
+PASS tls-version: one connection: 1
+PASS tls-hang: every call's steps replay through the planner
+PASS tls-hang-deadline: every call's steps replay through the planner
+PASS tls-closed: every call's steps replay through the planner
+PASS tls-version: every call's steps replay through the planner
+PASS tls-idle-notify: process exited 88 ms after main returned
+PASS tls-idle-notify: an idle connection the server closed with close_notify is caught by the idle check
+PASS tls-idle-abrupt: process exited 31 ms after main returned
+PASS tls-idle-abrupt: and one closed without it
+PASS tls-idle-nocheck: process exited 23 ms after main returned
+PASS tls-idle-nocheck: without the idle check, the GET on the closed connection is sent again on a fresh one
+PASS tls-idle-expire: process exited 4 ms after main returned
+PASS tls-idle-expire: an expired idle connection is not used
+PASS tls-idle-expire: and the client closed it cleanly, with close_notify
+PASS tls-idle-notify: every call's steps replay through the planner
+PASS tls-idle-abrupt: every call's steps replay through the planner
+PASS tls-idle-nocheck: every call's steps replay through the planner
+PASS tls-idle-expire: every call's steps replay through the planner
+PASS tls-stream-abandon: process exited 7 ms after main returned
+PASS tls-stream-abandon: the first call reads one piece and leaves
+PASS tls-stream-abandon: its connection is closed, not pooled
+PASS tls-stream-abandon: the next call opens a new one
+PASS tls-stream-race: process exited 3 ms after main returned
+PASS tls-stream-race: the callback leaves while the other task reads
+PASS tls-stream-race: the connection was released first
+PASS tls-stream-race: and the other task's read fails
+tests/net/run.sh: line 1421: since: command not found
+PASS tls-stream-throw: process exited 6 ms after main returned
+PASS tls-stream-throw: the callback's exception reaches the caller
+PASS tls-stream-pulls: process exited 40 ms after main returned
+PASS tls-stream-pulls: a 1 MB body in 4 KiB pulls
+PASS tls-stream-deadline: process exited 495 ms after main returned
+PASS tls-stream-deadline: a body still coming at the deadline fails the call
+PASS tls-stream-deadline: at the 3 s deadline: 3094 ms
+PASS tls-stream-abandon: every call's steps replay through the planner
+PASS tls-stream-race: every call's steps replay through the planner
+PASS tls-stream-throw: every call's steps replay through the planner
+PASS tls-stream-pulls: every call's steps replay through the planner
+PASS tls-stream-deadline: every call's steps replay through the planner
+PASS cancel-head: process exited 157 ms after main returned
+PASS cancel-head: a call waiting for the response head is cancelled, maybe delivered, not retried
+PASS cancel-head: at the cancellation, not when the server answers: 0 ms
+PASS cancel-head: its connection is closed, not pooled
+PASS cancel-head: one connection, the request not sent again: 1
+PASS cancel-write: process exited 28 ms after main returned
+PASS cancel-write: a call whose request a peer does not read is cancelled, maybe delivered
+PASS cancel-write: at the cancellation, the pending write abandoned: 0 ms
+PASS cancel-write: its connection, with the request written in part, is closed, not pooled
+PASS cancel-redirect: process exited 6 ms after main returned
+PASS cancel-redirect: a call cancelled at its second hop, after a redirect: response received (the redirect's), no status of its own
+PASS cancel-redirect: at the cancellation: 2 ms
+PASS cancel-head: every call's steps replay through the planner
+PASS cancel-write: every call's steps replay through the planner
+PASS cancel-redirect: every call's steps replay through the planner
+PASS cancel-body: process exited 10 ms after main returned
+PASS cancel-body: a call cancelled while its body is read whole: response received, with the status
+PASS cancel-body: at the cancellation: 1 ms
+PASS cancel-body: its connection is closed, not pooled
+PASS cancel-stream: process exited 344 ms after main returned
+PASS cancel-stream: a callback reading the body when the call is cancelled: the read raises the call's error
+PASS cancel-stream: at the cancellation: 0 ms
+PASS cancel-stream: its connection is closed, not pooled
+PASS cancel-callback: process exited 10 ms after main returned
+PASS cancel-callback: a callback that reads after the call was cancelled: its first read raises the call's error
+PASS cancel-callback: when the callback read, after the rest of its 400 ms: 226 ms
+PASS cancel-held: process exited 3 ms after main returned
+PASS cancel-held: a read after the cancellation raises, though the stream holds bytes already read
+PASS cancel-return: process exited 23 ms after main returned
+PASS cancel-return: a callback that returns normally after the cancellation: its result is the call's
+PASS cancel-return: the connection, whose body was held unread, is closed, not pooled
+PASS cancel-return: the next call, not cancelled, opens a fresh connection
+PASS cancel-return: and its connection goes back to the pool
+PASS cancel-return-control: process exited 66 ms after main returned
+PASS cancel-return-control: control: without the cancellation the same connection goes back to the pool
+PASS cancel-body: every call's steps replay through the planner
+PASS cancel-stream: every call's steps replay through the planner
+PASS cancel-callback: every call's steps replay through the planner
+PASS cancel-held: every call's steps replay through the planner
+PASS cancel-return: every call's steps replay through the planner
+PASS cancel-return-control: every call's steps replay through the planner
+PASS cancel-tls: process exited 6 ms after main returned
+PASS cancel-tls: a call cancelled during the TLS handshake: not sent, not retried
+PASS cancel-tls: at the cancellation, its receive cancelled: 1 ms
+PASS cancel-tls: one connection: 1
+PASS cancel-tls-body: process exited 118 ms after main returned
+PASS cancel-tls-body: a call over TLS cancelled while its body is read: the read raises the call's error
+PASS cancel-tls-body: at the cancellation: 1 ms
+PASS cancel-tls-body: its connection is closed, not pooled
+PASS cancel-tls: every call's steps replay through the planner
+PASS cancel-tls-body: every call's steps replay through the planner
+PASS cancel-cap: process exited 214 ms after main returned
+PASS cancel-cap: the call in its exchange is cancelled
+PASS cancel-cap: the call waiting at the cap is cancelled, not sent
+PASS cancel-cap: both return at the cancellation: 1 ms
+PASS cancel-cap-waiter: process exited 4 ms after main returned
+PASS cancel-cap-waiter: the call holding the connection is answered
+PASS cancel-cap-waiter: the waiting call alone is cancelled, while it waits
+PASS cancel-cap-waiter: at the cancellation, not when the connection comes back: 4 ms
+PASS cancel-cap: every call's steps replay through the planner
+PASS cancel-cap-waiter: every call's steps replay through the planner
+PASS shutdown: process exited 5 ms after main returned
+PASS shutdown: shutting the client down cancels its three calls in flight
+PASS shutdown: they return at the shutdown: 1 ms
+PASS shutdown: a call after the shutdown fails at once
+PASS shutdown: no connection is pooled
+PASS shutdown-cap: process exited 3 ms after main returned
+PASS shutdown-cap: the call in its exchange is cancelled by the shutdown
+PASS shutdown-cap: the call waiting at the cap is cancelled by the shutdown, not refused by the closed pool
+PASS shutdown-cap: both return at the shutdown: 2 ms
+PASS shutdown-backoff: process exited 3 ms after main returned
+PASS shutdown-backoff: a call waiting to retry is cancelled by the shutdown
+PASS shutdown-backoff: at the shutdown: 2 ms
+PASS shutdown: every call's steps replay through the planner
+PASS shutdown-cap: every call's steps replay through the planner
+PASS shutdown-backoff: every call's steps replay through the planner
+PASS timers: process exited 763 ms after main returned
+PASS timers: control: the client's waits saw 16 timers fire early and started them again (and 3 of 40 bare timers ended more than 1 ms early)
+PASS timers: no wait through awaitFirst ends before its time
+PASS timers: no wait through race ends before its time
+tests/net/run.sh: line 85:  2625 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1
+KNOWN dns-timeout: exit status 139, 8373 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+PASS dns-timeout: a name server that never answers: the call ends at the deadline; nothing sent
+PASS dns-timeout: at the 2 s deadline: 2013 ms
+tests/net/run.sh: line 85:  2654 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1
+KNOWN dns-cancel: exit status 139, 10072 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+PASS dns-cancel: a call cancelled while its name is looked up: not sent
+PASS dns-cancel: at the cancellation: 3 ms
+PASS traces: every call's steps replay through the planner (125 calls)
+### 291 passed, 1 failed, 2 known limitations, 0 skipped

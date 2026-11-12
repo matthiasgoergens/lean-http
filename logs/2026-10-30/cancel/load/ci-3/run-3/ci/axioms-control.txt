@@ -1,0 +1,6 @@
+$ axioms_control /tmp/tmp.4utilu8TOz/Control.lean
+FAIL /tmp/tmp.4utilu8TOz/Control.lean:
+  output that is not an axiom report: /tmp/tmp.4utilu8TOz/Control.lean:2:8: warning: declaration uses `sorry`
+  viaSorry depends on ['sorryAx']
+  viaAxiom depends on ['extra']
+exit status 0, wall 3329 ms

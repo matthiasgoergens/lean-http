@@ -1,0 +1,31 @@
+loadavg 417.24 395.46 327.22 428/19289 3 rounds=10 cpus=100 hogs=4
+=== round 1: PASS tls-hang: two 500 ms handshakes and one backoff: 1559 ms
+PASS tls-hang: two connections: 2 | 
+2146.9 2670.2 3666.7 
+=== round 2: PASS tls-hang: two 500 ms handshakes and one backoff: 1069 ms
+PASS tls-hang: two connections: 2 | FAIL tls-hang-deadline: at the 700 ms deadline: 2267 ms, expected 690-1000;
+1210.1 1730.5 2355.7 
+=== round 3: PASS tls-hang: two 500 ms handshakes and one backoff: 1230 ms
+PASS tls-hang: two connections: 2 | 
+562.2 1265.1 2300.1 
+=== round 4: PASS tls-hang: two 500 ms handshakes and one backoff: 1078 ms
+PASS tls-hang: two connections: 2 | 
+753.8 1290.3 2232.2 
+=== round 5: PASS tls-hang: two 500 ms handshakes and one backoff: 1498 ms
+PASS tls-hang: two connections: 2 | FAIL tls-hang-deadline: process took 1454 ms to exit after main returned;
+254.9 786.7 1917.3 
+=== round 6: PASS tls-hang: two 500 ms handshakes and one backoff: 1089 ms
+PASS tls-hang: two connections: 2 | FAIL tls-version: process took 1232 ms to exit after main returned;
+443.4 968.9 1695.7 
+=== round 7: FAIL tls-hang: two 500 ms handshakes and one backoff: 2270 ms, expected 1000-1800
+PASS tls-hang: two connections: 2 | 
+1090.1 1704.9 4732.3 
+=== round 8: PASS tls-hang: two 500 ms handshakes and one backoff: 1478 ms
+PASS tls-hang: two connections: 2 | 
+985.3 1524.2 2826.5 
+=== round 9: FAIL tls-hang: two 500 ms handshakes and one backoff: 2909 ms, expected 1000-1800
+PASS tls-hang: two connections: 2 | 
+409.8 2400.8 4288.4 
+=== round 10: PASS tls-hang: two 500 ms handshakes and one backoff: 1473 ms
+PASS tls-hang: two connections: 2 | 
+386.4 917.7 2087.2 

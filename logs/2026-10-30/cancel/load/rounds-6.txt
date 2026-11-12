@@ -1,0 +1,107 @@
+Build completed successfully (59 jobs).
+=== round 1 2026-11-02T08:54:57Z loadavg 199.61 207.57 216.51 191/15511 51
+### 2026-11-02T08:54:58Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL tls-stream-abandon: process took 1151 ms to exit after main returned
+KNOWN dns-timeout: exit status 139, 8218 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9230 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 179 passed, 1 failed, 2 known limitations, 0 skipped
+=== round 2 2026-11-02T08:55:54Z loadavg 236.54 216.77 219.11 226/16183 1554
+### 2026-11-02T08:55:55Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL stream-throw-big: process took 1414 ms to exit after main returned
+KNOWN dns-timeout: exit status 139, 8320 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9263 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 179 passed, 1 failed, 2 known limitations, 0 skipped
+=== round 3 2026-11-02T08:56:45Z loadavg 229.77 217.96 219.40 222/16147 3045
+### 2026-11-02T08:56:47Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL stream-escape: process took 1565 ms to exit after main returned
+KNOWN dns-timeout: exit status 139, 8548 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9466 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 179 passed, 1 failed, 2 known limitations, 0 skipped
+=== round 4 2026-11-02T08:57:52Z loadavg 254.44 226.74 222.29 257/17364 4739
+### 2026-11-02T08:57:54Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8455 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9224 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 5 2026-11-02T08:59:00Z loadavg 266.63 235.66 225.68 277/17019 6392
+### 2026-11-02T08:59:03Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 9128 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9222 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 6 2026-11-02T09:00:05Z loadavg 262.01 240.56 228.07 263/16703 8072
+### 2026-11-02T09:00:07Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8348 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9239 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 7 2026-11-02T09:00:54Z loadavg 249.76 240.20 228.58 224/16404 9624
+### 2026-11-02T09:00:56Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8531 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9084 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 8 2026-11-02T09:01:42Z loadavg 249.43 241.63 229.62 218/16483 11172
+### 2026-11-02T09:01:43Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL stream-drain: and reused (no match for: stream 1 ok status=200 read=3 .*conn=\(some 0\) reused=true )
+FAIL cancel-follow: process took 1197 ms to exit after main returned
+KNOWN dns-timeout: exit status 139, 8116 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9158 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 178 passed, 2 failed, 2 known limitations, 0 skipped
+=== round 9 2026-11-02T09:02:34Z loadavg 216.91 234.70 227.99 129/15901 12828
+### 2026-11-02T09:02:35Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8050 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9329 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 10 2026-11-02T09:03:14Z loadavg 188.21 225.09 225.04 154/15116 14263
+### 2026-11-02T09:03:14Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8340 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9541 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 11 2026-11-02T09:03:58Z loadavg 190.55 220.26 223.39 164/15540 15764
+### 2026-11-02T09:03:59Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8061 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9056 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 12 2026-11-02T09:04:45Z loadavg 170.04 211.74 220.42 95/14359 17269
+### 2026-11-02T09:04:46Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8190 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9053 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 13 2026-11-02T09:05:23Z loadavg 144.46 199.79 216.03 106/14280 18683
+### 2026-11-02T09:05:23Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8046 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9052 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 14 2026-11-02T09:06:00Z loadavg 123.44 188.38 211.61 103/14505 20120
+### 2026-11-02T09:06:01Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8057 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9067 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 15 2026-11-02T09:06:38Z loadavg 115.65 178.41 207.28 85/14738 21563
+### 2026-11-02T09:06:39Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8047 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9114 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 16 2026-11-02T09:07:17Z loadavg 122.89 172.82 204.31 200/15662 22986
+### 2026-11-02T09:07:19Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8229 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9244 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 17 2026-11-02T09:08:07Z loadavg 161.05 175.57 203.60 201/15225 24527
+### 2026-11-02T09:08:09Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8648 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9249 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 18 2026-11-02T09:09:09Z loadavg 211.88 187.70 205.89 221/15707 26128
+### 2026-11-02T09:09:10Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8129 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 0, 9253 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 19 2026-11-02T09:10:08Z loadavg 241.54 200.79 209.26 213/15770 27715
+### 2026-11-02T09:10:10Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 139, 8215 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9200 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== round 20 2026-11-02T09:11:03Z loadavg 231.21 205.72 210.51 179/15128 29237
+### 2026-11-02T09:11:04Z 7.0.0-38-generic; syn_retries=2; uid=0
+KNOWN dns-timeout: exit status 0, 8138 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+KNOWN dns-cancel: exit status 139, 9188 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+### 180 passed, 0 failed, 2 known limitations, 0 skipped
+=== done 2026-11-02T09:11:48Z loadavg 198.81 200.75 208.61 176/15121 30736

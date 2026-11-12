@@ -1,0 +1,10 @@
+      23.0 listening on 127.0.0.1:18111
+     506.2 conn1 accepted from ('127.0.0.1', 35956)
+     507.7 conn1 req1 GET /bounce/18112/echo {'authorization': ['Bearer-secret'], 'cookie': ['s1'], 'host': ['127.0.0.1:18111'], 'connection': ['keep-alive']} body=0B
+     517.4 conn1 EOF from client after 1 requests
+     517.6 conn1 closed by server
+     591.6 conn2 accepted from ('127.0.0.1', 35970)
+     604.4 conn2 req1 GET /bounce/18112/bounce/18111/echo {'authorization': ['Bearer-secret'], 'cookie': ['s1'], 'host': ['127.0.0.1:18111'], 'connection': ['keep-alive']} body=0B
+     646.4 conn2 req2 GET /echo {'authorization': ['Bearer-secret'], 'cookie': ['s1'], 'host': ['127.0.0.1:18111'], 'connection': ['keep-alive']} body=0B
+     649.1 conn2 EOF from client after 2 requests
+     649.2 conn2 closed by server

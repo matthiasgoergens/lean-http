@@ -1,0 +1,4 @@
+181c181
+<         ({ p with phase := .body (.fixed (r + 1 - avail)), delivered := p.delivered + avail },
+---
+>         ({ p with phase := if r + 1 - avail == 1 then .done else .body (.fixed (r + 1 - avail)), delivered := p.delivered + avail },

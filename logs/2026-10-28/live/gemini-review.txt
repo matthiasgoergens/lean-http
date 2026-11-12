@@ -1,0 +1,70 @@
+### (1) Main theorem statements vs. docstrings, module header, and non-vacuity
+
+- **[`Reachable.deadlineAhead`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L726-L728) & [`ObservedMono.deadlineAhead`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L999-L1000):**
+  Both match their docstrings, the module header ([`LeanHttp/Exchange/Liveness.lean:12-19`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L12-L19)), and the checker's assertion in [`checkStep`](file:///home/matthias/prog/lean-http-wt-live/Tests/Support/Check.lean#L242-L245). Their hypotheses are satisfied by any run starting from `Exchange.begin req now deadline` with `now < deadline` (and non-decreasing timestamps on non-tick events for `ObservedMono`).
+
+- **[`Reachable.tick_due`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L957-L959):**
+  Matches its docstring ([`LeanHttp/Exchange/Liveness.lean:953-956`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L953-L956)) and module header ([`LeanHttp/Exchange/Liveness.lean:31-32`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L31-L32)), is non-vacuous, and is not weaker than claimed.
+
+- **[`Reachable.ended_after_waits`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L863-L865) — REFUTED (vacuous hypothesis for almost all exchanges and real runs):**
+  - The module header ([`LeanHttp/Exchange/Liveness.lean:22-24`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L22-L24)) and docstring ([`LeanHttp/Exchange/Liveness.lean:859-862`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L859-L862)) state: *"once `deadline - now` of the events have come when due, whatever else the shell reported in between, the exchange has ended"*, formalized with the hypothesis `hn : ex.deadline - ex.now ≤ dueCount ex ev n`.
+  - However, [`dueAt`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L741-L744) is `false` once `ex.nextDeadline = none` (i.e., once `ex.terminal = true`), so [`dueCount`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L747-L749) stops increasing as soon as the exchange ends.
+  - While the exchange is live, [`Reachable.dueCount_le`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L822-L824) proves:
+    $$\text{dueCount}\;\text{ex}\;\text{ev}\;n + (\text{ex.deadline} - (\text{stateAt}\;\text{ex}\;\text{ev}\;n).\text{now}) \le \text{ex.deadline} - \text{ex.now}$$
+    Each due event at step $k$ advances `now` by $\Delta = \max(\text{now}, (\text{ev}\;k).1) - \text{now} \ge \text{nextDeadline} - \text{now}$, while increasing `dueCount` by only $1$. Whenever **any** step before termination advances `now` by $\Delta \ge 2\text{ ms}$, the left-hand side drops by $\Delta - 1 \ge 1$, so for all $n$:
+    $$\text{dueCount}\;\text{ex}\;\text{ev}\;n \le (\text{ex.deadline} - \text{ex.now}) - (\Delta - 1) < \text{ex.deadline} - \text{ex.now}$$
+  - Consequently, for **every** live exchange started by `Exchange.begin` with `deadline - now ≥ 2` and `gapMs ≥ 2` (e.g., the default `gapMs = 30000` in [`ExchangeConfig`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L97)), the first due event has `nextDeadline - now = min gapMs (deadline - now) ≥ 2` and advances `now` by at least $2\text{ ms}$. Thus, **no run `ev` and no `n` can ever satisfy `ex.deadline - ex.now ≤ dueCount ex ev n`** (nor can any run that finishes or fails before `ex.deadline`). The hypothesis `hn` is only satisfiable in degenerate runs where `deadline ≤ now` initially or where `gapMs = 1` (or `drainMs ≤ 1`) and every single step advances the clock by at most $1\text{ ms}$ all the way to `deadline`.
+
+- **[`Reachable.ends_of_fair`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L906-L910) — hypothesis rejects runs that finish early without a due event:**
+  - The fairness hypothesis is:
+    ```lean
+    fair : ∀ n, (stateAt ex ev n).terminal = false →
+      ∃ m, n ≤ m ∧ dueAt (stateAt ex ev m) (ev m).1 = true
+    ```
+  - Because `dueAt` is `false` once `terminal = true`, any normal real run that starts live (`(stateAt ex ev 0).terminal = false`) and completes or fails **before** any deadline expires (every I/O event arrives at $t < \text{nextDeadline}$) has `dueAt (stateAt ex ev m) (ev m).1 = false` for *all* $m \ge 0$, so `fair` is **false** at $n = 0$.
+  - `fair` is still satisfiable by runs whose final live step is due (e.g., a timeout at `nextDeadline`), and in classical logic `(∀ n, ¬T n → ∃ m ≥ n, D m) → ∃ n, T n` is equivalent to `(∀ n, ¬T n → ∃ m ≥ n, T m ∨ D m) → ∃ n, T n`, so the theorem is not weaker as a liveness implication, but `fair` as written does not hold on fast non-timeout runs.
+
+- **[`Reachable.ends_of_allDue`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L933-L936):**
+  Unlike `ended_after_waits`, its hypothesis `hall : ∀ n, (stateAt ex ev n).terminal = false → dueAt (stateAt ex ev n) (ev n).1 = true` is vacuous for $n$ *after* termination, so it is satisfied by any wait-only run (and `stateAt_terminal` carries `terminal = true` to step `ex.deadline - ex.now` even when termination occurs in fewer steps).
+
+- **[`Reachable.ended_at_deadline`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L878-L880):**
+  The docstring ([`LeanHttp/Exchange/Liveness.lean:875-876`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L875-L876)) claims *"the first event at or after the exchange's deadline ends it, and nothing changes after that"*, whereas the theorem conclusion `∀ m, n < m → (stateAt ex ev m).terminal = true` only states that subsequent states remain `terminal = true` (that the state is unchanged and no actions are emitted is in [`step_of_terminal`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Proofs.lean#L1274-L1276)).
+
+---
+
+### (2) `drainMs = 0` and `drainBytes = 0`
+
+- **`drainMs = 0`:** `drainBy` is only ever set in [`handle .abandon`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L922), to `some (ex.now + ex.config.drainMs)`, followed immediately by [`absorb`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L923).
+  - If the rest of the body is already buffered in the machine and within `drainBytes`, `absorb` calls [`settle`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L817-L818) $\to$ [`finishNow true`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L653-L658), ending the exchange and clearing `drainBy := none`.
+  - Otherwise, [`expire`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L1021) runs next in the same [`step`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L1012-L1022); [`expireOne`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L938-L942) sees `ex.drainBy.any (now ≥ ·)` (`now ≥ now + 0`) and calls `finishNow false`, ending the exchange and clearing `drainBy := none` before `step` returns.
+- **`drainBytes = 0`:** [`handle .abandon`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L920) and [`pullOnce`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L774-L787) call `finishNow false` as soon as any remaining bytes are announced or pulled (`ex.drained > 0`), while allowing reuse if $0$ body bytes remain.
+- Neither value can leave a live exchange with an expired timer or break liveness.
+
+---
+
+### (3) Other zero configuration fields (`readChunk = 0`, `writeChunk = 0`, `maxInterim = 0`, `deadline = now`)
+
+- **`writeChunk = 0`, `maxInterim = 0`, `deadline = now`:**
+  - `writeChunk = 0` is clamped to `1` by `max 1 ex.config.writeChunk` in [`schedule`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L983) (and proved positive in [`Timers.inFlightPos`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L345-L361)).
+  - `maxInterim = 0` fails cleanly with `.limit .interim` on the first `1xx` response in [`handleH1Event`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L699-L701).
+  - `deadline = now` (or `deadline ≤ now`) causes [`expire`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L1004) in `Exchange.begin` to fail immediately with `.timeout .deadline`, so `(Exchange.begin req now deadline).1.terminal = true`.
+- **`readChunk = 0` (`Config.readChunkBytes = 0`) — breaks read progress and the `gapMs` read-timeout liveness in [`Exchange.lean`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean) / [`Client.lean`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Client.lean):**
+  - While the formal theorems in `Liveness.lean` still hold in the abstract model (because `schedule` sets `readBy := some (ex.now + ex.config.gapMs)` and `Ends_of_fair` assumes the shell delivers events at $t \ge \text{nextDeadline}$), [`schedule`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L994) emits `.read ex.config.readChunk` **without** `max 1` (unlike `writeChunk` at line 983), so `readChunk = 0` emits `.read 0` (compare [`ActOK`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Proofs.lean#L145-L148), which proves `0 < b.size` for `.write b` but not `0 < max` for `.read max`).
+  - When a shell performs a 0-byte read and reports `.received ByteArray.empty`:
+    1. [`handle (.received bytes)`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L858-L870) clears `readInFlight := false, readBy := none` on line 860 **before `expire` runs**, and skips `machine.feed` / `absorb` on line 867 (`unless bytes.isEmpty`).
+    2. [`expire`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L1021) then sees `readBy = none`, so **the read gap timeout (`gapMs`) never fires**.
+    3. [`schedule`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L990-L994) immediately re-arms `readBy := some (ex.now + ex.config.gapMs)` and emits `.read 0` again.
+  - In [`Client.drive`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Client.lean#L238-L269), `.read 0` invokes `socket.recv? 0`, which either returns `none` (misreported as `.endOfInput` / `peerClosed`) or returns `some .empty` immediately without waiting for `nextDeadline`, spinning in a non-progressing `.read 0` $\to$ `.received .empty` loop that continually resets `readBy` and defeats `readGapMs`.
+
+---
+
+### (4) Positivity proof in `ExchangeConfig` (validated in `Client.exchangeConfig`) vs. validating in `Exchange.prepare`
+
+- Putting `gapMs_pos : 0 < gapMs` in [`ExchangeConfig`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L103) (with validation in [`Client.exchangeConfig`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Client.lean#L147-L154)) rather than validating in [`Exchange.prepare`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L509) is a **good fit** (the claim that it is a poor fit is **REFUTED**):
+  - [`Exchange.begin`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L1000) accepts any [`PreparedRequest`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L284-L309), and [`Reachable.begin`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Proofs.lean#L1226-L1227) and [`ObservedMono.begin`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange/Liveness.lean#L976-L978) quantify over an arbitrary `req : PreparedRequest` (proofs cannot require `req` to come from `Exchange.prepare`, because `prepare` calls the opaque `partial def` `H1.Machine.step` at [`LeanHttp/Exchange.lean:527`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L527)).
+  - Because `PreparedRequest` and `Exchange` both hold `config : ExchangeConfig` ([`LeanHttp/Exchange.lean:288`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L288), [`357`](file:///home/matthias/prog/lean-http-wt-live/LeanHttp/Exchange.lean#L357)), carrying `gapMs_pos : 0 < gapMs := by omega` on `ExchangeConfig` ensures that *every* `PreparedRequest` passed to `begin` (and every `ExchangeConfig` passed to `prepare`) carries the proof, so `Reachable.deadlineAhead` needs no extra hypothesis, while literal `ExchangeConfig` values still synthesize the proof automatically via `by omega`.
+
+(1) REFUTED
+(2) CONFIRMED
+(3) REFUTED
+(4) REFUTED

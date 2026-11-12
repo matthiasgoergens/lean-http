@@ -1,0 +1,26 @@
+# To display the perf.data header info, please use --header/--header-only options.
+#
+#
+# Total Lost Samples: 59576
+#
+# Samples: 8K of event 'binds_ceiling:lean_task_bind_core_ceiling'
+# Event count (approx.): 8463
+#
+# Overhead  Symbol                 
+# ........  .......................
+#
+   100.00%  [.] lean_task_bind_core
+
+
+# Samples: 7K of event 'binds_ceiling:lean_task_map_core_ceiling'
+# Event count (approx.): 7430
+#
+# Overhead  Symbol                
+# ........  ......................
+#
+   100.00%  [.] lean_task_map_core
+
+
+#
+# (Cannot load tips.txt file, please install perf!)
+#

@@ -1,0 +1,71 @@
+Independent reviews of the pool core's theorem statements against their docstrings, and of the
+shell's reuse logic, on 2026-10-29.
+
+claude-prompt-1.txt, claude-review-1.txt
+    A fresh Claude Opus subagent (no context from the session), reading a snapshot of the tree
+    (git archive of the branch at a5de80f, before the history was tidied).
+gemini-prompt-1.txt, gemini-review-1.txt
+    Gemini through ~/.local/bin/agy-readonly (model gemini-4-argon-medium, read-only sandbox), run
+    from the worktree, which changed while it read (the fixes for the Claude review went in during
+    its run); its line numbers are those of the tree it saw.
+
+What came of each finding (C = Claude, G = Gemini):
+
+Fixed in the shell (LeanHttp/Client.lean, LeanHttp/Config.lean):
+- C1  Client.close did nothing with pooling off: Call.attempt now checks the pool's closed flag
+      with pooling off too (net scenario pool-close-off).  Config says maxActivePerOrigin applies
+      only with pooling on.
+- C2, G4  After a re-dispatch, an error whose second attempt wrote nothing said "not sent" though
+      the first attempt may have been delivered: it now says maybe delivered, unless the
+      re-dispatch followed a 408 (net scenario redispatch-refused).
+- C3, G1  Exception paths: the exchange's catch now cancels any pending receive, idleClean cancels
+      its wait even if the timer throws, and the wait at the active cap is wrapped so that request
+      does not throw.
+- C4, G2  The idle check is bounded by the time left, acquire checks the deadline first, connect
+      starts no name lookup once the deadline has passed (a call sent again could get there late),
+      and an exchange that timed out before writing anything gives its connection back instead of
+      dropping a healthy one.
+- C7  maxActivePerOrigin = some 0 is refused as an invalid request (unit check); idleTimeoutMs = 0
+      turning reuse off is documented.
+- G3  The time passed to the pool is read under the mutex, so the pool sees times in the order of
+      its operations.
+- C9  PoolState.freed's docstring says close resolves it too; DESIGN.md no longer says a dropped
+      connection is shut down for writing.
+
+Fixed in the proofs and docstrings (LeanHttp/Pool.lean, LeanHttp/Pool/Proofs.lean):
+- C10, G6  "Returned or dropped exactly once" now reads "once per checkout", says at most one
+      return per hand-out (exactly one if the shell ends every call), and that the pool knows
+      connections by id, not by the call holding them: the per-call half is the shell's.
+- C11, G10  New theorems sweep_letGo and letGo_gone: every connection an operation lets go (for the
+      shell to close) was idle and is gone afterwards.
+- C12, G7  New theorem drop_not_out; giveBack_not_out's docstring no longer claims drop.
+- C13, G9  Pool.lean's module doc and Returned.notOut say that a give-back of a connection not
+      checked out still lets the expired idle connections go.
+- C14, G8  New theorems take_fresh_unused (under the invariant, a new connection's id was never
+      allocated), take_closed, apply_closed and run_closed (once closed, a pool stays closed and
+      hands nothing out); the module doc cites state_gone, and says the preference for the most
+      recently returned connection is not proved (pool-tests checks it).
+- G10  giveBack_unreusable_gone and drop_gone's docstrings say "checked-out".
+
+Recorded, not changed:
+- C5  The NOTES.md section on the pool, with the idle-check measurements, was not yet written when
+      the snapshot was taken; it is now.  DESIGN.md's out-of-date lines were fixed in the same way.
+      The libuv loop order the 0 ms window relies on was checked against libuv 1.48's source and
+      design document (UV_RUN_ONCE polls before it runs due timers) and against Lean's event loop
+      (every registration interrupts uv_run, which the loop thread then re-enters).
+- C6, G5  The Redispatch.notSent arm cannot fire with the current exchange core, which counts a
+      request as possibly delivered from its first write; it stays as a guard, and its docstring
+      says so.
+- C8  The wake-up at the active cap is shared by all origins and serves waiters in no order;
+      documented in Config and NOTES.md.
+
+Second round:
+
+gemini-prompt-2.txt, gemini-review-2.txt
+    Gemini again, told what came of the first round, on the final tree (16e5c51, before these logs
+    were committed).  It found the fixes sound and every path still one give-back or drop per
+    connection, and made two observations, neither changed:
+- A write still in flight when an exception ends the exchange keeps its socket until the write
+  ends: the known limit of v4.34.1 (no way to cancel a write), already in NOTES.md.
+- That giveBack's let-go list never holds the connection given back follows from letGo_gone and
+  WF.state_out, but is not a theorem of its own.

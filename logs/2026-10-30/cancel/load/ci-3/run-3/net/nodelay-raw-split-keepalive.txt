@@ -1,0 +1,4 @@
+$ net-client rawpost 18082 n=50 size=100 keepalive=1 nodelay=0
+summary rawpost keepalive=true nodelay=false split=1 size=100 n=50 min=2.844 p50=41.961 p90=42.391 max=59.690 ms
+main returning at ms=2069.092
+exit status=0 wall_ms=2243 exit_after_main_ms=174

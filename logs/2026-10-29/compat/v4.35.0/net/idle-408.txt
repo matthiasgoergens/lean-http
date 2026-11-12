@@ -1,0 +1,11 @@
+$ net-client call POST http://127.0.0.1:18094/idle-408?ms=100 body=5 repeat=2 pause=400
+call 0 ok status=200 bytes=2 ms=10.875 rounds=1 address=127.0.0.1:18094 seed=16676711635282892995 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18094/idle-408?ms=100 body_start="ok"
+call 1 ok status=200 bytes=2 ms=15.041 rounds=1 address=127.0.0.1:18094 seed=12603758869893715744 failed_attempts=[] conn=(some 1) reused=false discarded=1 check_us=7846 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18094/idle-408?ms=100 body_start="ok"
+summary calls n=2 min=10.875 p50=15.041 p90=15.041 max=15.041 ms ok=2
+summary later calls n=1 min=15.041 p50=15.041 p90=15.041 max=15.041 ms
+pool idle=1 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=428.005
+exit status=0 wall_ms=471 exit_after_main_ms=43

@@ -1,0 +1,11 @@
+$ net-client call GET http://127.0.0.1:18093/die-on-next?rst=1 repeat=2
+call 0 ok status=200 bytes=2 ms=2.417 rounds=1 lookups=0 address=127.0.0.1:18093 seed=7319467605231981400 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18093/die-on-next?rst=1 tls=none body_start="ok"
+call 1 ok status=200 bytes=2 ms=2.118 rounds=1 lookups=0 address=127.0.0.1:18093 seed=428639823392035439 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=96 redispatched=true hops=0 retries=0 uri=http://127.0.0.1:18093/die-on-next?rst=1 tls=none body_start="ok"
+summary calls n=2 min=2.118 p50=2.417 p90=2.417 max=2.417 ms ok=2
+summary later calls n=1 min=2.118 p50=2.118 p90=2.118 max=2.118 ms
+pool idle=1 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=5.237
+exit status=0 wall_ms=16 exit_after_main_ms=11

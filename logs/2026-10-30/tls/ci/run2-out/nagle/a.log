@@ -1,0 +1,21 @@
+      71.3 listening tls=18170 plain=18171 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+    1061.2 conn1 accepted from ('127.0.0.1', 34776)
+    1063.8 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1063.9 conn1 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1155.5 conn1 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+    1189.3 conn2 accepted from ('127.0.0.1', 34780)
+    1194.5 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1194.6 conn2 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1248.4 conn2 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+    1345.2 conn3 accepted from ('127.0.0.1', 34796)
+    1350.4 conn3 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1351.1 conn3 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1392.8 conn3 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+    1493.8 conn4 accepted from ('127.0.0.1', 34802)
+    1552.7 conn4 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1553.3 conn4 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1566.8 conn4 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+    1872.5 conn5 accepted from ('127.0.0.1', 34812)
+    1875.5 conn5 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    1875.9 conn5 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1951.8 conn5 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

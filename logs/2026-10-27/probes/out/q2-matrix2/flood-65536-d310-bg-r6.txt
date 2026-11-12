@@ -1,0 +1,4 @@
+### server=flood delay=310ms size=65536 | client variant=bg arg=0ms hold=300ms n=1
+  [client] main returning
+  exit=0 wall=335ms 
+  [server] listening 23394

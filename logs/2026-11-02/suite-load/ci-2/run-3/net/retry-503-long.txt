@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18115/flaky?key=d&after=120 retry503=1
+call 0 ok status=503 bytes=4 ms=7.790 rounds=1 lookups=0 address=127.0.0.1:18115 seed=7744162812486742115 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18115/flaky?key=d&after=120 tls=none body_start="busy"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=8.861 started_unix_us=1793621852186654 returning_unix_us=1793621852195514
+exit status=0 wall_ms=239 start_ms=181 exit_after_main_ms=48

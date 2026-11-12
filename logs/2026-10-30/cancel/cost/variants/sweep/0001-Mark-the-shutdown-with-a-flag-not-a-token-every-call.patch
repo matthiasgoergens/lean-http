@@ -1,0 +1,153 @@
+From e2a9e810d5efca9b6e2c357262084323ffea6899 Mon Sep 17 00:00:00 2001
+From: Matthias Goergens <matthias.goergens@gmail.com>
+Date: Mon, 2 Nov 2026 16:30:15 +0800
+Subject: [PATCH 1/3] Mark the shutdown with a flag, not a token every call
+ asks
+
+shutdownNow sets an IO.Ref that every call reads after its own token, in
+place of a Std.CancellationToken whose mutex every check of every call took.
+---
+ LeanHttp/Cancel.lean | 13 ++++++++++---
+ LeanHttp/Client.lean | 11 ++++++-----
+ Tests/Unit.lean      | 10 +++++-----
+ 3 files changed, 21 insertions(+), 13 deletions(-)
+
+diff --git a/LeanHttp/Cancel.lean b/LeanHttp/Cancel.lean
+index a423433..a8cc961 100644
+--- a/LeanHttp/Cancel.lean
++++ b/LeanHttp/Cancel.lean
+@@ -76,6 +76,12 @@ structure Cancel where
+   -/
+   hooks : IO.Ref (Array (BaseIO Unit))
+ 
++  /--
++  A cancellation that is not a token's: once it holds a reason, the call is cancelled for it.  The
++  client's, which `Client.shutdownNow` sets; asked after the tokens.
++  -/
++  stop : IO.Ref (Option Std.CancellationReason)
++
+ namespace Cancel
+ 
+ /--
+@@ -105,7 +111,8 @@ but not in `watched` must be watched by other means, which fire the call (`cance
+ so for its own token, which every call shares, by keeping a table of its calls in flight.  Without a
+ token to watch, this makes no promise and registers nothing.
+ -/
+-def watch (tokens watched : Array Std.CancellationToken) : BaseIO Cancel := do
++def watch (tokens watched : Array Std.CancellationToken)
++    (stop : IO.Ref (Option Std.CancellationReason)) : BaseIO Cancel := do
+   let state ← IO.mkRef none
+   let bell ← IO.mkRef none
+   let hooks ← IO.mkRef #[]
+@@ -121,7 +128,7 @@ def watch (tokens watched : Array Std.CancellationToken) : BaseIO Cancel := do
+       | _ => pure ()
+     discard <| start (token.selector.registerFn waiter)
+     return (token, waiter)
+-  return { tokens, state, waiters, bell, hooks }
++  return { tokens, state, waiters, bell, hooks, stop }
+ 
+ /--
+ Cancels the call for `reason`, from outside the watch: wakes its waits as a watched token's
+@@ -157,7 +164,7 @@ def reason? (c : Cancel) : BaseIO (Option Std.CancellationReason) := do
+   if let some known ← c.state.get then return known
+   for token in c.tokens do
+     if let some reason ← token.getCancellationReason then return some reason
+-  return none
++  c.stop.get
+ 
+ /--
+ Runs `f` when the call is fired, in the thread that fires it (the one cancelling the token, inside
+diff --git a/LeanHttp/Client.lean b/LeanHttp/Client.lean
+index 1c38f46..1ca5db6 100644
+--- a/LeanHttp/Client.lean
++++ b/LeanHttp/Client.lean
+@@ -239,9 +239,10 @@ structure Client where
+   tlsCtx : Std.Mutex (Option Tls.Context)
+ 
+   /--
+-  Cancelled by `shutdownNow`: every call's checks ask it, besides the token the call was given.
++  Set by `shutdownNow`: every call's checks ask it, after the token the call was given.  A flag
++  rather than a token, so that a check reads it without taking a lock that every call shares.
+   -/
+-  closing : Std.CancellationToken
++  closing : IO.Ref (Option Std.CancellationReason)
+ 
+   /--
+   The cancellation of every call in flight, by call number, which `shutdownNow` cancels.  A table
+@@ -265,7 +266,7 @@ def new (config : Config := {}) : BaseIO Client := do
+   let freed ← IO.Promise.new
+   let state ← Std.Mutex.new { pool := Pool.empty (poolConfig config), freed }
+   return { config, state, calls := ← IO.mkRef 0, tlsCtx := ← Std.Mutex.new none,
+-           closing := ← Std.CancellationToken.new, inflight := ← Std.Mutex.new {} }
++           closing := ← IO.mkRef none, inflight := ← Std.Mutex.new {} }
+ 
+ /--
+ Runs `f` on the pool state under the mutex.
+@@ -349,7 +350,7 @@ without waiting for the calls to end.
+ def shutdownNow (client : Client) : BaseIO Unit := do
+   -- The token first, so that every check made from now on sees the shutdown, then the calls in
+   -- flight, whose waits it wakes; a call that starts in between finds the token cancelled.
+-  client.closing.cancel .shutdown
++  client.closing.set (some .shutdown)
+   let calls ← client.inflight.atomically (m := BaseIO) do return (← get).toArray
+   calls.forM fun (_, c) => c.cancel .shutdown
+   client.close
+@@ -1120,7 +1121,7 @@ private def run {α : Type} (client : Client) (req : Request RequestBody) (maxBo
+   let number ← client.calls.modifyGet fun n => (n, n + 1)
+   -- The caller's token first: a call it cancelled reports its reason, even if the client is shut
+   -- down afterwards.
+-  let watch ← Cancel.watch (cancel.toArray.push client.closing) cancel.toArray
++  let watch ← Cancel.watch cancel.toArray cancel.toArray client.closing
+   track client number (some watch)
+   let spec : CallSpec := { client, req, xcfg, seed, started, deadline, number, cancel := watch }
+   spec.observe (.start config.policy req.line kind framing seed deadline xcfg.keepAlive)
+diff --git a/Tests/Unit.lean b/Tests/Unit.lean
+index a6d9472..0ed56e1 100644
+--- a/Tests/Unit.lean
++++ b/Tests/Unit.lean
+@@ -622,7 +622,7 @@ def cancelChecks : Checks Unit := do
+   -- A token cancelled before the watch starts is seen at once, and fires the call.
+   let early ← Std.CancellationToken.new
+   early.cancel .shutdown
+-  let c ← Cancel.watch #[early] #[early]
++  let c ← Cancel.watch #[early] #[early] (← IO.mkRef none)
+   check "a token cancelled before the watch is seen at once" (reprStr (← c.reason?) == reprStr (some Std.CancellationReason.shutdown))
+   let ran ← IO.mkRef false
+   c.onCancel (ran.set true)
+@@ -630,7 +630,7 @@ def cancelChecks : Checks Unit := do
+   c.finish
+   -- A token cancelled during the call: the check asks the token, so it holds as cancel returns.
+   let token ← Std.CancellationToken.new
+-  let c ← Cancel.watch #[token] #[token]
++  let c ← Cancel.watch #[token] #[token] (← IO.mkRef none)
+   check "an uncancelled call has no reason" (← c.reason?).isNone
+   token.cancel .cancel
+   check "a check right after cancel sees it" (← c.reason?).isSome
+@@ -643,7 +643,7 @@ def cancelChecks : Checks Unit := do
+   -- A wait that the timer ends: its bell, the last of the call, is released when the call ends
+   -- (what is chained on it then runs, with nothing), so an uncancelled call keeps nothing alive.
+   let quiet ← Std.CancellationToken.new
+-  let c ← Cancel.watch #[quiet] #[quiet]
++  let c ← Cancel.watch #[quiet] #[quiet] (← IO.mkRef none)
+   let waited ← (c.race (#[] : Array (Task Unit)) 1).block
+   check "a wait with nothing to wait for ends at its time" (waited matches .timedOut)
+   let lastBell := ((← c.bell.get).map (·.result?)).getD (Task.pure none)
+@@ -657,13 +657,13 @@ def cancelChecks : Checks Unit := do
+   let shared ← Std.CancellationToken.new
+   let entries : BaseIO Nat := shared.state.atomically (m := BaseIO) do
+     return (← get).consumers.toArray.size
+-  let calls ← (List.range 5).mapM fun _ => Cancel.watch #[shared] #[shared]
++  let calls ← (List.range 5).mapM fun _ => do Cancel.watch #[shared] #[shared] (← IO.mkRef none)
+   check "each call in flight is registered with its token" ((← entries) == 5)
+   for c in calls do c.finish
+   check "and a call that has ended is not" ((← entries) == 0)
+   -- A token cancelled while a wait is in progress ends it.
+   let later ← Std.CancellationToken.new
+-  let c ← Cancel.watch #[later] #[later]
++  let c ← Cancel.watch #[later] #[later] (← IO.mkRef none)
+   let fired ← IO.mkRef false
+   c.onCancel (fired.set true)
+   let wait ← start (c.race (#[] : Array (Task Unit)) 10000)
+-- 
+2.53.0
+

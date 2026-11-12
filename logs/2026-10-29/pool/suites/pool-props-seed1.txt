@@ -1,0 +1,16 @@
+$ .lake/build/bin/pool-tests props 200000 1
+PASS 200000 runs from seed 1: 8000000 operations checked
+  (idle connections let go): 401172
+  closeAll: 28522
+  drop: dropped: 644165
+  drop: not checked out: 582422
+  giveBack: dropped (cap or closed): 303635
+  giveBack: dropped (not reusable): 537989
+  giveBack: idle: 771006
+  giveBack: not checked out: 1454867
+  sweep: 613492
+  take: at cap: 232370
+  take: closed: 204414
+  take: fresh: 2362016
+  take: reuse: 265102
+exit status 0, wall 83343 ms

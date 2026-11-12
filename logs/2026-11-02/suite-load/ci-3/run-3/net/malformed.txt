@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18080/badstatus
+call 0 error delivery=maybe delivered ms=3.531 rounds=1 lookups=0 seed=10444858839365879494 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="invalid response: Bad message" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=4.083 started_unix_us=1793621753880989 returning_unix_us=1793621753885072
+exit status=0 wall_ms=19 start_ms=9 exit_after_main_ms=6

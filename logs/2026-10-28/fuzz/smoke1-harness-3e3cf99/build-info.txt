@@ -1,0 +1,4 @@
+afl-fuzz [0;36mafl-fuzz++5.04a[0m
+53a5ec7a272276ce47c83c634d3949348dcbe1d988dabfb2f53d4210a2bff637  .lake/fuzz/plain/lean-http-fuzz
+1b4362efc1f81281b81fb37952b6aea9e19c00c2d64318f8225eb5c8846f0923  .lake/fuzz/cmplog/lean-http-fuzz
+Wed Oct 28 07:27:59 UTC 2026

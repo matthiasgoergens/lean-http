@@ -1,0 +1,15 @@
+      33.9 listening on 127.0.0.1:18094
+      84.4 conn1 accepted from ('127.0.0.1', 55836)
+      86.3 conn1 req1 POST /idle-408?ms=1000 {'host': ['127.0.0.1:18094'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    1091.0 conn1 sent 408
+    1091.2 conn1 closed by server
+    3092.0 conn2 accepted from ('127.0.0.1', 55842)
+    3092.6 conn2 req1 POST /idle-408?ms=1000 {'host': ['127.0.0.1:18094'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    3095.0 conn2 closed by server
+    3142.7 conn3 accepted from ('127.0.0.1', 55846)
+    3143.5 conn3 req1 POST /idle-408?ms=1000&linger=6000 {'host': ['127.0.0.1:18094'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    4148.1 conn3 sent 408
+    6237.0 conn4 accepted from ('127.0.0.1', 41486)
+    6238.2 conn4 req1 POST /idle-408?ms=1000&linger=6000 {'host': ['127.0.0.1:18094'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    6239.5 conn4 closed by server
+   10152.9 conn3 closed by server

@@ -1,0 +1,7 @@
+### server=flood delay=0ms size=65536 | client variant=bgloop arg=0ms hold=300ms n=1
+  [client] read 65618210 bytes before main returned
+  [client] main returning
+  exit=137 wall=8005ms HANG-killed-at-limit
+  [server] listening 28331
+  [server] server[0]: flood stopped after 70451200: [Errno 104] Connection reset by peer
+  [server] server[0]: client closed

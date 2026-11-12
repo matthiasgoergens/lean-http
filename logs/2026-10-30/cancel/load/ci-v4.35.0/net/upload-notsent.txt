@@ -1,0 +1,8 @@
+$ net-client upload POST http://127.0.0.1:18085/ size=1000 seed=42
+upload call 0 error delivery=not sent ms=130.582 rounds=3 lookups=0 seed=42 reused=false redispatched=false hops=0 retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="could not connect: 127.0.0.1:18085 (round 0): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 1): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 2): no such thing (error code: 111, connection refused)" detail="" attempts=[127.0.0.1:18085#0:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#1:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#2:failed(no such thing (error code: 111, connection refused))] pulls=0 produced=0
+after upload 0: pool idle=0 checked_out=0 allocated=3
+trace call 0 ok steps=3
+trace call 0 retry delays=[23, 49] gaps=[31, 50]
+rss_peak_kb=14652 rss_kb=14660
+main returning at ms=131.556
+exit status=0 wall_ms=260 exit_after_main_ms=129

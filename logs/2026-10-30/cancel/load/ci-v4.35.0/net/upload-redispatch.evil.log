@@ -1,0 +1,24 @@
+      37.8 listening on 127.0.0.1:18128
+     179.6 conn1 accepted from ('127.0.0.1', 45414)
+     242.9 conn1 req1 PUT /die-on-next {'host': ['127.0.0.1:18128'], 'connection': ['keep-alive'], 'content-length': ['1000']} body=1000B
+     628.6 conn1 got 98 bytes of the next request; closing without answering
+     628.8 conn1 closed by server
+     839.5 conn2 accepted from ('127.0.0.1', 45428)
+     840.8 conn2 req1 PUT /die-on-next {'host': ['127.0.0.1:18128'], 'connection': ['keep-alive'], 'content-length': ['1000']} body=1000B
+     843.0 conn2 got 1098 bytes of the next request; closing without answering
+     843.1 conn2 closed by server
+     887.6 conn3 accepted from ('127.0.0.1', 45432)
+     890.6 conn3 req1 PUT /die-on-next {'host': ['127.0.0.1:18128'], 'connection': ['keep-alive'], 'content-length': ['1000']} body=1000B
+     893.0 conn3 got 0 bytes of the next request; closing without answering
+     893.1 conn3 closed by server
+     986.2 conn4 accepted from ('127.0.0.1', 45434)
+     989.2 conn4 req1 POST /idle-408?ms=100&linger=2000 {'host': ['127.0.0.1:18128'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    1090.2 conn4 sent 408
+    1553.1 conn5 accepted from ('127.0.0.1', 45448)
+    1553.8 conn5 req1 POST /idle-408?ms=100&linger=2000 {'host': ['127.0.0.1:18128'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    1655.1 conn5 sent 408
+    1981.3 conn6 accepted from ('127.0.0.1', 45454)
+    1982.2 conn6 req1 POST /idle-408?ms=100&linger=2000 {'host': ['127.0.0.1:18128'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    1982.9 conn6 closed by server
+    3090.5 conn4 closed by server
+    3655.9 conn5 closed by server

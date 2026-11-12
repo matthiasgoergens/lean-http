@@ -1,0 +1,8 @@
+$ net-client call GET https://127.0.0.1:18150/hello ca=/w/out/net/tls-certs/ca.pem tlshs=500 retries=1 seed=1
+call 0 error delivery=not sent ms=1024.945 rounds=2 lookups=0 seed=1 reused=false redispatched=false hops=0 retries=1 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="TLS handshake timeout" detail=""
+pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=2
+trace call 0 retry delays=[15] gaps=[15]
+fds_after_calls=11
+main returning at ms=1025.554
+exit status=0 wall_ms=1033 exit_after_main_ms=8

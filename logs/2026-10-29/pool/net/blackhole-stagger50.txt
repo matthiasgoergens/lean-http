@@ -1,0 +1,17 @@
+$ net-client call GET http://dual.test:18083/ok repeat=10 stagger=50 pool=0
+call 0 ok status=200 bytes=5 ms=51.758 rounds=1 address=127.0.0.1:18083 seed=5024203314297717064 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 1 ok status=200 bytes=5 ms=51.389 rounds=1 address=127.0.0.1:18083 seed=12330584408564184099 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 2 ok status=200 bytes=5 ms=51.094 rounds=1 address=127.0.0.1:18083 seed=13728760681992973219 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 3 ok status=200 bytes=5 ms=51.242 rounds=1 address=127.0.0.1:18083 seed=422737268045313095 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 4 ok status=200 bytes=5 ms=51.277 rounds=1 address=127.0.0.1:18083 seed=13181622173805793477 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 5 ok status=200 bytes=5 ms=51.120 rounds=1 address=127.0.0.1:18083 seed=8471703556760210955 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 6 ok status=200 bytes=5 ms=51.374 rounds=1 address=127.0.0.1:18083 seed=10322496526411437185 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 7 ok status=200 bytes=5 ms=51.251 rounds=1 address=127.0.0.1:18083 seed=5855205479094758086 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 8 ok status=200 bytes=5 ms=51.266 rounds=1 address=127.0.0.1:18083 seed=17724531461892817056 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+call 9 ok status=200 bytes=5 ms=51.391 rounds=1 address=127.0.0.1:18083 seed=9751246089480711632 failed_attempts=[[::1]:18083#0:abandoned] conn=none reused=false discarded=0 check_us=0 redispatched=false body_start="hello"
+summary calls n=10 min=51.094 p50=51.277 p90=51.758 max=51.758 ms ok=10
+summary later calls n=9 min=51.094 p50=51.266 p90=51.391 max=51.391 ms
+pool idle=0 checked_out=0 allocated=0
+fds_after_calls=21
+main returning at ms=513.714
+exit status=0 wall_ms=519 exit_after_main_ms=6

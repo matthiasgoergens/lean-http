@@ -1,0 +1,5 @@
+Independent checks of branch wire at 29ca787, 2026-10-29, the build host, v4.34.1 container, fresh dirs lean-http-wire-verify and lean-http-wire-netverify:
+- no library import of LeanHttpProto; no sorry, admit or axiom in LeanHttp/
+- lake build; axioms: proof 41, codec 41, pool 30, call 28, all within propext, Classical.choice, Quot.sound
+- unit 119, codec 50, response-codec 41, call-tests 139, pool-tests props 50000 seed 23 (2000000 operations), core-tests props 50000 seed 23 (349371 steps): all passing -> wire-verify.txt
+- real sockets: 291 passed, 0 failed, 1 known (dns-timeout) -> wire-net-verify.txt

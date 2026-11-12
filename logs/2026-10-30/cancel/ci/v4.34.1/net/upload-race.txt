@@ -1,0 +1,10 @@
+$ net-client upload PUT http://127.0.0.1:18128/die-on-next size=1000 chunk=500 repeat=2
+upload call 0 ok status=200 bytes=2 ms=1.633 rounds=1 lookups=0 address=127.0.0.1:18128 seed=17878587816369873966 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18128/die-on-next tls=none body_start="ok" pulls=3 produced=1000 response="ok"
+after upload 0: pool idle=1 checked_out=0 allocated=1
+upload call 1 error delivery=maybe delivered ms=0.492 rounds=0 lookups=0 seed=13502388889588246980 reused=true redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.delivered status=none cause="the connection closed before a complete response" detail="" pulls=1 produced=500
+after upload 1: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+rss_peak_kb=16660 rss_kb=18708
+main returning at ms=2.699
+exit status=0 wall_ms=12 exit_after_main_ms=10

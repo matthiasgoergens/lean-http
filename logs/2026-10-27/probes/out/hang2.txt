@@ -1,0 +1,64 @@
+### try 2: hang caught, pid 2440687 (flood delay=300 size=65536 variant=bg hold=300)
+### server=flood delay=300ms size=65536 | client variant=bg arg=0ms hold=300ms n=1
+task 2440687 hang wchan=futex_do_wait state=State:	S (sleeping)
+task 2440703 hang wchan=ep_poll state=State:	S (sleeping)
+task 2440706 hang wchan=futex_do_wait state=State:	S (sleeping)
+
+
+
+0x00007b3a7dc52e51 in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+
+Thread 3 (LWP 2440703 "hang"):
+#0  0x00007b3a7dce4170 in epoll_pwait () from target:/lib/x86_64-linux-gnu/libc.so.6
+#1  0x00005de53f0048bd in uv.io_poll ()
+#2  0x00005de53efffecb in uv_run ()
+#3  0x00005de53f0170fd in lean::event_loop_run_loop(lean::event_loop_t*) ()
+#4  0x00005de53ef8e745 in lean::lthread::imp::_main(void*) ()
+#5  0x00007b3a7dc56b84 in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+#6  0x00007b3a7dce3ecc in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+
+Thread 2 (LWP 2440706 "hang"):
+#0  0x00007b3a7dc52e51 in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+#1  0x00007b3a7dc558cd in pthread_cond_wait () from target:/lib/x86_64-linux-gnu/libc.so.6
+#2  0x00005de53f04551f in std::__1::condition_variable::wait(std::__1::unique_lock<std::__1::mutex>&) ()
+#3  0x00005de53ef9885b in lean::task_manager::wait_for(lean_task*) ()
+#4  0x00005de53ef8fc95 in lean_task_get ()
+#5  0x00005de53ee45bac in l_Std_Async_Waiter_race___at___00Std_Async_TCP_Socket_Client_recvSelector_spec__0 ()
+#6  0x00005de53ee462c4 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__4 ()
+#7  0x00005de53ee464a5 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__4___boxed ()
+#8  0x00005de53efe56d3 in lean_apply_2 ()
+#9  0x00005de53effa24b in lean::lean_io_bind_task_fn(lean_object*, lean_object*) ()
+#10 0x00005de53efe397b in lean_apply_1 ()
+#11 0x00005de53efe3916 in lean_apply_1 ()
+#12 0x00005de53ef99040 in lean::task_manager::run_task(std::__1::unique_lock<std::__1::mutex>&, lean_task*) ()
+#13 0x00005de53ef9a171 in lean::task_manager::spawn_worker()::{lambda()#1}::operator()() const ()
+#14 0x00005de53ef8e745 in lean::lthread::imp::_main(void*) ()
+#15 0x00007b3a7dc56b84 in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+#16 0x00007b3a7dce3ecc in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+
+Thread 1 (LWP 2440687 "hang"):
+#0  0x00007b3a7dc52e51 in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+#1  0x00007b3a7dc58883 in ?? () from target:/lib/x86_64-linux-gnu/libc.so.6
+#2  0x00005de53ef8d6e6 in lean::lthread::join() ()
+#3  0x00005de53ef98578 in lean::task_manager::~task_manager() ()
+#4  0x00005de53ef90875 in lean_finalize_task_manager ()
+#5  0x00005de53ee1e162 in main ()
+[Inferior 1 (process 2440687) detached]
+lrwx------  1 matthias matthias 64 Oct 27 19:19 0 -> /dev/null
+l-wx------  1 matthias matthias 64 Oct 27 19:19 1 -> pipe:[116655315]
+lrwx------+ 1 matthias matthias 64 Oct 27 19:19 10 -> socket:[116615400]
+l-wx------  1 matthias matthias 64 Oct 27 19:19 2 -> pipe:[116655315]
+lrwx------  1 matthias matthias 64 Oct 27 19:19 3 -> anon_inode:[eventpoll]
+lr-x------  1 matthias matthias 64 Oct 27 19:19 4 -> pipe:[116529960]
+l-wx------  1 matthias matthias 64 Oct 27 19:19 5 -> pipe:[116529960]
+lr-x------  1 matthias matthias 64 Oct 27 19:19 6 -> pipe:[116529961]
+l-wx------  1 matthias matthias 64 Oct 27 19:19 7 -> pipe:[116529961]
+lrwx------  1 matthias matthias 64 Oct 27 19:19 8 -> anon_inode:[eventfd]
+lr-x------  1 matthias matthias 64 Oct 27 19:19 9 -> /dev/null
+--- epoll registrations (fdinfo of the eventpoll fd 3)
+tfd:        8 events:       19 data:                8  pos:0 ino:816 sdev:11
+tfd:        6 events:       19 data:                6  pos:0 ino:6f21b29 sdev:10
+--- sockets in the container's network namespace (ss -tn: Recv-Q/Send-Q)
+State Recv-Q Send-Q  Local Address:Port  Peer Address:Port 
+ESTAB 0      1772032     127.0.0.1:38528    127.0.0.1:40334
+ESTAB 128512 0           127.0.0.1:40334    127.0.0.1:38528

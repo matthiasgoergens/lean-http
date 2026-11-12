@@ -1,0 +1,7 @@
+$ net-client call GET http://127.0.0.1:18080/trickle?ms=100 deadline=2000 gap=1000
+call 0 error delivery=response received ms=2002.187 rounds=1 lookups=0 seed=3339959881023724508 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="deadline timeout" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=2002.823
+exit status=0 wall_ms=2017 exit_after_main_ms=15

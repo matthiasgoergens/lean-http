@@ -1,0 +1,4 @@
+$ scripts/remote.sh bash -c "rm -rf out/seeds && /py/bin/python3 -I fuzz/seeds.py out/seeds > /dev/null && lake build Fuzz fuzz-replay 2>&1 | tail -n 1 && { ls out/seeds/* ; ls out/old-inputs | sed 's|^|out/old-inputs/|'; } | xargs -n 500 .lake/build/bin/fuzz-replay --class | sort | uniq -c | sort -rn"
+Build completed successfully (33 jobs).
+  16759 exchange/whole: begin: expected one write, got [write NN, read]
+exit status 0

@@ -1,0 +1,3 @@
+$ lake_build_clean
+Build completed successfully (42 jobs).
+exit status 0, wall 1209 ms

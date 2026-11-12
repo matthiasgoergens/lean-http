@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18142/truncate ca=/w/out/net/tls-certs/ca.pem
+call 0 error delivery=response received ms=94.554 rounds=1 lookups=0 seed=11409724750242031523 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the connection closed before a complete response" detail="TLS: the server ended the connection without close_notify, so the response may be truncated (unexpected eof while reading)"
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=12
+main returning at ms=95.391 started_unix_us=1793621876350775 returning_unix_us=1793621876446166
+exit status=0 wall_ms=120 start_ms=20 exit_after_main_ms=4

@@ -1,0 +1,8 @@
+$ net-client call GET http://dup.test:18085/ retries=2 base=0 cap=0
+call 0 error delivery=not sent ms=6.724 rounds=3 lookups=1 seed=1347825971907794631 reused=false redispatched=false hops=0 retries=2 not_retried=LeanHttp.Call.NoRetry.hopLimit status=none cause="could not connect: 127.0.0.1:18085 (round 0): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 1): no such thing (error code: 111, connection refused); 127.0.0.1:18085 (round 2): no such thing (error code: 111, connection refused)" detail="" attempts=[127.0.0.1:18085#0:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#1:failed(no such thing (error code: 111, connection refused)), 127.0.0.1:18085#2:failed(no such thing (error code: 111, connection refused))]
+pool idle=0 checked_out=0 allocated=3
+trace call 0 ok steps=3
+trace call 0 retry delays=[0, 0] gaps=[0, 0]
+fds_after_calls=11
+main returning at ms=8.176 started_unix_us=1793621422026831 returning_unix_us=1793621422035006
+exit status=0 wall_ms=38 start_ms=19 exit_after_main_ms=10

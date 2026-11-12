@@ -1,0 +1,11 @@
+(The brief given to the fresh Claude reviewer, abridged: review the change at
+/home/matthias/prog/lean-http-wt-upload-review, read-only, against db37391; start with DESIGN.md
+"Streamed request bodies" and README "Streaming a request body"; read the core, the shell, the client,
+Wire, Wait, Trace, RequestBody and its proofs, the Obs model and the new theorems, the checker, the
+generator, the traces, upload.py and the upload scenarios; look for pulls before a write or the head,
+bytes beyond a declared size, chunked framing errors, reuse with the body incomplete (judging the
+wireDone rule), shell races with the pull task, retries or re-dispatches of a partly read stream,
+307/308 with a stream, the awaitFirst change, vacuous or weak theorem statements, whether
+observed_write and Observed.framed pin what the core writes, test gaps and checker properties that
+cannot fire, and docs a reader could not understand; rank findings with file:line, scenario and
+confidence; say where nothing was found.)

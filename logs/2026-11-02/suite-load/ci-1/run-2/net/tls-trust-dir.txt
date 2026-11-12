@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18140/hello
+call 0 ok status=200 bytes=15 ms=156.375 rounds=1 lookups=0 address=127.0.0.1:18140 seed=13650838289197136176 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18140/hello tls=TLSv1.3 body_start="hello over tls\n"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=157.356 started_unix_us=1793621379111774 returning_unix_us=1793621379269131
+exit status=0 wall_ms=271 start_ms=46 exit_after_main_ms=67

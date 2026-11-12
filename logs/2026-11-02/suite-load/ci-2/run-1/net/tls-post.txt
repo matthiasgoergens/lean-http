@@ -1,0 +1,7 @@
+$ net-client call POST https://127.0.0.1:18130/echo body=100000 ca=/w/out/net/tls-certs/ca.pem
+call 0 ok status=200 bytes=100000 ms=22.984 rounds=1 lookups=0 address=127.0.0.1:18130 seed=2003672788674766911 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18130/echo tls=TLSv1.3 body_start="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=24.785 started_unix_us=1793620802326198 returning_unix_us=1793620802350983
+exit status=0 wall_ms=58 start_ms=22 exit_after_main_ms=10

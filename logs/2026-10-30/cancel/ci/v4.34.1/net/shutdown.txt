@@ -1,0 +1,16 @@
+$ net-client call GET http://127.0.0.1:18188/sleep?ms=2000 concurrent=3 shutdown=300
+call 0 error delivery=maybe delivered ms=300.834 rounds=1 lookups=0 seed=8880723314754474876 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+call 1 error delivery=maybe delivered ms=300.891 rounds=1 lookups=0 seed=10933443066317168313 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+call 2 error delivery=maybe delivered ms=300.912 rounds=1 lookups=0 seed=7418888350812338835 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail=""
+round 0 of 3 calls took ms=300.933
+summary calls n=3 min=300.834 p50=300.891 p90=300.912 max=300.912 ms ok=0
+pool idle=0 checked_out=0 allocated=3
+after shutdown: call 3 error delivery=not sent ms=0.000 rounds=0 lookups=0 seed=4420457942101709073 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (shutdown)" detail="cancelled before the request was sent"
+after shutdown: pool idle=0 checked_out=0
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+trace call 2 ok steps=1
+trace call 3 ok steps=1
+fds_after_calls=11
+main returning at ms=301.872
+exit status=0 wall_ms=309 exit_after_main_ms=8

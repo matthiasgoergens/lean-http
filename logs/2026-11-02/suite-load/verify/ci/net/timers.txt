@@ -1,0 +1,7 @@
+$ net-client timers n=10 hammer=4 pinloop=127
+pinned the event loop's thread 6847 to CPU 127
+timers sleep waits=40 early=6 early_over_1ms=5 most_ms=11
+timers awaitFirst waits=40 early=0 early_over_1ms=0 most_ms=0 timers=56
+timers race waits=40 early=0 early_over_1ms=0 most_ms=0 timers=54
+main returning at ms=1324.457 started_unix_us=1793623573092373 returning_unix_us=1793623574416830
+exit status=0 wall_ms=1341 start_ms=8 exit_after_main_ms=8

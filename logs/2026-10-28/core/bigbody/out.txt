@@ -1,0 +1,19 @@
+Build completed successfully (42 jobs).
+round 1 out/m1-net-client: call 0 ok status=200 bytes=60000000 ms=5977.374
+round 1 .lake/build/bin/net-client: call 0 ok status=200 bytes=60000000 ms=70.305
+round 2 .lake/build/bin/net-client: call 0 ok status=200 bytes=60000000 ms=75.645
+round 2 out/m1-net-client: call 0 ok status=200 bytes=60000000 ms=7455.050
+round 3 out/m1-net-client: call 0 ok status=200 bytes=60000000 ms=7393.739
+round 3 .lake/build/bin/net-client: call 0 ok status=200 bytes=60000000 ms=99.815
+round 4 .lake/build/bin/net-client: call 0 ok status=200 bytes=60000000 ms=91.537
+round 4 out/m1-net-client: call 0 ok status=200 bytes=60000000 ms=7261.678
+round 5 out/m1-net-client: call 0 ok status=200 bytes=60000000 ms=6349.494
+round 5 .lake/build/bin/net-client: call 0 ok status=200 bytes=60000000 ms=69.991
+round 6 .lake/build/bin/net-client: call 0 ok status=200 bytes=60000000 ms=78.688
+round 6 out/m1-net-client: call 0 ok status=200 bytes=60000000 ms=5629.964
+round 1 .lake/build/bin/net-client: call 0 ok status=200 bytes=10000000 ms=19.015
+round 2 .lake/build/bin/net-client: call 0 ok status=200 bytes=10000000 ms=18.640
+round 1 .lake/build/bin/net-client: call 0 ok status=200 bytes=20000000 ms=32.652
+round 2 .lake/build/bin/net-client: call 0 ok status=200 bytes=20000000 ms=22.841
+round 1 .lake/build/bin/net-client: call 0 ok status=200 bytes=40000000 ms=46.401
+round 2 .lake/build/bin/net-client: call 0 ok status=200 bytes=40000000 ms=56.989

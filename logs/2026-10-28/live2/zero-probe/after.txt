@@ -1,0 +1,53 @@
+Build completed successfully (42 jobs).
+127.0.0.1	two
+127.0.0.2	two
+$ net-client call GET http://127.0.0.2:18080/ connect=0 repeat=5
+call 0 error delivery=not sent ms=0.249 rounds=0 seed=5238278360651585066 status=none cause="invalid request: connectTimeoutMs must be positive" detail=""
+call 1 error delivery=not sent ms=0.025 rounds=0 seed=14610284548574440188 status=none cause="invalid request: connectTimeoutMs must be positive" detail=""
+call 2 error delivery=not sent ms=0.010 rounds=0 seed=8321339344636979721 status=none cause="invalid request: connectTimeoutMs must be positive" detail=""
+call 3 error delivery=not sent ms=0.009 rounds=0 seed=1056257804365847743 status=none cause="invalid request: connectTimeoutMs must be positive" detail=""
+call 4 error delivery=not sent ms=0.010 rounds=0 seed=9813893610528612589 status=none cause="invalid request: connectTimeoutMs must be positive" detail=""
+summary calls n=5 min=0.009 p50=0.010 p90=0.249 max=0.249 ms ok=0
+fds_after_calls=10
+main returning at ms=0.834
+exit status 0
+$ net-client call GET http://127.0.0.2:18080/ deadline=0 repeat=5
+call 0 error delivery=not sent ms=0.482 rounds=0 seed=3698045319627241282 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 1 error delivery=not sent ms=0.051 rounds=0 seed=997560294815788025 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 2 error delivery=not sent ms=0.020 rounds=0 seed=8818440754865004786 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 3 error delivery=not sent ms=0.018 rounds=0 seed=4872484913192575325 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 4 error delivery=not sent ms=0.018 rounds=0 seed=15283635735828656040 status=none cause="invalid request: deadlineMs must be positive" detail=""
+summary calls n=5 min=0.018 p50=0.020 p90=0.482 max=0.482 ms ok=0
+fds_after_calls=10
+main returning at ms=1.301
+exit status 0
+$ net-client call GET http://localhost:18080/ deadline=0 repeat=5
+call 0 error delivery=not sent ms=0.355 rounds=0 seed=9413586743062592137 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 1 error delivery=not sent ms=0.043 rounds=0 seed=16253345060212087244 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 2 error delivery=not sent ms=0.019 rounds=0 seed=10807747297018330482 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 3 error delivery=not sent ms=0.019 rounds=0 seed=5410457662998803341 status=none cause="invalid request: deadlineMs must be positive" detail=""
+call 4 error delivery=not sent ms=0.023 rounds=0 seed=5064469466332406681 status=none cause="invalid request: deadlineMs must be positive" detail=""
+summary calls n=5 min=0.019 p50=0.023 p90=0.355 max=0.355 ms ok=0
+fds_after_calls=10
+main returning at ms=1.121
+exit status 0
+$ net-client call GET http://two:18080/ repeat=5
+call 0 ok status=200 bytes=1004 ms=11.972 rounds=1 address=127.0.0.2:18080 seed=7018411628257405747 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=3.798 rounds=1 address=127.0.0.2:18080 seed=10596215145956540040 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=2.877 rounds=1 address=127.0.0.2:18080 seed=3181298113022444119 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=1.889 rounds=1 address=127.0.0.2:18080 seed=7316128066259023668 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=1.974 rounds=1 address=127.0.0.2:18080 seed=15242809538470538201 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=1.889 p50=2.877 p90=11.972 max=11.972 ms ok=5
+fds_after_calls=11
+main returning at ms=23.281
+exit status 0
+$ net-client call GET http://two:18080/ stagger=0 repeat=5
+call 0 ok status=200 bytes=1004 ms=6.287 rounds=1 address=127.0.0.2:18080 seed=18179914241346832522 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 1 ok status=200 bytes=1004 ms=4.179 rounds=1 address=127.0.0.2:18080 seed=3976141173832395144 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 2 ok status=200 bytes=1004 ms=3.457 rounds=1 address=127.0.0.2:18080 seed=3907030011830540320 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 3 ok status=200 bytes=1004 ms=8.304 rounds=1 address=127.0.0.2:18080 seed=5818781575912137861 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+call 4 ok status=200 bytes=1004 ms=4.335 rounds=1 address=127.0.0.2:18080 seed=17334465559934881645 failed_attempts=[127.0.0.1:18080#0:failed(no such thing (error code: 111, connection refused))] body_start="<!DOCTYPE HTML>\n<html lang=\"en\">\n<head>\n"
+summary calls n=5 min=3.457 p50=4.335 p90=8.304 max=8.304 ms ok=5
+fds_after_calls=11
+main returning at ms=27.146
+exit status 0

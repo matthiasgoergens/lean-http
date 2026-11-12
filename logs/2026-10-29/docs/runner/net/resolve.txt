@@ -1,0 +1,7 @@
+$ net-client call GET http://nonexistent.invalid/
+call 0 error delivery=not sent ms=13.328 rounds=0 seed=11175289172499507110 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="could not resolve nonexistent.invalid: unknown node or service (error code: 3008)" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=10
+main returning at ms=14.057
+exit status=0 wall_ms=106 exit_after_main_ms=92

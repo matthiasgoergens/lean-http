@@ -1,0 +1,14 @@
+# the machine's body limit is 2^62 again
+diff --git a/LeanHttp/Exchange.lean b/LeanHttp/Exchange.lean
+index 65a9c4b..6e96209 100644
+--- a/LeanHttp/Exchange.lean
++++ b/LeanHttp/Exchange.lean
+@@ -549,7 +549,7 @@ def prepare (config : ExchangeConfig) (head : Request.Head) (body : ByteArray) :
+   let lifted := 2 ^ 62
+   let h1 := { config.h1 with
+     enableKeepAlive := config.keepAlive
+-    maxBodySize := max lifted (10 ^ min config.h1.maxHeaderValueLength config.h1.maxHeaderBytes)
++    maxBodySize := lifted
+     maxChunkSize := lifted
+     maxBufferedBodyBytes := some config.maxBody }
+   let headers := head.headers

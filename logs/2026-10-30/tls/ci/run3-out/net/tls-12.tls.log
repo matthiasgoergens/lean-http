@@ -1,0 +1,24 @@
+      52.5 listening tls=18170 plain=18171 mode=tls12 openssl=OpenSSL 3.5.9 29 Sep 2026
+     255.6 conn1 accepted from ('127.0.0.1', 58530)
+     259.2 sni=None
+     270.5 conn1 handshake done version=TLSv1.2 cipher=ECDHE-ECDSA-AES256-GCM-SHA384 alpn=http/1.1
+     274.0 conn1 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.2
+     276.0 conn1 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.2
+     278.7 conn1 GET /hello {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.2
+     280.6 conn1 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+     400.0 conn2 accepted from ('127.0.0.1', 58544)
+     402.8 sni=None
+     406.9 conn2 handshake done version=TLSv1.2 cipher=ECDHE-ECDSA-AES256-GCM-SHA384 alpn=http/1.1
+     409.0 conn2 POST /echo {'host': '127.0.0.1:18170', 'connection': 'keep-alive', 'content-length': '100000'} body=100000B version=TLSv1.2
+     414.7 conn2 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')
+     579.3 conn3 accepted from ('127.0.0.1', 58558)
+     590.1 sni=None
+     598.9 conn3 handshake done version=TLSv1.2 cipher=ECDHE-ECDSA-AES256-GCM-SHA384 alpn=http/1.1
+     601.4 conn3 GET /close-delimited {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.2
+     601.9 conn3 sending close_notify
+     605.1 conn3 unwrap: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2841)')
+     753.0 conn4 accepted from ('127.0.0.1', 58574)
+     754.5 sni=None
+     761.4 conn4 handshake done version=TLSv1.2 cipher=ECDHE-ECDSA-AES256-GCM-SHA384 alpn=http/1.1
+     762.1 conn4 GET /truncate {'host': '127.0.0.1:18170', 'connection': 'keep-alive'} body=0B version=TLSv1.2
+     843.6 conn4 closing without close_notify

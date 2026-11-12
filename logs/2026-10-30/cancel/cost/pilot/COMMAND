@@ -1,0 +1,5 @@
+pilot/out.txt:     LEAN_HTTP_REMOTE_DIR=lean-http-cost scripts/remote.sh bash out/bench/blocks.sh 20 2000 100 101 main mainpert cancel ceiling
+pilot/out-500.txt: LEAN_HTTP_REMOTE_DIR=lean-http-cost scripts/remote.sh bash out/bench/blocks.sh 40 500 100 101 main mainpert cancel ceiling
+pilot/smoke.txt:   LEAN_HTTP_REMOTE_DIR=lean-http-cost scripts/remote.sh bash out/bench/blocks.sh 1 200 100 101 main mainpert cancel ceiling token=cancel:cancelon=none flag finish flagfinish flag-token=flag:cancelon=none
+pilot/count-try.txt: ssh <host> 'cd ~/lean-http-cost && batchrun bash out/bench/count.sh 3 2000 100 101 main cancel ceiling'
+pilot/costbench-smoke.txt: LEAN_HTTP_REMOTE_DIR=lean-http-cost scripts/remote.sh /py/bin/python3 -I out/bench/costbench.py 2 20 20 100 101 main cancel token=cancel:token

@@ -1,0 +1,16 @@
+agree: 4551
+framed-differently (allowed: http10-keep-alive): 2
+framed-differently (allowed: interim-disables-reuse): 7
+framed-differently (allowed: malformed-connection): 38
+it-accepts-we-reject: 83
+other (allowed: bws-before-chunk-extension): 3
+we-accept-it-rejects FINDING: 1
+we-accept-it-rejects (allowed: data-after-close): 6
+we-accept-it-rejects (allowed: unsolicited-101): 257
+we-reject-it-waits: 1213
+rule unsolicited-101: the machine treats a 101 nobody asked for as final; the exchange core refuses it
+rule data-after-close: h11 rejects bytes after a response it will not reuse the connection for; the machine leaves them unread, and a pool must not reuse a connection with bytes left over
+rule http10-keep-alive: h11 never reuses an HTTP/1.0 connection; RFC 9112 section 9.3 allows it with keep-alive
+rule malformed-connection: a Connection value that is not a list of tokens turns the machine's reuse off; h11 ignores it (the machine is the safer one)
+rule bws-before-chunk-extension: h11 rejects whitespace between a chunk size and ';', which RFC 9112 section 7.1.1 allows (BWS); the machine accepts it
+rule interim-disables-reuse: the machine's keep-alive only ever turns off, so an interim response that is HTTP/1.0 or carries Connection: close stops reuse even if the final response allows it (safe, not optimal)

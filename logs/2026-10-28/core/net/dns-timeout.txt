@@ -1,0 +1,5 @@
+$ net-client call GET http://slow.test/ deadline=2000
+call 0 error delivery=not sent ms=2012.035 rounds=0 seed=15804048229076448396 status=none cause="deadline timeout" detail="could not connect: "
+fds_after_calls=11
+main returning at ms=2012.634
+exit status=0 wall_ms=10060 exit_after_main_ms=8048

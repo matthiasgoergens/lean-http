@@ -1,0 +1,7 @@
+$ net-client call GET https://127.0.0.1:18154/hello ca=/w/out/net/tls-certs/ca.pem
+call 0 error delivery=not sent ms=10.752 rounds=1 lookups=0 seed=3358515831333850803 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS handshake failed: tlsv1 alert protocol version" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=11.624 started_unix_us=1793620786158562 returning_unix_us=1793620786170187
+exit status=0 wall_ms=619 start_ms=600 exit_after_main_ms=7

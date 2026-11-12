@@ -1,0 +1,10 @@
+      23.4 listening tls=18150 plain=18151 mode=hang openssl=OpenSSL 3.5.9 29 Sep 2026
+      53.9 conn1 accepted from ('127.0.0.1', 43228)
+      54.4 conn1 accepted; never answering the handshake
+      55.2 conn1 the ClientHello arrived; never answering
+     573.1 conn2 accepted from ('127.0.0.1', 43240)
+     573.8 conn2 accepted; never answering the handshake
+     574.6 conn2 the ClientHello arrived; never answering
+    1276.0 conn3 accepted from ('127.0.0.1', 43244)
+    1276.8 conn3 accepted; never answering the handshake
+    1277.0 conn3 the ClientHello arrived; never answering

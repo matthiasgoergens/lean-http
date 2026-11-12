@@ -1,0 +1,20 @@
+/usr/local/bin/afl-whatsup status check tool for afl-fuzz by Michal Zalewski
+
+Try out the new tool: afl-health - full analysis, judgement, hints, ssh support!
+
+
+Summary stats
+=============
+
+        Fuzzers alive : 0
+       Dead or remote : 1 (excluded from stats)
+       Total run time : 0 seconds
+          Total execs : 0 thousands
+     Cumulative speed : 0 execs/sec
+        Pending items : 0 faves, 0 total
+     Coverage reached : 10.98%
+        Crashes saved : 0
+          Hangs saved : 0
+ Cycles without finds : 0
+   Time without finds : 0
+

@@ -1,0 +1,7 @@
+$ net-client stream GET http://127.0.0.1:18118/chain/2
+stream 0 ok status=200 read=67 pulls=1 max_pull=67 ms=16.639 conn=(some 0) reused=true hops=2 retries=0 uri=http://127.0.0.1:18118/chain/0
+after stream 0: pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=3
+rss_peak_kb=16996 rss_kb=16996
+main returning at ms=18.065
+exit status=0 wall_ms=69 exit_after_main_ms=51

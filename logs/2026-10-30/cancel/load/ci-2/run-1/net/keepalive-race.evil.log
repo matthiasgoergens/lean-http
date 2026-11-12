@@ -1,0 +1,21 @@
+      19.4 listening on 127.0.0.1:18093
+      74.4 conn1 accepted from ('127.0.0.1', 33940)
+      76.8 conn1 req1 GET /die-on-next {'host': ['127.0.0.1:18093'], 'connection': ['keep-alive']} body=0B
+      81.3 conn1 got 76 bytes of the next request; closing without answering
+      81.4 conn1 closed by server
+      87.8 conn2 accepted from ('127.0.0.1', 33950)
+      88.6 conn2 req1 GET /die-on-next {'host': ['127.0.0.1:18093'], 'connection': ['keep-alive']} body=0B
+      90.4 conn2 got 0 bytes of the next request; closing without answering
+      90.5 conn2 closed by server
+     186.5 conn3 accepted from ('127.0.0.1', 33964)
+     188.0 conn3 req1 GET /die-on-next?rst=1 {'host': ['127.0.0.1:18093'], 'connection': ['keep-alive']} body=0B
+     190.2 conn3 got 82 bytes of the next request; closing without answering
+     190.3 conn3 closed by server
+     191.1 conn4 accepted from ('127.0.0.1', 33970)
+     192.3 conn4 req1 GET /die-on-next?rst=1 {'host': ['127.0.0.1:18093'], 'connection': ['keep-alive']} body=0B
+     193.4 conn4 got 0 bytes of the next request; closing without answering
+     193.5 conn4 closed by server
+     417.3 conn5 accepted from ('127.0.0.1', 33982)
+     419.5 conn5 req1 POST /die-on-next {'host': ['127.0.0.1:18093'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+     420.6 conn5 got 101 bytes of the next request; closing without answering
+     420.8 conn5 closed by server

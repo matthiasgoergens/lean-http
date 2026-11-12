@@ -1,0 +1,5 @@
+### server=data delay=310ms size=1000 | client variant=mycancel arg=0ms hold=300ms n=1
+  [client] cancelRecv done
+  [client] main returning
+  exit=0 wall=322ms 
+  [server] listening 29069

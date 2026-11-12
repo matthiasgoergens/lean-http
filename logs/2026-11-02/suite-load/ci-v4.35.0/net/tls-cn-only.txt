@@ -1,0 +1,7 @@
+$ net-client call GET https://localhost:18164/hello ca=/w/out/net/tls-certs/ca.pem
+call 0 error delivery=not sent ms=45.059 rounds=1 lookups=1 seed=11073916916554852876 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS certificate verification failed: hostname mismatch" detail=""
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=11
+main returning at ms=45.675 started_unix_us=1793620800491773 returning_unix_us=1793620800537450
+exit status=0 wall_ms=59 start_ms=10 exit_after_main_ms=3

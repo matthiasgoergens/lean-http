@@ -1,0 +1,25 @@
+      14.2 listening on 127.0.0.1:18092
+      37.2 conn1 accepted from ('127.0.0.1', 35746)
+      37.7 conn1 req1 GET /close-after-idle?ms=200 {'host': ['127.0.0.1:18092'], 'connection': ['keep-alive']} body=0B
+     238.1 conn1 idle timeout, closing
+     238.2 conn1 closed by server
+     538.9 conn2 accepted from ('127.0.0.1', 35770)
+     539.3 conn2 req1 GET /close-after-idle?ms=200 {'host': ['127.0.0.1:18092'], 'connection': ['keep-alive']} body=0B
+     740.1 conn2 idle timeout, closing
+     740.2 conn2 closed by server
+    1040.6 conn3 accepted from ('127.0.0.1', 35786)
+    1040.9 conn3 req1 GET /close-after-idle?ms=200 {'host': ['127.0.0.1:18092'], 'connection': ['keep-alive']} body=0B
+    1041.4 conn3 EOF from client after 1 requests
+    1041.4 conn3 closed by server
+    1068.2 conn4 accepted from ('127.0.0.1', 35802)
+    1069.6 conn4 req1 GET /close-after-idle?ms=200 {'host': ['127.0.0.1:18092'], 'connection': ['keep-alive']} body=0B
+    1270.1 conn4 idle timeout, closing
+    1270.2 conn4 closed by server
+    1571.4 conn5 accepted from ('127.0.0.1', 35834)
+    1572.1 conn5 req1 GET /close-after-idle?ms=200 {'host': ['127.0.0.1:18092'], 'connection': ['keep-alive']} body=0B
+    1572.7 conn5 EOF from client after 1 requests
+    1572.8 conn5 closed by server
+    1588.8 conn6 accepted from ('127.0.0.1', 35840)
+    1589.2 conn6 req1 POST /close-after-idle?ms=200 {'host': ['127.0.0.1:18092'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+    1791.1 conn6 idle timeout, closing
+    1791.2 conn6 closed by server

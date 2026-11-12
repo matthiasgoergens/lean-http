@@ -1,0 +1,8 @@
+$ net-client stream GET http://127.0.0.1:18118/trickle?ms=100 deadline=3000 pull=1
+stream call 0 error delivery=response received ms=3001.745 rounds=1 lookups=0 seed=12581242567197715202 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="deadline timeout" detail="" read_before=29
+callback entered at ms=2.299
+after stream 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=13120 rss_kb=13132
+main returning at ms=3002.628 started_unix_us=1793621880282491 returning_unix_us=1793621883285119
+exit status=0 wall_ms=3016 start_ms=8 exit_after_main_ms=5

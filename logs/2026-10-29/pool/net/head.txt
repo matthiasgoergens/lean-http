@@ -1,0 +1,6 @@
+$ net-client call HEAD http://127.0.0.1:18080/head-cl
+call 0 ok status=200 bytes=0 ms=0.669 rounds=1 address=127.0.0.1:18080 seed=10434837280140883501 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false body_start=""
+pool idle=1 checked_out=0 allocated=1
+fds_after_calls=11
+main returning at ms=0.812
+exit status=0 wall_ms=4 exit_after_main_ms=4

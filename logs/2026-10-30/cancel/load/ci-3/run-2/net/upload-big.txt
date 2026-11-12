@@ -1,0 +1,7 @@
+$ net-client upload PUT http://127.0.0.1:18122/sink size=268435456 chunk=16384 deadline=600000
+upload call 0 ok status=200 bytes=53 ms=1815.789 rounds=1 lookups=0 address=127.0.0.1:18122 seed=11797171270058434696 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18122/sink tls=none body_start="pattern=ok received=268435456 framing=le" pulls=16385 produced=268435456 response="pattern=ok received=268435456 framing=length chunks=0"
+after upload 0: pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=18896 rss_kb=18896
+main returning at ms=1816.364
+exit status=0 wall_ms=1825 exit_after_main_ms=9

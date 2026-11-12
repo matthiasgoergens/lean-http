@@ -1,0 +1,27 @@
+$ bash examples/run.sh
+✔ [58/66] Built UploadExample (3.2s)
+✔ [59/66] Built RequestExample (4.4s)
+✔ [60/66] Built UploadExample:c.o (1.9s)
+✔ [61/66] Built StreamExample (5.8s)
+✔ [62/66] Built RequestExample:c.o (2.1s)
+✔ [63/66] Built «upload-example»:exe (3.1s)
+✔ [64/66] Built StreamExample:c.o (2.6s)
+✔ [65/66] Built «stream-example»:exe (3.8s)
+✔ [66/66] Built «request-example»:exe (5.9s)
+Build completed successfully (66 jobs).
+GET 200 application/json {"greeting": "hello"}
+POST 200 33 bytes: {"name": "lean-http", "stars": 5}
+refused: could not connect: 127.0.0.1:1 (round 0): no such thing (error code: 111, connection refused); the server cannot have seen the request: sending it again is safe
+gave up: the call was cancelled (cancel); the server may have acted on the request: send it again only if that is harmless
+PASS request-example.txt: GET 200 application/json {"greeting": "hello"}
+PASS request-example.txt: POST 200 33 bytes: {"name": "lean-http", "stars": 5}
+PASS request-example.txt: the refused connect is reported as not sent
+PASS request-example.txt: gave up: the call was cancelled (cancel); the server may have acted on the request: send it again only if that is harmless
+streamed 200: 588890 bytes in 110 pieces
+PASS stream-example.txt: the whole body, in pieces
+streamed 200 {"bytes": 98890, "lines": 10000, "framing": "chunked"}
+known size 200 {"bytes": 24, "lines": 1, "framing": "length"}
+PASS upload-example.txt: streamed 200 {"bytes": 98890, "lines": 10000, "framing": "chunked"}
+PASS upload-example.txt: known size 200 {"bytes": 24, "lines": 1, "framing": "length"}
+0 failing
+exit status 0, wall 19723 ms

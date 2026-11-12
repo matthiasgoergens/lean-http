@@ -1,0 +1,166 @@
+$ /w/.lake/build/bin/call-tests 20000 1
+PASS start refuses an origin-form target
+PASS start refuses ftp
+PASS start refuses a URI without a host
+PASS start accepts https
+PASS the first hop is the request as given
+PASS the credentials given are recorded
+PASS 303 turns POST into GET
+PASS 303 turns PUT into GET
+PASS 303 keeps HEAD
+PASS 303 keeps GET
+PASS 301 turns POST into GET
+PASS 302 turns POST into GET
+PASS 302 keeps PUT with a replayable body
+PASS 302 does not follow PUT with a streamed body
+PASS 307 keeps POST
+PASS 308 keeps DELETE
+PASS 307 does not follow POST with a streamed body
+PASS 308 does not follow GET with a streamed body
+PASS 307 follows GET with a streamed body that is empty
+PASS 303: no body
+PASS 303: content fields and validators dropped
+PASS 303: target
+PASS 303 to the same origin keeps the credentials
+PASS hop-by-hop fields and those Connection names are dropped
+PASS other fields are kept
+PASS a same-origin hop keeps Referer and Host
+PASS 307: the body goes again
+PASS 307: content fields kept
+PASS 200 is delivered
+PASS 300 is delivered
+PASS 304 is delivered
+PASS 305 is delivered
+PASS 306 is delivered
+PASS 399 is delivered
+PASS 404 is delivered
+PASS a redirect without Location is delivered
+PASS a redirect to "not a uri" is delivered
+PASS a redirect to "ftp://a.test/f" is delivered
+PASS a redirect to "http:/nohost" is delivered
+PASS a redirect to "mailto:x@y.test" is delivered
+PASS a redirect is delivered when redirects are off
+PASS relative path
+PASS dot segments
+PASS query only
+PASS empty reference
+PASS fragment only
+PASS protocol-relative
+PASS userinfo dropped
+PASS fragment dropped
+PASS dot segments in an absolute URI
+PASS empty path becomes /
+PASS explicit port kept
+PASS default port omitted
+PASS scheme and host lower case
+PASS cross-origin: no credential field
+PASS cross-origin: Host rewritten
+PASS cross-origin: Referer and validators dropped
+PASS cross-origin: other fields kept
+PASS back at the original origin: credentials given back
+PASS back at the original origin: Host rewritten
+PASS a credential the first request's Connection names is not given back
+PASS https to http: no credential field
+PASS another port: no credential field
+PASS another port: Host has the port
+PASS no Host field is added
+PASS two redirects followed under a limit of 2
+PASS the third fails with tooManyRedirects
+PASS a limit of 0 fails at the first redirect
+PASS POST /items, 303 to /items: GET /items follows
+PASS the same URL is followed until the hop limit, which fails
+PASS a redirect after the deadline fails
+PASS a connect failure of a streamed POST is retried after the backoff
+PASS the second retry draws the next delay
+PASS the third failure exceeds the retries per hop
+PASS maybe delivered POST: not retried
+PASS maybe delivered GET: retried
+PASS maybe delivered PUT of bytes: retried
+PASS maybe delivered PUT of a stream: not retried
+PASS not sent but bytes counted: treated as maybe delivered
+PASS not sent POST after the connection closed: retried
+PASS a response received: not retried
+PASS localClose, nothing sent: not retried
+PASS localClose, maybe delivered: not retried
+PASS deadline: not retried
+PASS protocol: not retried
+PASS limit: not retried
+PASS resolve: not retried
+PASS invalidRequest: not retried
+PASS read timeout on GET: retried
+PASS no time left: not retried
+PASS a backoff that ends at the deadline: not retried
+PASS a backoff that ends just before the deadline: retried
+PASS the budget ends retries
+PASS after a redirect, a retry sends the redirected request
+PASS 503 is delivered by default
+PASS opt-in 503 with Retry-After: 2
+PASS opt-in 429 with an HTTP-date, from the response's Date
+PASS an HTTP-date without Date: from the wall clock
+PASS a date in the past: no wait
+PASS Retry-After beyond maxRetryAfterMs: delivered
+PASS Retry-After reaching the deadline: delivered
+PASS Retry-After ending just before the deadline: retried
+PASS 503 to a POST: delivered
+PASS 503 to a PUT of a stream: delivered
+PASS 503 without Retry-After: the backoff
+PASS an invalid Retry-After: the backoff
+PASS 429 is delivered when only 503 is opted into
+PASS delay-seconds
+PASS delay-seconds with whitespace
+PASS empty
+PASS a fraction
+PASS negative
+PASS IMF-fixdate
+PASS RFC 850 date
+PASS asctime date
+PASS asctime date with a two-digit day
+PASS 29 February in a leap year
+PASS 29 February in another year
+PASS hour 25
+PASS lower-case day name
+PASS trailing text
+PASS a time zone other than GMT
+PASS two-digit year 50 years ahead
+PASS two-digit year more than 50 years ahead
+PASS year of the epoch
+PASS year of the last second of 2024
+PASS year of the first second of 2025
+PASS a date before 1970 counts as 1970
+random runs: 20000 calls, 24550 steps: 2951 follows, 1599 retries, 9241 delivers, 10759 fails
+  deliver: 9241
+  fail: cause: 3752
+  fail: hopLimit: 854
+  fail: noTime: 660
+  fail: budget: 395
+  follow with a method change: 315
+  retry after the backoff: 1545
+  fail: delivered: 1158
+  fail: responseReceived: 1482
+  follow: 1103
+  retry after Retry-After: 54
+  follow to another origin: 1533
+  fail: tooManyRedirects: 1156
+  fail: deadline: 1302
+PASS 20000 random calls (seed 1) break no rule
+PASS the random calls take every kind of step
+PASS planted bug Mutation.leakCredentials is caught
+  caught as: [credentials sent to another origin ×1182]
+PASS planted bug Mutation.resendDelivered is caught
+  caught as: [delay reaches the deadline ×471, resent after bytes may have reached the server ×1340, retry budget exceeded ×248, retries per hop exceeded ×408]
+PASS planted bug Mutation.retryLocalClose is caught
+  caught as: [retry budget exceeded ×202, delay reaches the deadline ×362, localClose retried ×1140, resent after bytes may have reached the server ×359, retried after the response arrived ×287, retries per hop exceeded ×311]
+PASS planted bug Mutation.delayToDeadline is caught
+  caught as: [delay reaches the deadline ×1437, Retry-After beyond its limit ×66, backoff beyond its cap ×1168]
+PASS planted bug Mutation.deliverAtLimit is caught
+  caught as: [a followable redirect was delivered ×1156]
+PASS planted bug Mutation.keepPostOn303 is caught
+  caught as: [body changed without a method change ×72, method not as RFC 9110 and Fetch say ×74, 303 did not yield GET (or HEAD) ×74]
+PASS planted bug Mutation.keepContentOnChange is caught
+  caught as: [content field kept across a method change ×648]
+PASS planted bug Mutation.retryAcrossRedirect is caught
+  caught as: [retries per hop exceeded ×1063, retried a response that is not an opted-in 429 or 503 ×3131, resent after bytes may have reached the server ×986, retry budget exceeded ×715]
+PASS planted bug Mutation.keepHost is caught
+  caught as: [Host not rewritten ×664]
+139 checks, 0 failing
+exit status 0, wall 6688 ms

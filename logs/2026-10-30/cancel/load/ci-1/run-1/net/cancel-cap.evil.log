@@ -1,0 +1,9 @@
+      63.6 listening on 127.0.0.1:18187
+      93.7 conn1 accepted from ('127.0.0.1', 48818)
+      94.3 conn1 req1 GET /sleep?ms=5000 {'host': ['127.0.0.1:18187'], 'connection': ['keep-alive']} body=0B
+     447.6 conn2 accepted from ('127.0.0.1', 48832)
+     451.4 conn2 req1 GET /sleep?ms=5000 {'host': ['127.0.0.1:18187'], 'connection': ['keep-alive']} body=0B
+    5094.7 conn1 EOF from client after 1 requests
+    5094.8 conn1 closed by server
+    5453.0 conn2 EOF from client after 1 requests
+    5453.2 conn2 closed by server

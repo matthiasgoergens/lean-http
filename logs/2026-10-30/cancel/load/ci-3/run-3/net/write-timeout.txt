@@ -1,0 +1,7 @@
+$ net-client call POST http://127.0.0.1:18087/ body=32000000 gap=1000
+call 0 error delivery=maybe delivered ms=1021.584 rounds=1 lookups=0 seed=17701204325885021725 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.delivered status=none cause="write timeout" detail="1769472 of 32000092 request bytes accepted"
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+fds_after_calls=12
+main returning at ms=6116.343
+exit status=0 wall_ms=6472 exit_after_main_ms=356

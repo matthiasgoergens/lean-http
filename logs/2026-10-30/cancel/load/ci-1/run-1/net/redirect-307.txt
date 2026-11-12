@@ -1,0 +1,8 @@
+$ net-client call POST http://127.0.0.1:18113/redir/307?to=/echo body=11
+call 0 ok status=200 bytes=76 ms=7.263 rounds=1 lookups=0 address=127.0.0.1:18113 seed=14134299469458761370 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=144 redispatched=false hops=1 retries=0 uri=http://127.0.0.1:18113/echo tls=none body_start="POST /echo auth=None cookie=None host=['"
+summary idle checks of reused connections n=1 min=0.144 p50=0.144 p90=0.144 max=0.144 ms
+pool idle=1 checked_out=0 allocated=1
+trace call 0 ok steps=2
+fds_after_calls=11
+main returning at ms=8.244
+exit status=0 wall_ms=27 exit_after_main_ms=19

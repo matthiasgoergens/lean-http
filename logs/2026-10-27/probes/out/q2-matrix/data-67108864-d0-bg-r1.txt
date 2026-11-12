@@ -1,0 +1,5 @@
+### server=data delay=0ms size=67108864 | client variant=bg arg=0ms hold=300ms n=1
+  [client] bg selector finished: 65536 bytes
+  [client] main returning
+  exit=0 wall=307ms 
+  [server] listening 23971

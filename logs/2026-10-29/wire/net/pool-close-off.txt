@@ -1,0 +1,9 @@
+$ net-client call GET http://127.0.0.1:18099/ok close=1 pool=0
+call 0 ok status=200 bytes=5 ms=5.292 rounds=1 address=127.0.0.1:18099 seed=3326420027903802289 failed_attempts=[] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18099/ok body_start="hello"
+pool idle=0 checked_out=0 allocated=0
+trace call 0 ok steps=1
+after close: pool idle=0 checked_out=0
+after close: call 1 error delivery=not sent ms=0.000 rounds=0 seed=1994343688698314409 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the client closed the connection" detail="the client was closed"
+fds_after_calls=11
+main returning at ms=6.516
+exit status=0 wall_ms=26 exit_after_main_ms=20

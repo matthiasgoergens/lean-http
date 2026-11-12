@@ -1,0 +1,10 @@
+Build completed successfully (42 jobs).
+bash: line 1: python3: command not found
+Build completed successfully (60 jobs).
+159 checks, 0 failing
+usage: check-axioms.py [-h] scripts [scripts ...]
+check-axioms.py: error: the following arguments are required: scripts
+ok scripts/codec-axioms.lean: 41 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/pool-axioms.lean: 31 theorems, none beyond Classical.choice, Quot.sound, propext
+ok scripts/call-axioms.lean: 28 theorems, none beyond Classical.choice, Quot.sound, propext
+exit 0

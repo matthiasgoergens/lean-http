@@ -1,0 +1,7 @@
+$ net-client upload PUT http://127.0.0.1:18127/sink size=1000 chunk=100 delay=30000 deadline=3000
+upload call 0 error delivery=maybe delivered ms=3031.264 rounds=1 lookups=0 seed=7778830549698505255 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="deadline timeout" detail="" pulls=1 produced=0
+after upload 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=13404 rss_kb=13404
+main returning at ms=3032.480 started_unix_us=1793620798407726 returning_unix_us=1793620801440205
+exit status=0 wall_ms=3048 start_ms=9 exit_after_main_ms=6

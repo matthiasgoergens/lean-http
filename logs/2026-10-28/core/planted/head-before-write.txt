@@ -1,0 +1,277 @@
+# planted bug: head-before-write (diff in head-before-write.diff), on 49cac66
+# LEAN_HTTP_REMOTE_DIR=lean-http-core-planted scripts/remote.sh bash controls.sh, where controls.sh is:
+#   lake build core-tests 2>&1 | grep -v "^✔" | tail -3
+#   echo '### core-tests traces'
+#   .lake/build/bin/core-tests traces; echo "exit status $?"
+#   echo '### core-tests props 200000 1'
+#   .lake/build/bin/core-tests props 200000 1; echo "exit status $?"
+#   echo '### core-tests explore 10'
+#   .lake/build/bin/core-tests explore 10; echo "exit status $?"
+#   echo '### core-tests props 200000 1 --skip '\''unsolicited bytes fail the exchange'\'''
+#   .lake/build/bin/core-tests props 200000 1 --skip 'unsolicited bytes fail the exchange'; echo "exit status $?"
+#   echo '### core-tests explore 10 --skip '\''unsolicited bytes fail the exchange'\'''
+#   .lake/build/bin/core-tests explore 10 --skip 'unsolicited bytes fail the exchange'; echo "exit status $?"
+Build completed successfully (36 jobs).
+### core-tests traces
+FAIL bytes before the request head is written are never parsed
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, received "HTTP/1.1 200 OK\x0d\nContent-Length: 2\x0d\n\x0d\nok": expected [fail invalid response: bytes arrived before the request head was written [maybe delivered, written=0]]
+         got      [head 200]
+PASS bytes after part of the request head was written are never parsed either
+FAIL a second response in the same read: the first is delivered, the connection is not reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL a second response in a later read: the exchange has ended and ignores it
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL HEAD with stray body bytes in the same read: not reusable
+  begin: expected [write 39]
+         got      [write 39, read]
+  step 1 at 1, written 39: expected [read]
+         got      []
+FAIL HEAD, then stray bytes in a later read: the exchange has ended and ignores them
+  begin: expected [write 39]
+         got      [write 39, read]
+  step 1 at 1, written 39: expected [read]
+         got      []
+FAIL an early response during an upload is read to its end, delivered, and not reusable
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL an early response whose upload then completes is still not reusable
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL an early response whose upload stalls: the upload stops, the response completes
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL an early response whose upload fails: the response still completes
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+PASS a failed write before the request head is out fails the exchange, maybe delivered
+FAIL a failed write after the request head stops the upload; the end of input then fails the exchange
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL a failed write after the request head: an early response waiting to be read is still delivered
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL abandoning mid-body: the read gap ends the drain, not reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 0, written 38: expected [read]
+         got      []
+FAIL write slices: one write in flight, a partial write is resumed where it stopped
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 2 at 2, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL abandoning mid-body: the rest arrives within the drain limit, reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL abandoning mid-body: the rest takes longer than the drain time, not reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL abandoning mid-body: more than the drain limit is announced, not reusable at once
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL abandoning a chunked body: the drained bytes overrun the limit, not reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL abandoning without keep-alive ends at once, not reusable
+  begin: expected [write 57]
+         got      [write 57, read]
+  step 1 at 1, written 57: expected [read]
+         got      []
+FAIL abandoning before the response head fails the exchange as a local close
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL end of input mid-body fails, with the response received
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL end of input before any response byte fails, maybe delivered
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL a close-delimited body ends with the input, not reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL Connection: close from the server: not reusable
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL without keep-alive a complete response is not reusable
+  begin: expected [write 57]
+         got      [write 57, read]
+  step 1 at 1, written 57: expected [read]
+         got      []
+FAIL an interim response is not delivered; the final one is
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL body credit: nothing is read while the caller wants no more
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL body credit used up exactly by a chunked body: its end is noticed without more credit
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL body credit used up and then the end of input mid-body: the failure is not left for the deadline
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL a close-delimited body read with exactly enough credit ends when the caller asks once more
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 1, written 38: expected [read]
+         got      []
+FAIL a stalled write that fails late does not restart the read gap
+  begin: expected [write 64]
+         got      [write 64, read]
+  step 1 at 1, written 64: expected [write 64, read]
+         got      [write 64]
+FAIL a stale tick changes nothing; the write gap is the next deadline
+  begin: expected [write 38]
+         got      [write 38, read]
+FAIL a tick from the past changes nothing
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 50, written 38: expected [read]
+         got      []
+FAIL the deadline ends an exchange waiting for the head
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 10, written 38: expected [read]
+         got      []
+FAIL the deadline ends an exchange mid-body, with the response received
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 10, written 38: expected [read]
+         got      []
+PASS the deadline has passed when the exchange begins: nothing sent
+FAIL the read gap ends a silent exchange
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 10, written 38: expected [read]
+         got      []
+FAIL the read gap and the deadline at the same instant: the deadline wins
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 10, written 38: expected [read]
+         got      []
+FAIL bytes that complete the response at the deadline: delivered
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 10, written 38: expected [read]
+         got      []
+FAIL bytes at the deadline that leave the response incomplete: delivered so far, then the deadline
+  begin: expected [write 38]
+         got      [write 38, read]
+  step 1 at 10, written 38: expected [read]
+         got      []
+FAIL a write that completes after the deadline: the deadline, nothing more written
+  begin: expected [write 64]
+         got      [write 64, read]
+42 traces, 39 failing
+exit status 1
+### core-tests props 200000 1
+FAIL run 1 (seed 1), step 0: no read before the request head is written: read with 0 of 38 head bytes written
+  case: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=64 gap=200 drainBytes=64 drainMs=50 maxBody=1024 maxInterim=1 deadline=100
+  shrunk from 0 to 0 events, failing no read before the request head is written: read with 0 of 38 head bytes written:
+  begin at 0 -> [write 38, read]
+exit status 1
+### core-tests explore 10
+FAIL GET, content-length, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, content-length, keepAlive=false: no read before the request head is written: read with 0 of 57 head bytes written
+  begin at 0 -> [write 57, read]
+FAIL GET, two responses, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, interim responses, then the final one, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, chunked, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, close-delimited, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, not HTTP, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, truncated body, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, content-length, Connection: close, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL HEAD, then stray bytes, keepAlive=true: no read before the request head is written: read with 0 of 39 head bytes written
+  begin at 0 -> [write 39, read]
+FAIL POST of 20 bytes in 32-byte writes, early 413, keepAlive=true: no read before the request head is written: read with 32 of 59 head bytes written
+  begin at 0 -> [write 32]
+  at 0: written 32 -> [write 32, read]
+11 searches to depth 10: 1 states, 1 steps checked, 11 failing
+exit status 1
+### core-tests props 200000 1 --skip 'unsolicited bytes fail the exchange'
+not checking: [unsolicited bytes fail the exchange]
+FAIL run 1 (seed 1), step 0: no read before the request head is written: read with 0 of 38 head bytes written
+  case: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=64 gap=200 drainBytes=64 drainMs=50 maxBody=1024 maxInterim=1 deadline=100
+  shrunk from 0 to 0 events, failing no read before the request head is written: read with 0 of 38 head bytes written:
+  begin at 0 -> [write 38, read]
+exit status 1
+### core-tests explore 10 --skip 'unsolicited bytes fail the exchange'
+not checking: [unsolicited bytes fail the exchange]
+FAIL GET, content-length, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, content-length, keepAlive=false: no read before the request head is written: read with 0 of 57 head bytes written
+  begin at 0 -> [write 57, read]
+FAIL GET, two responses, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, interim responses, then the final one, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, chunked, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, close-delimited, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, not HTTP, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, truncated body, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL GET, content-length, Connection: close, keepAlive=true: no read before the request head is written: read with 0 of 38 head bytes written
+  begin at 0 -> [write 38, read]
+FAIL HEAD, then stray bytes, keepAlive=true: no read before the request head is written: read with 0 of 39 head bytes written
+  begin at 0 -> [write 39, read]
+FAIL POST of 20 bytes in 32-byte writes, early 413, keepAlive=true: no read before the request head is written: read with 32 of 59 head bytes written
+  begin at 0 -> [write 32]
+  at 0: written 32 -> [write 32, read]
+11 searches to depth 10: 1 states, 1 steps checked, 11 failing
+exit status 1

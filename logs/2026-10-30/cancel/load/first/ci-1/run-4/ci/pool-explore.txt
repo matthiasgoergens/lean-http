@@ -1,0 +1,5 @@
+$ /w/.lake/build/bin/pool-tests explore 8
+PASS maxIdle 1, timeout 5, no active cap: 8461 states to depth 8
+PASS maxIdle 2, timeout 10, active cap 2: 8084 states to depth 8
+PASS maxIdle 0, timeout 10, active cap 1: 81 states to depth 8
+exit status 0, wall 8603 ms

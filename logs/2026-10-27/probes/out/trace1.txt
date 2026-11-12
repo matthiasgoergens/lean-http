@@ -1,0 +1,59 @@
+### trace server=data delay=100 size=1000 variant=bg hold=300
+Breakpoint 1 at 0x2e1800
+Breakpoint 2 at 0x2e1450
+Breakpoint 3 at 0x2e1660
+Breakpoint 4 at 0x259860
+[Switching to Thread 0x7fffaffff6c0 (LWP 2393056)]
+== waitReadable called
+#0  0x0000555555835660 in lean_uv_tcp_wait_readable ()
+#1  0x00005555556643a3 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__7 ()
+#2  0x0000555555664549 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__7___boxed ()
+#3  0x0000555555800916 in lean_apply_1 ()
+== cancelRecv called (promise_read set? see bt)
+#0  0x0000555555835800 in lean_uv_tcp_cancel_recv ()
+#1  0x0000555555663e1c in l_Std_Async_TCP_Socket_Client_recvSelector___lam__9 ()
+#2  0x0000555555802756 in lean_apply_2 ()
+#3  0x0000555555802021 in lean_apply_2 ()
+#4  0x0000555555664549 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__7___boxed ()
+#5  0x0000555555800916 in lean_apply_1 ()
+#6  0x000055555563f1d8 in l___private_Init_Data_Array_Basic_0__Array_forIn_x27Unsafe_loop___at___00Std_Async_Selectable_combine_spec__3___redArg ()
+#7  0x000055555563f4e5 in l_Std_Async_Selectable_combine___redArg___lam__1 ()
+#8  0x0000555555801e49 in lean_apply_2 ()
+#9  0x000055555563f8b9 in l_Std_Async_Selectable_combine___redArg___lam__2___boxed ()
+#10 0x0000555555801eac in lean_apply_2 ()
+#11 0x000055555563f979 in l_Std_Async_Selectable_combine___redArg___lam__3___boxed ()
+== waitReadable called
+#0  0x0000555555835660 in lean_uv_tcp_wait_readable ()
+#1  0x00005555556637d7 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__5 ()
+#2  0x00005555558026ac in lean_apply_2 ()
+#3  0x0000555555640437 in l___private_Init_Data_Array_Basic_0__Array_forIn_x27Unsafe_loop___at___00Std_Async_Selectable_combine_spec__2___redArg___lam__10 ()
+[Switching to Thread 0x7fff1ffff6c0 (LWP 2393071)]
+== recv? called
+#0  0x0000555555835450 in lean_uv_tcp_recv ()
+#1  0x00005555556626ed in l_Std_Async_Waiter_race___at___00Std_Async_TCP_Socket_Client_recvSelector_spec__0___lam__1 ()
+#2  0x00005555556628e2 in l_Std_Async_Waiter_race___at___00Std_Async_TCP_Socket_Client_recvSelector_spec__0___lam__1___boxed ()
+#3  0x000055555580093a in lean_apply_1 ()
+#4  0x000055555581717b in lean::lean_io_as_task_fn(lean_object*, lean_object*) ()
+#5  0x000055555580097b in lean_apply_1 ()
+[Switching to Thread 0x7fff67fff6c0 (LWP 2393057)]
+== cancelRecv called (promise_read set? see bt)
+#0  0x0000555555835800 in lean_uv_tcp_cancel_recv ()
+#1  0x000055555566307a in l_Std_Async_TCP_Socket_Client_recvSelector___lam__2 ()
+#2  0x00005555556631e9 in l_Std_Async_TCP_Socket_Client_recvSelector___lam__2___boxed ()
+#3  0x000055555580097b in lean_apply_1 ()
+#4  0x0000555555643782 in l___private_Init_Data_Array_Basic_0__Array_forIn_x27Unsafe_loop___at___00Std_Async_Selectable_combine_spec__4___redArg ()
+#5  0x0000555555643949 in l_Std_Async_Selectable_combine___redArg___lam__9___boxed ()
+#6  0x00005555558009ae in lean_apply_1 ()
+#7  0x000055555564467e in l_Std_Async_Selectable_one___redArg___lam__6___boxed ()
+#8  0x0000555555802021 in lean_apply_2 ()
+#9  0x000055555563bcd1 in l_Std_Async_EAsync_tryFinally_x27___redArg___lam__2 ()
+#10 0x0000555555802021 in lean_apply_2 ()
+#11 0x000055555563b2ee in l___private_Std_Async_Basic_0__Std_Async_BaseAsync_bind_bindAsyncTask___redArg___lam__0 ()
+bg selector finished: 1000 bytes
+main returning
+[Switching to Thread 0x7ffff7e6a840 (LWP 2392892)]
+== lean_finalize_task_manager entered (main returned)
+gdb exit=0 wall=671ms
+  [server] listening 32161
+  [server] server[0]: sent 1000
+  [server] server[0]: client closed

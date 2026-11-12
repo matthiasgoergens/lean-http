@@ -1,0 +1,7 @@
+$ net-client upload PUT http://127.0.0.1:18124/sink size=1000000 chunk=4096 fail=3
+upload call 0 error delivery=maybe delivered ms=127.092 rounds=1 lookups=0 seed=8387410698671187636 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="request body: the producer failed: the producer failed on purpose" detail="" pulls=4 produced=12288
+after upload 0: pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+rss_peak_kb=16748 rss_kb=16748
+main returning at ms=128.089 started_unix_us=1793620749509990 returning_unix_us=1793620749638079
+exit status=0 wall_ms=221 start_ms=11 exit_after_main_ms=81

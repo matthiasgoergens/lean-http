@@ -1,0 +1,82 @@
+I found no correctness defect in the pool core's definitions, and nothing on the shell's main paths that lets a non-idempotent request go out twice or pools a connection it should not. Everything below is a gap in the contract, the docs or the coverage. I read files only and ran nothing.
+
+To check behaviour I read the v4.34.1 Std sources under `~/.elan`. On two points I also consulted a lean4 master checkout at `~/prog/lean-http-notes/c15743/master`, which may not match v4.34.1: the `waitReadable` runtime code (zero-length buffer, so it consumes no data), and, from memory rather than from any file, libuv's loop order.
+
+## Part 2: the shell (Client.lean, Config.lean)
+
+1. **`Client.close` does nothing with pooling off** (Client.lean:236-244 against :737). The docstring says later calls fail with `localClose`. But with `config.pool = false`, `Call.attempt` goes straight to `call.connect none` and never looks at the pool's `closed` flag, so calls after `close` still succeed. `maxActivePerOrigin` is likewise ignored with pooling off, and Config.lean:121-124 doesn't say so. Confidence: high.
+
+2. **After a re-dispatch, `delivery = notSent` and `Error.notSent` can be wrong** (Client.lean:687-694, 705, 710; Error.lean:302-305). The second attempt can fail before writing anything: connect fails, deadline passed, client closed, or a timeout at the active cap. The error then says `notSent`, yet the first attempt was written. For the idempotent close-before-response case the server may have acted on it. `Error.notSent`'s docstring ("true when the server cannot have seen the request") is then false. Error.lean:225-227 does say the error describes the second attempt.
+   - Only idempotent requests and the 408 case reach a re-dispatch, so a caller retrying on `notSent` cannot double-send a non-idempotent request.
+   - Accounting and the documented contract are still wrong.
+   - Confidence: high.
+
+3. **Exception paths can leave a receive pending, and `request` can throw** (medium confidence; unlikely to happen):
+   - In the `catch` at Client.lean:743-748, `exchangeOn` can throw from `awaitFirst` (via `Sleep.mk`) or from `cancelRecv`. If that happens after a `recv?` started, the handler drops the id but never calls `cancelRecv` on `held.socket`. This breaks the NOTES.md rule.
+   - In `idleClean` (Client.lean:307-310), if `awaitFirst` throws, the `waitReadable` stays registered. The caller's `try` (:721) drops the id, but the socket keeps its pending wait.
+   - In `Call.acquire` (Client.lean:713), the `awaitFirst` of the active-cap wait has no `try`. An exception there escapes `request`, which says "Never throws". No connection is held at that point, so nothing leaks.
+   - Fix: call `cancelRecv` on `held.socket` in that `catch`, and wrap `awaitFirst` in `idleClean` so the cancel always runs.
+   - Note that `start` itself cannot throw (it is `EAsync.toBaseIO`), so ordinary socket errors never reach these paths.
+
+4. **The idle check ignores the deadline** (Client.lean:721, 726-727). `idleClean` waits the full `idleCheckMs`, not the time left, and the loop that discards stale idle connections never checks the deadline. With `idleCheckMs > 0` and several stale idle connections, a call overruns by up to `idleCheckMs` × (idle connections), then fails at connect with a deadline timeout. The default `idleCheckMs` is 0, so the impact is small. Confidence: high.
+
+5. **The idle-check claims cite NOTES.md, but that section isn't in the snapshot** (Client.lean:29-31; Config.lean:136-139).
+   - The claim is that a zero window still sees what arrived while idle, because the timer fires only after one poll. NOTES.md has no section on the idle check, 408 or pooling.
+   - The claim is plausible with libuv 1.45 or later, which runs timers after the poll within an iteration, since `waitReadable` registers before the timer. It also depends on how Lean's loop thread interleaves registration with `uv_run`, which I did not check.
+   - The default rests on it, so it needs its measurements recorded.
+   - DESIGN.md:30 still describes `recvSelector`'s non-blocking check, and :91-92 lists it as an open question: both are out of date.
+   - Confidence: high that the citation dangles.
+
+6. **The `Redispatch.notSent` arm can never fire** (Client.lean:516; module doc :33-34 lists "nothing of it was written").
+   - `Exchange.begin` always issues the first write, which sets `sentAny` (Exchange.lean:831-838 and :866-873), unless the deadline has already passed, and then the cause is a timeout, not `peerClosed`.
+   - The client's own `catch` reports `maybeDelivered`.
+   - So `notSent` together with `peerClosed` cannot occur. The arm is harmless dead code.
+   - Confidence: medium-high.
+
+7. **Settings that quietly disable things** (Client.lean:336-340; Config.lean):
+   - `maxActivePerOrigin = some 0` is accepted. Every call then waits out its deadline and fails, while other zero values are refused as invalid.
+   - `idleTimeoutMs = 0` silently turns reuse off, because a connection expires at `since + 0 ≤ now`.
+   - Confidence: high.
+
+8. **Waiters at the active cap share one wake-up for all origins, with no queue** (Client.lean:147-152, 199-201). Any release, for any origin, wakes every waiter, and they all race to take again, so one waiter can lose until its deadline. No wake-up is lost (see the sound list).
+
+9. **Small doc drift.** DESIGN.md:40 says non-reusable connections are "shut down for writing and dropped". The shell never calls `shutdown`; it relies on the last reference being dropped. `PoolState.freed`'s docstring (:150) leaves out that `close` resolves it too.
+
+## Part 1: the pool core and its proofs
+
+10. **"Exactly once" is a pool-level, per-id property, and the headline overstates it** (Proofs.lean:16-19, 713-720).
+    - `trace_alternates` proves at most one return per hand-out; the docstring hedges this correctly, but the bold "Returned or dropped exactly once" does not.
+    - The pool knows connections only by id, not by which call holds them. Take this sequence: call A takes 5 and gives it back; call B reuses 5; A wrongly gives back 5 again. The pool accepts that as B's return, and the trace still alternates.
+    - So "given back only if checked out" means checked out to someone. Per-call exactly-once rests on the shell, which I checked (see the sound list).
+    - Confidence: high.
+
+11. **Nothing is proved about the "let go" lists** that `take`, `giveBack`, `sweep` and `closeAll` return.
+    - Unproved: the lists are exactly the ids that left the idle list without being handed out, they are gone afterwards, and they never include an id still idle or checked out.
+    - `giveBack`'s docstring promises "not including `id`" (Pool.lean:333); that holds under the invariant's no-duplicates field, but no theorem says so.
+    - The socket table invariant (`PoolState.idle` = the pool's idle ids) and `takeConn`'s "this does not happen" fallback (Client.lean:623-632) both depend on this.
+    - I checked the definitions by hand and they are right; `Tests/Pool.lean` checks them only by traces.
+    - Confidence: high that the gap exists.
+
+12. **`giveBack_not_out`'s docstring claims more than the statement** (Proofs.lean:480-484). It says "After `giveBack` or `drop`", but the statement covers only `giveBack`. There is no `drop` version without the hypothesis that the id is checked out.
+
+13. **Pool.lean's module doc is slightly wrong at :24-25.** "Giving back a connection that is not checked out changes nothing": it still lets the expired idle connections go, as `giveBack`'s docstring (:331-332) and `giveBack_notOut` say.
+
+14. **Some statements are weaker than their prose, or missing** (all minor):
+    - `take_fresh` says only `id = p.next`. "An id never allocated before" needs the invariant plus `state` reasoning, which is not stated.
+    - "Exactly one of the states idle, checked out and gone" holds by construction, since `state` is a function. What `WF.state_out`, `state_idle` and `state_gone` actually add is that `state` agrees with list membership.
+    - Unproved and unclaimed in Proofs.lean: once closed, the pool never hands anything out again (Pool.lean:28-29, 349; the `closed` flag is never reset), and the most recently returned connection is handed out first (Pool.lean:19).
+
+## Checked and found sound
+
+- **`take_reuse`:** `now < c.since + idleTimeoutMs` is exactly "not `Pool.expired`" (which uses `≤`). It is stated over the pre-sweep `p.idle` with the same `now` the sweep uses, the direction is right, and the docstring matches.
+- **The invariant `WF`:** every field can hold and none is trivial (`activeCap` is properly conditional). The fields match the docstring and the module doc's list.
+- **`eventOf`, `trace` and `Alternates`:** `out_step` shows a hand-out moves the id into the checked-out list, a return moves it out, and no event means membership is unchanged. So the trace is complete for that list, and `Alternates` is strict on non-empty lists.
+- **Gone stays gone:** `giveBack_notOut`, `giveBack_out` and `drop_notOut` match their prose. A reusable give-back that is dropped (idle cap or closed pool) is covered by `giveBack_dropped_gone` plus `trace_gone`. `idleCount_run` and `activeCount_run` start from the empty pool the shell uses, and the other operation docstrings in Pool.lean match their definitions.
+- **Exactly once in the shell:** every connection taken is given back or dropped exactly once on every path: closed client, active-cap wait, failed idle check (each failure drops, then takes again), `idleClean` throwing, connect failing or throwing (drops), the exchange throwing (drops), and re-dispatch (gives back or drops before the second attempt, so no self-deadlock at a cap of 1).
+- **Socket table:** kept equal to the pool's idle ids by `forget` in take and give-back, erase on reuse, insert only on `.idle`, and `idle := {}` in `close`.
+- **No pending receive on normal paths:** `drive` cancels on finish and on fail. A reusable finish cannot happen with a read in flight, since it needs a completed read and the whole request written. `idleClean` always cancels. No pending write can exist when a connection is pooled, because reuse needs `written == request.size`.
+- **Re-dispatch rules:** after a close before any response byte, only idempotent methods (`Method.isIdempotent`: GET, HEAD, PUT, DELETE, OPTIONS, TRACE) are re-sent. A 408 needs `interim == 0` and a reused connection. A response or bytes received blocks the close-before-response case. At most one re-dispatch: it needs both `!progress.redispatched` and `held.reused`, and the second attempt runs with `reuse = false`. Every later step is bounded by `call.deadline`.
+- **Reuse verdict:** a connection the exchange core calls non-reusable is never pooled, since `giveBack` gets `reusable && !again` and the pool only keeps a connection given back as reusable.
+- **The mutex:** only quick pure steps run under it. Resolving the wake-up promise under it runs only `awaitFirst`'s synchronous `winner.resolve`. Std's `EAsync` and `BaseAsync` binds default to `sync := false`, so no waiter code runs inline while the lock is held.
+- **No lost wake-up:** the waiter captures the promise under the mutex, and every release, drop or close resolves and replaces it under the mutex.
+- **Clock reads:** `now` is read before taking the mutex, so concurrent calls can pass slightly out-of-order times. The only effect is a few milliseconds' difference in when a connection is judged expired.

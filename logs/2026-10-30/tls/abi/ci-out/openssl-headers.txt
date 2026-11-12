@@ -1,0 +1,3 @@
+$ scripts/openssl-headers.sh /home/matthias/prog/lean-http-wt-tls/.lake/openssl-3.6.0
+generated OpenSSL 3.6.0 headers into /home/matthias/prog/lean-http-wt-tls/.lake/openssl-3.6.0/include
+exit status 0, wall 19534 ms

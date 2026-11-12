@@ -1,0 +1,111 @@
+Written before the first run of this round (2 November 2026).
+
+Question: how much of the cost of watching for cancellation can be given back, and by which change?
+The last round (../bench/) measured a reused GET over loopback at 1.097 times main without a token
+(95% interval 1.065 to 1.117) and 1.137 with a token that is never cancelled, 40 blocks; ablations
+of single parts found no culprit.
+
+Estimand: as in ../bench/, the ratio of net-client's "summary later calls" p50 (2000 reused GETs
+through one client to evil.py's /ok over loopback), a cell over main 27a0d86, and for the decisions
+below a cell over the branch 86307b0 (cancel).  Primary analysis: the median of the per-block
+ratios with a 95% bootstrap interval (10000 resamples of the blocks), analyse.py.
+Unit: one block runs every cell once, in random order (blocks.sh, shuf); server on CPU 100, client
+on CPU 101, as in ../bench/.  Recorded per run: the load average, and the client's CPU time and
+voluntary and involuntary context switches (wait4).  Every binary is fingerprinted (SHA-256) in
+build.txt and at the head of each run's output.
+Nuisance factors: the shared host's load (load average about 170 to 240 on 128 CPUs when this was
+written; handled by the blocks and paired ratios, recorded, and checked by load stratum, never by
+waiting for a quiet host); code layout (the cell mainpert, main with an unused function before the
+client's code, measures what placement alone moves; if an effect under about 3% decides anything,
+a few builds linked with shuffled section order are sampled rather than one binary read).
+Smallest effect worth acting on: 2% of main's time.
+Sample size: the last round's per-block log ratios had a standard deviation of 0.06 to 0.11; for a
+95% interval of about +-1% on a median ratio that needs about 500 blocks, so each run has 500
+blocks, fixed in advance; no stopping early on the result.
+
+Run 1, the ceiling.  Cells: main (27a0d86), mainpert (a3effbc, main plus the unused function),
+cancel (86307b0, no token), ceiling (f20dc26: a call given no token skips watch, track, finish and
+every check and race; shutdownNow no longer reaches it, so it is an upper bound only).
+Decision: if ceiling/cancel has a median at or above 0.98 (less than 2% given back), the ceiling
+gives back little: stop after a profile comparison (main, cancel, ceiling) that says where the rest
+of the gap with main is.  If the median is below 0.98 and the interval excludes 1, go on to run 2.
+If the median is below 0.98 but the interval includes 1, run 500 more blocks of the same cells and
+decide on the 1000.
+
+Run 2, if run 1 says so: candidates that keep the semantics, in the same blocks with main, mainpert,
+cancel, ceiling and token (86307b0 with a token never cancelled, cancelon=none): flag (shutdownNow
+sets an IO.Ref that a check reads, in place of the closing token's mutex), finish (finish does
+nothing for a call given no token), flagfinish (both), each without a token, and the token-call
+variants of whichever change touches token calls (flag-token).  500 blocks.  A candidate is worth
+keeping if it gives back at least 2% of main's time against cancel with an interval that excludes
+no change, and keeps every check passing (scripts/ci.sh).
+
+Separately (run 3), the scaling of a call's end on a token shared by k calls in flight
+(Std's unregisterFn scans every entry): a microbenchmark of finish with k = 1, 16, 128 (and more)
+registered calls, and net-client concurrent=k with one token, decided on whether the cost per call
+end at realistic k is a noticeable share of a call (2% again).
+
+Added before run 1, after two pilots (pilot/, for the noise only; their effects decide nothing):
+at load averages of 195 to 250 the per-block log ratios of blocks.sh had a standard deviation of
+0.25 to 0.33 with 2000 calls a run (pilot/out.txt, 20 blocks) and 0.27 to 0.43 with 500
+(pilot/out-500.txt, 40 blocks), three to four times the last round's, so the +-1% above would need
+about 5000 blocks.  The runs of one block are seconds apart and the host's load moves within that.
+So the timing moves to interleaved rounds, which pair the cells within milliseconds:
+costbench.py starts one long-lived driver process per cell (cost-bench, CostBench.lean: the same
+GET, client configuration and timing as net-client with trace=0; built into each tree by build.sh,
+not part of lean-http), all on CPU 101 with the server on CPU 100; each round asks every cell, in
+random order, for 20 calls.  The processes are replaced at every epoch of 200 rounds, so that each
+epoch is a fresh sample of process placement.  Estimand: the ratio of a cell's median call time to
+main's within a round.  Primary analysis (costanalyse.py): the median of the per-round ratios, with
+a 95% interval from a bootstrap that resamples whole epochs (the rounds of one epoch share their
+processes).  Run 1: 60 epochs of 200 rounds, cells main, mainpert, cancel, ceiling; the decision
+rules above are unchanged (with "blocks" read as epochs for the additional run).  Recorded as
+well: the load average per round, and each driver's CPU time and context switches per call
+(wait4).  Secondary, as a load-insensitive check of the work done: user-space instructions per
+call from perf stat on the host (count.sh, net-client, the cells in random order per round).
+blocks.sh stays for comparison with the last round.
+
+Added after run 1 (run1/result.txt), before run 2: the ceiling gave back the whole gap
+(ceiling/cancel 0.955, interval 0.933 to 0.975; ceiling/main 1.000, 0.983 to 1.018), so run 2
+goes ahead.  Run 1's interval came mostly from the spread between epochs (per-epoch medians 0.85
+to 1.19, the rounds within an epoch agreeing closely), so run 2 has more and shorter epochs:
+200 epochs of 50 rounds of 20 calls.  Cells: main, mainpert, cancel, token (cancel with a token),
+ceiling, flag, finish, flagfinish, flag-token, and two candidates written since, for token calls:
+cache (9145f02, on flag: the waiter a call registers with its token records, inside the token's
+cancel, that the token fired, so a check reads the call's state and the client's flag and asks
+the token only after it fired; no lock in the common path) with cache-token, and sweep-token
+(4331720, on cache: the end of a call sweeps the token's entries only once as many calls on it
+have ended as remain, counted per token by the client; for the scaling question, timed here for
+its cost to a call given its own token).  Same primary analysis; same rule for keeping a
+candidate (at least 2% of main's time given back against cancel, or for token cells against
+token, with an interval that excludes no change).  The secondary counts per call (instructions,
+runtime entry points, context switches) come from probe.sh rather than count.sh (it also takes
+out the process's start), run after run 2.
+
+Added after run 2 (run2/result.txt), the probe counts (probe/) and the instruction profile
+(symbols/), before run 3: no candidate that keeps the semantics gave back anything measurable
+(flag, finish, flagfinish and cache against cancel, and flag-token and cache-token against token,
+all within about 1% of no change), so none is kept.  Run 3 is the scaling question, on sweep2
+(a3dee6b, on the branch itself rather than on cache: the client counts, per token, the calls
+registered and those ended since the last sweep, under the lock of its table of calls that every
+call takes anyway, so no lock is added; sweep, the first version with a lock of its own, cost a
+call given its own token about 1% in run 2, sweep-token/cache-token 1.012, 1.001 to 1.023).
+- 3a, scale.sh: the start and end of one call's cancellation on a token held by k calls in flight
+  (cost-scale, as the client does it), k = 1, 4, 16, 64, 128, 256, 1024, 4096, cancel and sweep2,
+  10 blocks.
+- 3b, scale-e2e.sh: rounds of k concurrent GETs through one client, all given one token never
+  cancelled, k = 1, 16, 128, 512, cancel and sweep2, 20 rounds a run, 30 blocks; per-block ratio
+  of the median round time, median and 95% bootstrap interval per k (scaleanalyse.py).
+- 3c, costbench.py: 100 epochs of 50 rounds, cells cancel, token, sweep2, sweep2-token: what the
+  counting costs one call given a token of its own (k = 1).
+sweep2 is kept if at k = 128 or more it gives back at least 2% of a round end to end with an
+interval that excludes no change, costs a call with its own token no more than 1% (point
+estimate of sweep2-token/token), and every check passes.
+
+Added after runs 3a to 3c (scale2/, run3b/, run3c/ results), before run 3d: end to end at k = 128
+and 512 sweep2 gave 0.948 and 0.924 of cancel's round time, both intervals including no change
+(30 blocks, load average 340 to 580); the microbenchmark predicts gains of only about 1% and 2% of
+a round there (a call's end scans about k/2 entries on average over a round, about 80 ns each),
+and 15% or more only from k in the low thousands.  Run 3d therefore adds k = 2048, the same
+script, 10 blocks, cancel and sweep2, decided by the rule above.  This k was chosen after seeing
+run 3b, which the report says.

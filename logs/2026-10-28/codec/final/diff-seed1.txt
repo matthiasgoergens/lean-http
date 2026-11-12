@@ -1,0 +1,164 @@
+$ .lake/build/bin/codec-diff 1 60000 60000
+seed=1 generated=60000 mutated=60000 control=false
+120037 inputs, each run whole and cut, open and at end of input
+outcomes of the exchange core (whole input):
+  11991 (outcome, eof) done 200 interim=0
+  3210 (outcome, eof) done 200 interim=1
+  32 (outcome, eof) done 200 interim=10
+  1531 (outcome, eof) done 200 interim=2
+  692 (outcome, eof) done 200 interim=3
+  1 (outcome, eof) done 200 interim=4
+  2 (outcome, eof) done 200 interim=9
+  1072 (outcome, eof) done 201 interim=0
+  300 (outcome, eof) done 201 interim=1
+  152 (outcome, eof) done 201 interim=2
+  78 (outcome, eof) done 201 interim=3
+  1849 (outcome, eof) done 204 interim=0
+  539 (outcome, eof) done 204 interim=1
+  1 (outcome, eof) done 204 interim=10
+  236 (outcome, eof) done 204 interim=2
+  125 (outcome, eof) done 204 interim=3
+  1086 (outcome, eof) done 206 interim=0
+  318 (outcome, eof) done 206 interim=1
+  142 (outcome, eof) done 206 interim=2
+  75 (outcome, eof) done 206 interim=3
+  1 (outcome, eof) done 208 interim=0
+  1 (outcome, eof) done 210 interim=0
+  1095 (outcome, eof) done 301 interim=0
+  317 (outcome, eof) done 301 interim=1
+  153 (outcome, eof) done 301 interim=2
+  62 (outcome, eof) done 301 interim=3
+  1862 (outcome, eof) done 304 interim=0
+  542 (outcome, eof) done 304 interim=1
+  254 (outcome, eof) done 304 interim=2
+  124 (outcome, eof) done 304 interim=3
+  1 (outcome, eof) done 374 interim=0
+  1023 (outcome, eof) done 404 interim=0
+  290 (outcome, eof) done 404 interim=1
+  160 (outcome, eof) done 404 interim=2
+  65 (outcome, eof) done 404 interim=3
+  1134 (outcome, eof) done 500 interim=0
+  335 (outcome, eof) done 500 interim=1
+  146 (outcome, eof) done 500 interim=2
+  65 (outcome, eof) done 500 interim=3
+  1 (outcome, eof) done 590 interim=2
+  566 (outcome, eof) done 599 interim=0
+  144 (outcome, eof) done 599 interim=1
+  53 (outcome, eof) done 599 interim=2
+  24 (outcome, eof) done 599 interim=3
+  1 (outcome, eof) done 990 interim=1
+  544 (outcome, eof) done 999 interim=0
+  176 (outcome, eof) done 999 interim=1
+  78 (outcome, eof) done 999 interim=2
+  39 (outcome, eof) done 999 interim=3
+  1469 (outcome, eof) failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body)
+  1798 (outcome, eof) failed LeanHttp.Cause.limit (LeanHttp.LimitKind.headers)
+  2911 (outcome, eof) failed LeanHttp.Cause.limit (LeanHttp.LimitKind.interim)
+  4270 (outcome, eof) failed LeanHttp.Cause.peerClosed
+  3386 (outcome, eof) failed LeanHttp.Cause.protocol "101 Switching Protocols, but no upgrade was requested"
+  70803 (outcome, eof) failed LeanHttp.Cause.protocol "Bad message"
+  2712 (outcome, eof) failed LeanHttp.Cause.protocol "Unsupported version"
+  9214 (outcome, open) done 200 interim=0
+  2622 (outcome, open) done 200 interim=1
+  31 (outcome, open) done 200 interim=10
+  1269 (outcome, open) done 200 interim=2
+  578 (outcome, open) done 200 interim=3
+  1 (outcome, open) done 200 interim=4
+  2 (outcome, open) done 200 interim=9
+  889 (outcome, open) done 201 interim=0
+  237 (outcome, open) done 201 interim=1
+  130 (outcome, open) done 201 interim=2
+  58 (outcome, open) done 201 interim=3
+  1849 (outcome, open) done 204 interim=0
+  539 (outcome, open) done 204 interim=1
+  1 (outcome, open) done 204 interim=10
+  236 (outcome, open) done 204 interim=2
+  125 (outcome, open) done 204 interim=3
+  876 (outcome, open) done 206 interim=0
+  259 (outcome, open) done 206 interim=1
+  120 (outcome, open) done 206 interim=2
+  56 (outcome, open) done 206 interim=3
+  1 (outcome, open) done 210 interim=0
+  877 (outcome, open) done 301 interim=0
+  262 (outcome, open) done 301 interim=1
+  120 (outcome, open) done 301 interim=2
+  52 (outcome, open) done 301 interim=3
+  1862 (outcome, open) done 304 interim=0
+  542 (outcome, open) done 304 interim=1
+  254 (outcome, open) done 304 interim=2
+  124 (outcome, open) done 304 interim=3
+  827 (outcome, open) done 404 interim=0
+  240 (outcome, open) done 404 interim=1
+  128 (outcome, open) done 404 interim=2
+  55 (outcome, open) done 404 interim=3
+  920 (outcome, open) done 500 interim=0
+  280 (outcome, open) done 500 interim=1
+  119 (outcome, open) done 500 interim=2
+  54 (outcome, open) done 500 interim=3
+  1 (outcome, open) done 590 interim=2
+  462 (outcome, open) done 599 interim=0
+  122 (outcome, open) done 599 interim=1
+  39 (outcome, open) done 599 interim=2
+  20 (outcome, open) done 599 interim=3
+  1 (outcome, open) done 990 interim=1
+  415 (outcome, open) done 999 interim=0
+  149 (outcome, open) done 999 interim=1
+  63 (outcome, open) done 999 interim=2
+  33 (outcome, open) done 999 interim=3
+  1469 (outcome, open) failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body)
+  1798 (outcome, open) failed LeanHttp.Cause.limit (LeanHttp.LimitKind.headers)
+  2911 (outcome, open) failed LeanHttp.Cause.limit (LeanHttp.LimitKind.interim)
+  3386 (outcome, open) failed LeanHttp.Cause.protocol "101 Switching Protocols, but no upgrade was requested"
+  70803 (outcome, open) failed LeanHttp.Cause.protocol "Bad message"
+  2712 (outcome, open) failed LeanHttp.Cause.protocol "Unsupported version"
+  9844 (outcome, open) pending
+9 classes of disagreement
+
+== codec vs core, eof: head (failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body)) [Content-Length of 2^62 or more]: 1
+   core [] / codec [404 Std.Http.Version.v11 [vary="q", content-length=99999999999999999999, cache-cotrol=, vary=x	y, conent-length=130]]: [mut 25502 Std.Http.Method.post limits=default] HTTP/1.1 404 OK\r\nVary:\t"q"\r\nContent-Length: 99999999999999999999\r\nCache-Cotrol:\t \r\nVary:\tx\ty\r\nCONENT-LENGTH: 130\r\n\r\nbDT?2P|b1\\t!8LN?KbtIxHz%=&T5>bjaNqUL#Pji%R7FL?DKP9Ut;*,x.jtQ(&E!Gp8__C\\B9h26d,b'[.D^`_Q I!U7LHypJk}Ag7gwX%8v#S"7vj@}-o1Pygarbage
+
+== codec vs core, eof: outcome: core failed LeanHttp.Cause.peerClosed / codec failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body) [body limit, chunked body]: 5
+   [mut 1751 Std.Http.Method.post limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyYyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 9844 Std.Http.Method.get limits=maxHeaderBytes=200,maxChunkExtNameLength=1,maxChunkLineLength=10] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyYyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 20701 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 32431 Std.Http.Method.get limits=maxHeaders=3,maxReasonPhraseLength=4,maxChunkExtensions=1] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyayyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+
+== codec vs core, eof: outcome: core failed LeanHttp.Cause.protocol "Bad message" / codec failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body) [body limit, chunked body]: 45
+   [mut 3013 Std.Http.Method.post limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 3155 Std.Http.Method.post limits=maxInterim=2,maxBody=0,maxHeaders=1,maxHeaderValueLength=8,maxReasonPhraseLength=4,maxTrailerHeaders=0] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 3955 Std.Http.Method.get limits=maxInterim=1,maxBody=10,maxTrailerHeaders=1] HTTP/1.1 404 OK\r\nTransfer-Encoding: chunked\r\n\r\n00c\r\nU(N=;N\\%FGm\r\n0\r\n\r\n
+   [mut 4111 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nDate: x\ty\r\nX-Request-Id:x\ty\r\nVary: 1, 2, 3\r\ntransfer-encoding: chunked\r\n\r\n2f;a ;b=c\r\n?XmpPI#tkz3|%]~=*,`2TkNSYRos'~0S{=PQe888~.-43lM\r\n0011\r\nA}x'.t51sf#4[RPg;\r\n2c\r\n@xk,N*{;es~H:6!!w\\t]I6E1tWm0Ubgdu'%ZyK#A4M[m\r\n21 ; a\r\nFcg_[w{Ct6~c!P|{s:jSfm{0h/)lsA&yR\r\n0020\r\ns}P /`|KN(vesxo@e"%1r]-rc3qiMjC4\r\nd\r\no<Yaw'2?Jj[<)\r\n0015\r\n\\\\&WQI\\.(I\\i|=f&b5(dc\r\n24\r\ni!Kh"#3*x4Dc0}o0IpG;)XHE9zWXB-K:oA[4\r\n8;a ;b=c\r\nj;pW092J\r\na\r\n06X!D3S}Hr\r\n26 ; a\r\nF%#.Py1HnJH-:@63o@5BvM[U[R{.;D}XL[]uVS\r\n11;name\r\
+
+== codec vs core, open: head (failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body)) [Content-Length of 2^62 or more]: 1
+   core [] / codec [404 Std.Http.Version.v11 [vary="q", content-length=99999999999999999999, cache-cotrol=, vary=x	y, conent-length=130]]: [mut 25502 Std.Http.Method.post limits=default] HTTP/1.1 404 OK\r\nVary:\t"q"\r\nContent-Length: 99999999999999999999\r\nCache-Cotrol:\t \r\nVary:\tx\ty\r\nCONENT-LENGTH: 130\r\n\r\nbDT?2P|b1\\t!8LN?KbtIxHz%=&T5>bjaNqUL#Pji%R7FL?DKP9Ut;*,x.jtQ(&E!Gp8__C\\B9h26d,b'[.D^`_Q I!U7LHypJk}Ag7gwX%8v#S"7vj@}-o1Pygarbage
+
+== codec vs core, open: outcome: core failed LeanHttp.Cause.protocol "Bad message" / codec failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body) [body limit, chunked body]: 45
+   [mut 3013 Std.Http.Method.post limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 3155 Std.Http.Method.post limits=maxInterim=2,maxBody=0,maxHeaders=1,maxHeaderValueLength=8,maxReasonPhraseLength=4,maxTrailerHeaders=0] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 3955 Std.Http.Method.get limits=maxInterim=1,maxBody=10,maxTrailerHeaders=1] HTTP/1.1 404 OK\r\nTransfer-Encoding: chunked\r\n\r\n00c\r\nU(N=;N\\%FGm\r\n0\r\n\r\n
+   [mut 4111 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nDate: x\ty\r\nX-Request-Id:x\ty\r\nVary: 1, 2, 3\r\ntransfer-encoding: chunked\r\n\r\n2f;a ;b=c\r\n?XmpPI#tkz3|%]~=*,`2TkNSYRos'~0S{=PQe888~.-43lM\r\n0011\r\nA}x'.t51sf#4[RPg;\r\n2c\r\n@xk,N*{;es~H:6!!w\\t]I6E1tWm0Ubgdu'%ZyK#A4M[m\r\n21 ; a\r\nFcg_[w{Ct6~c!P|{s:jSfm{0h/)lsA&yR\r\n0020\r\ns}P /`|KN(vesxo@e"%1r]-rc3qiMjC4\r\nd\r\no<Yaw'2?Jj[<)\r\n0015\r\n\\\\&WQI\\.(I\\i|=f&b5(dc\r\n24\r\ni!Kh"#3*x4Dc0}o0IpG;)XHE9zWXB-K:oA[4\r\n8;a ;b=c\r\nj;pW092J\r\na\r\n06X!D3S}Hr\r\n26 ; a\r\nF%#.Py1HnJH-:@63o@5BvM[U[R{.;D}XL[]uVS\r\n11;name\r\
+
+== codec vs core, open: outcome: core pending / codec failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body) [body limit, chunked body]: 5
+   [mut 1751 Std.Http.Method.post limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyYyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 9844 Std.Http.Method.get limits=maxHeaderBytes=200,maxChunkExtNameLength=1,maxChunkLineLength=10] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyYyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 20701 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 32431 Std.Http.Method.get limits=maxHeaders=3,maxReasonPhraseLength=4,maxChunkExtensions=1] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyayyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+
+== codec vs core, open: reuse: core (some true) / codec (some false) [HTTP/1.0 saying both keep-alive and close]: 30
+   [gen 5978 Std.Http.Method.get limits=default] HTTP/1.0 206 Some Reason\r\nCONTENT-LENGTH: 12\r\nConnection: keep-alive, close\r\n\r\nNM,~eE:6E!_I
+   [gen 10156 Std.Http.Method.get limits=maxSpaceSequence=1,maxChunkExtensions=0,maxChunkLineLength=4] HTTP/1.0 200 OK\r\nSet-Cookie:1, 2, 3\r\nVary: y!ni\r\ncontent-length: 4\r\nConnection: keep-alive, close\r\n\r\nLS%1
+   [gen 10383 Std.Http.Method.get limits=default] HTTP/1.0 200 OK\r\nCache-Control: \r\nCONTENT-LENGTH: 17\r\nConnection: keep-alive, close\r\n\r\n;9[x{\\,*QvZ7Rd^t`
+   [gen 12113 Std.Http.Method.head limits=maxInterim=2,maxReasonPhraseLength=4,maxChunkExtValueLength=3,maxTrailerHeaders=0] HTTP/1.1 102 Info\r\nLink: </a>\r\n\r\nHTTP/1.0 404 OK\r\nCONTENT-LENGTH: 0\r\nX-Request-Id: a b c\r\nConnection: keep-alive, close\r\n\r\n
+
+== core split-dependence, eof: outcome: whole failed LeanHttp.Cause.protocol "Bad message" / cut failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body) [body limit]: 11
+   [mut 8759 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 9459 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 13106 Std.Http.Method.get limits=maxHeaderValueLength=8,maxChunkExtensions=0,maxChunkExtValueLength=3,maxTrailerHeaders=1] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\xbcyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r
+   [mut 13316 Std.Http.Method.get limits=maxBody=0,maxChunkExtensions=0,maxChunkExtNameLength=1] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyy
+
+== core split-dependence, open: outcome: whole failed LeanHttp.Cause.protocol "Bad message" / cut failed LeanHttp.Cause.limit (LeanHttp.LimitKind.body) [body limit]: 11
+   [mut 8759 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 9459 Std.Http.Method.get limits=default] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
+   [mut 13106 Std.Http.Method.get limits=maxHeaderValueLength=8,maxChunkExtensions=0,maxChunkExtValueLength=3,maxTrailerHeaders=1] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\xbcyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r
+   [mut 13316 Std.Http.Method.get limits=maxBody=0,maxChunkExtensions=0,maxChunkExtNameLength=1] HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy\r\n190\r\nyyyyyyyyyyyyyyyyyyyyyyyyy
+exit status 0

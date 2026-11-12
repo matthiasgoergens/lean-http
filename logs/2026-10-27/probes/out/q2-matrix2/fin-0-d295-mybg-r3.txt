@@ -1,0 +1,7 @@
+### server=fin delay=295ms size=0 | client variant=mybg arg=0ms hold=300ms n=1
+  [client] bg selector finished: EOF
+  [client] main returning
+  exit=0 wall=365ms 
+  [server] listening 28855
+  [server] server[0]: FIN
+  [server] server[0]: client closed

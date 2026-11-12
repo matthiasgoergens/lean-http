@@ -1,0 +1,21 @@
+== v4.34.1 (b8perf-lean)
+warning: could not canonicalize path: '/root/.elan/toolchains'
+warning: could not canonicalize path: '/root/.elan/toolchains'
+error: no default toolchain configured. run `elan default stable` to install & configure the latest Lean 4 stable release.
+warning: could not canonicalize path: '/root/.elan/toolchains'
+warning: could not canonicalize path: '/root/.elan/toolchains'
+error: no default toolchain configured. run `elan default stable` to install & configure the latest Lean 4 stable release.
+== 4.35.0-pre (PR toolchain)
+Lean (version 4.35.0-pre, x86_64-unknown-linux-gnu, commit 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b, Release)
+mapped: 5 of 5 runs hung (killed after 5 s)
+direct: 0 of 5 runs hung (killed after 5 s)
+info: downloading https://releases.lean-lang.org/lean4/v4.34.1/lean-4.34.1-linux.tar.zst
+info: installing /root/.elan/toolchains/leanprover--lean4---v4.34.1
+Lean (version 4.34.1, x86_64-unknown-linux-gnu, commit 5045d0056413266e57c625dcd7c365b10e377c52, Release)
+mapped: 5 of 5 runs hung (killed after 5 s)
+direct: 0 of 5 runs hung (killed after 5 s)
+Lean (version 4.36.0-rc1, x86_64-unknown-linux-gnu, commit c9afcddf514a6772bd4d649f7cfc04eff0b9f15e, Release)
+mapped: 5 of 5 runs hung (killed after 5 s)
+direct: 0 of 5 runs hung (killed after 5 s)
+
+Commands: on the build host in ~/lean-http-probes/mine (and mine/rc), run.sh compiles prom.lean (copied from logs/2026-10-27/probes/prom.lean) with lean -c and leanc -O2, then runs `prom mapped 50 200` and `prom direct 50 200` five times each under `timeout 5`.  Toolchains: localhost/b8perf-lean with lean-toolchain v4.34.1 and v4.36.0-rc1; and the pr-release-14548 toolchain (4.35.0-pre) in ubuntu:24.04.  2026-10-27.

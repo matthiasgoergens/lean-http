@@ -1,0 +1,11 @@
+$ net-client call HEAD http://127.0.0.1:18096/head-stray repeat=2
+call 0 ok status=200 bytes=0 ms=5.146 rounds=1 lookups=0 address=127.0.0.1:18096 seed=15504080713008610478 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18096/head-stray tls=none body_start=""
+call 1 ok status=200 bytes=0 ms=3.577 rounds=1 lookups=0 address=127.0.0.1:18096 seed=18020449031039216265 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18096/head-stray tls=none body_start=""
+summary calls n=2 min=3.577 p50=5.146 p90=5.146 max=5.146 ms ok=2
+summary later calls n=1 min=3.577 p50=3.577 p90=3.577 max=3.577 ms
+pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=9.646 started_unix_us=1793621304177752 returning_unix_us=1793621304187398
+exit status=0 wall_ms=295 start_ms=14 exit_after_main_ms=270

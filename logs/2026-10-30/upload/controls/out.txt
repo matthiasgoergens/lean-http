@@ -1,0 +1,61 @@
+HEAD 9b54762
+### none
+Build completed successfully (53 jobs).
+core-tests traces: 65 traces, 0 failing 
+core-tests props 50000 1: PASS 50000 runs from seed 1: 353162 steps checked 
+core-tests explore 10: 14 searches to depth 10: 153975 states, 383709 steps checked, 0 failing 
+planted pull-early
+### pull-early
+Build completed successfully (53 jobs).
+core-tests traces: 65 traces, 0 failing 
+core-tests props 50000 1: PASS 50000 runs from seed 1: 353162 steps checked 
+core-tests explore 10: 14 searches to depth 10: 153975 states, 383709 steps checked, 0 failing 
+planted pull-with-write
+### pull-with-write
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a chunked upload: each chunk pulled once the bytes before it are written, then the end FAIL an upload of a declared size: the chunks written as they are, the end writes nothing 
+core-tests props 50000 1: FAIL run 45 (seed 1), step 4: pull only when the request so far is written: pull at 78 of 104, write in flight (some 26), complete=false 
+core-tests explore 10: FAIL POST streamed chunked in chunks of 3 and 4 bytes, content-length, keepAlive=true: pull only when the request so far is written: pull at 91 of 99, write in flight (some 8), complete=false FAIL POST streamed with 7 bytes declared, 3 and 4 given in 32-byte writes, early 413: pull only when the req
+planted pull-before-head
+### pull-before-head
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a chunked upload: each chunk pulled once the bytes before it are written, then the end FAIL an upload of a declared size: the chunks written as they are, the end writes nothing 
+core-tests props 50000 1: FAIL run 0 (seed 1), step 0: no pull before the request head is written: pull with 0 of 77 head bytes written, wrote=true 
+core-tests explore 10: FAIL POST streamed chunked in chunks of 3 and 4 bytes, content-length, keepAlive=true: no pull before the request head is written: pull with 0 of 91 head bytes written, wrote=true FAIL POST streamed with 7 bytes declared, 3 and 4 given in 32-byte writes, early 413: no pull before the request head is
+planted size-plus-one
+### size-plus-one
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a declared size given in full, then more: the exchange fails while it is still going 65 traces, 1 failing 
+core-tests props 50000 1: FAIL run 121 (seed 1), step 2: writes follow the request: write 7 at 82 
+core-tests explore 10: 14 searches to depth 10: 153975 states, 383709 steps checked, 0 failing 
+planted short-end
+### short-end
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a producer that ends short of the declared size fails the exchange 65 traces, 1 failing 
+core-tests props 50000 1: FAIL run 177 (seed 1), step 10: a broken streamed body fails the exchange: #[] 
+core-tests explore 10: 14 searches to depth 10: 153975 states, 383709 steps checked, 0 failing 
+planted no-crlf
+### no-crlf
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a chunked upload: each chunk pulled once the bytes before it are written, then the end FAIL a chunk of 26 bytes goes out with its size in lower-case hex 
+core-tests props 50000 1: FAIL run 117 (seed 1), step 6: pull only when the request so far is written: pull at 95 of 97, write in flight none, complete=false 
+core-tests explore 10: FAIL POST streamed chunked in chunks of 3 and 4 bytes, content-length, keepAlive=true: pull only when the request so far is written: pull at 97 of 99, write in flight none, complete=false 14 searches to depth 10: 121607 states, 307409 steps checked, 1 failing 
+planted wire-done
+### wire-done
+Build completed successfully (53 jobs).
+core-tests traces: FAIL an early response while a chunk is pulled: delivered, not reusable, the answer ignored FAIL an early response, then the upload ends: still not reusable 
+core-tests props 50000 1: FAIL run 252 (seed 1), step 6: reusable only when safe: the streamed body was not known in full 
+core-tests explore 10: FAIL POST streamed chunked in chunks of 3 and 4 bytes, content-length, keepAlive=true: reusable only when safe: the streamed body was not known in full FAIL POST streamed with 7 bytes declared, 3 and 4 given in 32-byte writes, early 413: reusable only when safe: the streamed body was not known in fu
+planted ignore-broken
+### ignore-broken
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a declared size given in full, then more: the exchange fails while it is still going FAIL a producer that gives more than declared fails the exchange before the excess is written 
+core-tests props 50000 1: FAIL run 121 (seed 1), step 2: a broken streamed body fails the exchange: #[pull] 
+core-tests explore 10: FAIL POST streamed with 5 bytes declared and 7 given, content-length: a broken streamed body fails the exchange: #[pull] 14 searches to depth 10: 134726 states, 334642 steps checked, 1 failing 
+planted ignore-failure
+### ignore-failure
+Build completed successfully (53 jobs).
+core-tests traces: FAIL a body abandoned and drained while the producer fails its last pull: not reusable FAIL a producer that raises an error fails the exchange, maybe delivered 
+core-tests props 50000 1: FAIL run 32 (seed 1), step 4: a broken streamed body fails the exchange: #[pull] 
+core-tests explore 10: FAIL POST streamed chunked in chunks of 3 and 4 bytes, content-length, keepAlive=true: a broken streamed body fails the exchange: #[pull] FAIL POST streamed with 7 bytes declared, 3 and 4 given in 32-byte writes, early 413: a broken streamed body fails the exchange: #[pull] 
+done

@@ -1,0 +1,26 @@
+      27.6 listening on 127.0.0.1:18114
+     255.2 conn1 accepted from ('127.0.0.1', 49260)
+     307.9 conn1 req1 GET /infinite-redirect {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     310.1 conn1 req2 GET /infinite-redirect/1 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     310.6 conn1 req3 GET /infinite-redirect/2 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     310.9 conn1 req4 GET /infinite-redirect/3 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     311.2 conn1 req5 GET /infinite-redirect/4 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     311.5 conn1 req6 GET /infinite-redirect/5 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     311.7 conn1 req7 GET /infinite-redirect/6 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     312.0 conn1 req8 GET /infinite-redirect/7 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     312.3 conn1 req9 GET /infinite-redirect/8 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     313.5 conn1 req10 GET /infinite-redirect/9 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     314.3 conn1 req11 GET /infinite-redirect/10 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     314.9 conn1 EOF from client after 11 requests
+     315.0 conn1 closed by server
+     457.6 conn2 accepted from ('127.0.0.1', 49268)
+     462.5 conn2 req1 GET /infinite-redirect {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     467.7 conn2 req2 GET /infinite-redirect/1 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     469.8 conn2 req3 GET /infinite-redirect/2 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     471.3 conn2 req4 GET /infinite-redirect/3 {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+     473.7 conn2 EOF from client after 4 requests
+     473.9 conn2 closed by server
+    1544.5 conn3 accepted from ('127.0.0.1', 49270)
+    1545.9 conn3 req1 GET /infinite-redirect {'host': ['127.0.0.1:18114'], 'connection': ['keep-alive']} body=0B
+    1547.6 conn3 EOF from client after 1 requests
+    1547.8 conn3 closed by server

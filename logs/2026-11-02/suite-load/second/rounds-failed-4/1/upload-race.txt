@@ -1,0 +1,10 @@
+$ net-client upload PUT http://127.0.0.1:18128/die-on-next size=1000 chunk=500 repeat=2
+upload call 0 ok status=200 bytes=2 ms=35.506 rounds=1 lookups=0 address=127.0.0.1:18128 seed=5710213586619095050 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18128/die-on-next tls=none body_start="ok" pulls=2 produced=1000 response="ok"
+after upload 0: pool idle=0 checked_out=0 allocated=1
+upload call 1 ok status=200 bytes=2 ms=2.886 rounds=1 lookups=0 address=127.0.0.1:18128 seed=15072509351206990346 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18128/die-on-next tls=none body_start="ok" pulls=3 produced=1000 response="ok"
+after upload 1: pool idle=1 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+rss_peak_kb=16864 rss_kb=16864
+main returning at ms=39.883 started_unix_us=1793615953965964 returning_unix_us=1793615954005847
+exit status=0 wall_ms=78 start_ms=33 exit_after_main_ms=4

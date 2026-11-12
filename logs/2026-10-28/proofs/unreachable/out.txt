@@ -1,0 +1,4 @@
+$ lake env lean --run out/unreachable.lean
+headBytes=38 written=0
+actions: [head 200, finish reusable=false]
+after: written=0 terminal=true

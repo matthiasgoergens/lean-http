@@ -1,0 +1,15 @@
+$ /w/.lake/build/bin/pool-tests traces
+PASS a connection given back reusable is reused
+PASS a connection given back not reusable is not reused
+PASS the idle cap: the fifth reusable connection given back is closed
+PASS the idle timeout: reused just before it, closed at it
+PASS a sweep closes the expired idle connections of every origin
+PASS a second give-back or a drop after a give-back is refused
+PASS a dropped connection is not reused and cannot be given back
+PASS the active cap: a take waits until a connection comes back
+PASS closing: idle connections closed, later give-backs dropped, takes refused
+PASS the most recently given back idle connection is reused first
+PASS origins do not share connections
+PASS a take without reuse opens a new connection even with one idle
+12 traces, 0 failing
+exit status 0, wall 22 ms

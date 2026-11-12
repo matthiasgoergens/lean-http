@@ -1,0 +1,6 @@
+$ net-client call GET http://[::1]:18086/ deadline=1500
+call 0 error delivery=not sent ms=1508.883 rounds=1 seed=5049832857108777073 reused=false redispatched=false status=none cause="deadline timeout" detail="could not connect: [::1]:18086 (round 0): timed out"
+pool idle=0 checked_out=0 allocated=1
+fds_after_calls=12
+main returning at ms=1509.034
+exit status=0 wall_ms=1514 exit_after_main_ms=5

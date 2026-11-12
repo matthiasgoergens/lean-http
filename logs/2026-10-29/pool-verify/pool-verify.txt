@@ -1,0 +1,41 @@
+Build completed successfully (37 jobs).
+## proof
+     41 depends on axioms: [propext, Classical.choice, Quot.sound]
+## codec
+     39 depends on axioms: [propext, Classical.choice, Quot.sound]
+      2 depends on axioms: [propext]
+## pool
+      5 depends on axioms: [propext, Classical.choice, Quot.sound]
+     24 depends on axioms: [propext, Quot.sound]
+      1 depends on axioms: [propext]
+## call
+     27 depends on axioms: [propext, Classical.choice, Quot.sound]
+      1 depends on axioms: [propext, Quot.sound]
+Build completed successfully (102 jobs).
+77 checks, 0 failing
+50 cases, 0 failing
+41 cases, 0 failing
+139 checks, 0 failing
+usage: pool-tests traces | props <runs> <seed> [plant] | explore <depth> [plant] | control <runs> <seed> <depth>
+48 traces, 0 failing
+12 traces, 0 failing
+PASS 100000 runs from seed 17: 4000000 operations checked
+PASS maxIdle 0, timeout 10, active cap 1: 64 states to depth 7
+ignore-verdict, all checks: random runs: agrees with the model; exploration: agrees with the model
+ignore-verdict, properties alone: random runs: reused other than a live idle connection; exploration: reused other than a live idle connection
+drop-keeps, all checks: random runs: agrees with the model; exploration: agrees with the model
+drop-keeps, properties alone: random runs: given back while not checked out; exploration: gone came back
+no plant: random runs: pass; exploration: pass
+5 plants, 0 runs that did not catch theirs
+ignore-clock, all checks: random runs: agrees with the model; exploration: reused other than a live idle connection
+ignore-clock, properties alone: random runs: gone came back; exploration: reused other than a live idle connection
+accept-any, all checks: random runs: invariant; exploration: invariant
+accept-any, properties alone: random runs: invariant; exploration: invariant
+cap-off-by-one, all checks: random runs: invariant; exploration: invariant
+cap-off-by-one, properties alone: random runs: invariant; exploration: invariant
+ignore-verdict, all checks: random runs: agrees with the model; exploration: agrees with the model
+ignore-verdict, properties alone: random runs: reused other than a live idle connection; exploration: reused other than a live idle connection
+drop-keeps, all checks: random runs: agrees with the model; exploration: agrees with the model
+drop-keeps, properties alone: random runs: given back while not checked out; exploration: gone came back
+no plant: random runs: pass; exploration: pass
+5 plants, 0 runs that did not catch theirs

@@ -1,0 +1,15 @@
+$ net-client call GET http://dual.test:18083/ok repeat=10
+call 0 ok status=200 bytes=5 ms=257.958 rounds=1 address=127.0.0.1:18083 seed=10775490130884252303 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 1 ok status=200 bytes=5 ms=253.759 rounds=1 address=127.0.0.1:18083 seed=240410434047675821 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 2 ok status=200 bytes=5 ms=253.354 rounds=1 address=127.0.0.1:18083 seed=6350647575060623275 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 3 ok status=200 bytes=5 ms=252.767 rounds=1 address=127.0.0.1:18083 seed=15681823559494679517 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 4 ok status=200 bytes=5 ms=256.187 rounds=1 address=127.0.0.1:18083 seed=10414785551363109257 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 5 ok status=200 bytes=5 ms=253.376 rounds=1 address=127.0.0.1:18083 seed=4833867700761988380 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 6 ok status=200 bytes=5 ms=260.462 rounds=1 address=127.0.0.1:18083 seed=12788975088802967836 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 7 ok status=200 bytes=5 ms=253.461 rounds=1 address=127.0.0.1:18083 seed=10478502214215864216 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 8 ok status=200 bytes=5 ms=254.042 rounds=1 address=127.0.0.1:18083 seed=8029122146378517873 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+call 9 ok status=200 bytes=5 ms=252.959 rounds=1 address=127.0.0.1:18083 seed=3837363720669536913 failed_attempts=[[::1]:18083#0:abandoned] body_start="hello"
+summary calls n=10 min=252.767 p50=253.759 p90=260.462 max=260.462 ms ok=10
+fds_after_calls=21
+main returning at ms=2549.719
+exit status=0 wall_ms=2562 exit_after_main_ms=13

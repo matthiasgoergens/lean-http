@@ -1,0 +1,11 @@
+$ net-client call GET https://127.0.0.1:18144/stray ca=/w/out/net/tls-certs/ca.pem repeat=2
+call 0 ok status=200 bytes=6 ms=9.386 rounds=1 lookups=0 address=127.0.0.1:18144 seed=4221898604883722000 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18144/stray tls=TLSv1.3 body_start="stray\n"
+call 1 ok status=200 bytes=6 ms=4.744 rounds=1 lookups=0 address=127.0.0.1:18144 seed=714960652737660583 failed_attempts=[] conn=(some 1) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=https://127.0.0.1:18144/stray tls=TLSv1.3 body_start="stray\n"
+summary calls n=2 min=4.744 p50=9.386 p90=9.386 max=9.386 ms ok=2
+summary later calls n=1 min=4.744 p50=4.744 p90=4.744 max=4.744 ms
+pool idle=0 checked_out=0 allocated=2
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=14.837
+exit status=0 wall_ms=66 exit_after_main_ms=52

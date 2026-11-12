@@ -1,0 +1,8 @@
+$ net-client call GET http://127.0.0.1:18193/chain/1 cancel=0 after=follow
+call 0 error delivery=response received ms=3.326 rounds=1 lookups=0 seed=10094067460289813023 reused=false redispatched=false hops=1 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="the call was cancelled (cancel)" detail="cancelled before the redirect was followed"
+cancel fired at ms=3.176
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=2
+fds_after_calls=11
+main returning at ms=4.278
+exit status=0 wall_ms=14 exit_after_main_ms=10

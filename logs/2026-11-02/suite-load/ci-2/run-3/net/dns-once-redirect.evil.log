@@ -1,0 +1,25 @@
+      23.1 listening on 127.0.0.1:18189
+      53.9 conn1 accepted from ('127.0.0.1', 47746)
+      55.0 conn1 req1 GET /chain/2 {'host': ['dup.test:18189'], 'connection': ['close']} body=0B
+      56.4 conn2 accepted from ('127.0.0.1', 47750)
+      56.6 conn1 EOF from client after 1 requests
+      56.9 conn1 closed by server
+      57.3 conn2 req1 GET /chain/1 {'host': ['dup.test:18189'], 'connection': ['close']} body=0B
+      57.9 conn2 EOF from client after 1 requests
+      58.0 conn3 accepted from ('127.0.0.1', 47758)
+      58.3 conn2 closed by server
+      58.6 conn3 req1 GET /chain/0 {'host': ['dup.test:18189'], 'connection': ['close']} body=0B
+      59.2 conn3 EOF from client after 1 requests
+      59.2 conn3 closed by server
+     108.3 conn4 accepted from ('127.0.0.1', 47772)
+     131.9 conn4 req1 GET /chain/2 {'host': ['127.0.0.1:18189'], 'connection': ['close']} body=0B
+     133.5 conn5 accepted from ('127.0.0.1', 47780)
+     134.2 conn4 EOF from client after 1 requests
+     134.3 conn4 closed by server
+     135.0 conn5 req1 GET /chain/1 {'host': ['127.0.0.1:18189'], 'connection': ['close']} body=0B
+     136.3 conn6 accepted from ('127.0.0.1', 47788)
+     136.8 conn5 EOF from client after 1 requests
+     136.9 conn5 closed by server
+     137.5 conn6 req1 GET /chain/0 {'host': ['127.0.0.1:18189'], 'connection': ['close']} body=0B
+     138.2 conn6 EOF from client after 1 requests
+     138.3 conn6 closed by server

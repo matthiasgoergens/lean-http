@@ -1,0 +1,189 @@
+Below is the review of the theorem statements in [`Proofs.lean`](file://LeanHttp/Call/Proofs.lean) against their docstrings and the required specification rules.
+
+---
+
+### 1. Structural & Cross-Cutting Issues
+
+Before going theorem by theorem, several modeling definitions affect multiple theorems:
+
+1. **`Reachable` allows arbitrary transitions after terminal steps (`deliver` / `fail`):**
+   [`Reachable.step`](file://LeanHttp/Call.lean#L469) is defined as `Reachable st → Reachable (plan st clock outcome).1`, ignoring `(plan st clock outcome).2`. When [`plan`](file://LeanHttp/Call.lean#L437-L453) returns `(st, .deliver)` or `(st, .fail _)`, `st` is unchanged and remains `Reachable`, allowing further `plan` steps on a call that has already ended. For safety invariants on `st` (`Reachable.*`), this over-approximates the reachable set (proving the invariant on a superset of actual shell states), which is sound for `Reachable.*`, though it means single-step theorems not taking `Reachable st` operate on arbitrary unvalidated `State` values.
+2. **`originKey` is an unsound equivalence for "same origin" (Default Port Normalization & Case Normalization):**
+   [`originKey`](file://LeanHttp/Call/Redirect.lean#L139-L140) is `{ scheme := o.scheme.val, host := toString o.host, port := o.port }`.
+   - **Port mismatch on the initial request:** In [`start`](file://LeanHttp/Call.lean#L306-L325), `originalOrigin` is constructed via [`uriOrigin`](file://LeanHttp/Call.lean#L306-L307), which sets `port := uri.port` (in `Std.Http`, when the port is omitted in the initial URI, `uri.port` may not be normalized the same way as [`resolveOrigin`](file://LeanHttp/Call/Redirect.lean#L230-L242), which explicitly resolves `.omitted` to `URI.Scheme.defaultPort uri.scheme`). Conversely, if `uri.port` is `0` or unnormalized when omitted, redirecting from `http://example.com/a` to `http://example.com:80/b` (or even relative `/b` where `resolveOrigin` uses `current.port` vs absolute `http://example.com/b` where `resolveOrigin` uses `URI.Scheme.defaultPort`) produces a different `OriginKey.port`!
+   - **Case sensitivity in `start` and `originKey`:** [`start`](file://LeanHttp/Call.lean#L320) checks `origin.scheme.val ≠ "http" ∧ origin.scheme.val ≠ "https"`, and `originKey` uses raw `o.scheme.val` and `toString o.host` without case-folding, relying entirely on external normalization.
+3. **Header name case-sensitivity in `credentialNames`, `contentNames`, and `.host`:**
+   All header theorems state membership/equality against `Header.Name` constants (`credentialNames`, `contentNames`, `.host`). If `Header.Name` in `Std.Http` wraps a raw `String` without enforcing lowercase normalization at the type level, a caller who passes `Header.Name.mk "Authorization"` or `Header.Name.mk "Host"` in `head.headers` bypasses `credentialNames` (which checks `.authorization`, i.e., `"authorization"`) and `.host` (`"host"`).
+
+---
+
+### 2. Theorem-by-Theorem Review
+
+#### [`plan_follow_credentials`](file://LeanHttp/Call/Proofs.lean#L458-L465)
+* **Docstring vs. Statement:**
+  > "**Credentials stay with their origin** (one step). When the planner follows a redirect to an origin other than the call's original one, the next request carries no `Authorization`, `Cookie` or `Proxy-Authorization` field."
+  - Matches the statement, modulo `originKey` representing "origin" and `credentialNames` representing those three fields.
+* **Strength / Objection (Confidence: High):**
+  - Single-step theorem only (`follow`). More importantly, it equates "origin other than the call's original one" with `originKey next.origin ≠ originKey st.originalOrigin`. It also says nothing about what happens when `originKey next.origin = originKey st.originalOrigin` (for instance, if `st` is not assumed `Reachable`, `st.given` could contain arbitrary headers or modified credentials).
+
+#### [`Reachable.credentials`](file://LeanHttp/Call/Proofs.lean#L473-L495)
+* **Docstring vs. Statement:**
+  > "**Credentials stay with their origin.** In every state a call can reach, if the current request (the one the shell sends, first or again) goes to an origin other than the call's original one, it carries no `Authorization`, `Cookie` or `Proxy-Authorization` field. **Origins differ when their scheme, host or port differ, so a redirect from https to http counts as a change of origin.**"
+  - **Unbacked quote:** `"Origins differ when their scheme, host or port differ, so a redirect from https to http counts as a change of origin."` — The theorem statement does not mention `scheme`, `host`, `port`, `"https"`, or `"http"`; it only hypotheses `hne : originKey st.current.origin ≠ originKey st.originalOrigin`.
+  - **Unbacked quote:** `"(the one the shell sends, first or again)"` — The theorem only inspects `st.current`, not the `next` returned in `.follow next` (though [`plan_current`](file://LeanHttp/Call/Proofs.lean#L413-L416) links them, the theorem itself does not state this).
+* **Strength / Objection (Confidence: High):**
+  - **Rule 1 gap (Same-origin credential tampering / duplication):** Rule 1 states: *"Credential fields ... never appear on a request to a different origin than the one they were given for (the origin of the call's first request)"*. What if the call redirects A $\to$ B $\to$ A, or A $\to$ A? On A $\to$ B $\to$ A (`toOriginal = true, fromOriginal = false`), [`credentialStep`](file://LeanHttp/Call/Redirect.lean#L304-L306) restores `given`, which is fine. However, no theorem proves that when returning to `originalOrigin`, the credentials on `st.current` are actually the ones from the original request (and not fabricated or corrupted).
+  - **Origin mismatch via `uriOrigin` vs `resolveOrigin`:** In [`start`](file://LeanHttp/Call.lean#L306-L307), `uriOrigin` uses `uri.port`, whereas in [`decideRedirect`](file://LeanHttp/Call/Redirect.lean#L230-L241), `resolveOrigin` computes `port` by falling back to `URI.Scheme.defaultPort` when `auth.port` is `.omitted`. If `uri.port` in `Std.Http.URI` does not evaluate to `defaultPort` when omitted (or vice versa, if `URI` stores `.omitted` differently from `resolveOrigin`), `originKey` will not match what RFC 9110 defines as the same origin.
+
+#### [`Reachable.hops_le`](file://LeanHttp/Call/Proofs.lean#L501-L518)
+* **Docstring vs. Statement:**
+  > "**The hop limit holds.** In every state a call can reach, the number of redirects followed is at most `Policy.maxRedirects`."
+  - Matches the statement (`st.hops ≤ st.policy.maxRedirects`), assuming `st.hops` accurately counts the number of redirects followed.
+* **Strength / Objection (Confidence: Medium):**
+  - The theorem proves `st.hops ≤ st.policy.maxRedirects`, which is an internal counter check. It does not directly count the number of `.follow` steps emitted in the trace of `Reachable`, relying on inspecting `plan` to see that `st.hops` increments by 1 on `.follow` and never decreases.
+
+#### [`plan_hop_limit`](file://LeanHttp/Call/Proofs.lean#L524-L533)
+* **Docstring vs. Statement:**
+  > "**Reaching the hop limit is an error.** A redirect that would be followed when `Policy.maxRedirects` redirects have been followed already fails the call with `tooManyRedirects`: the last 3xx is not delivered as if it were the answer."
+  - Matches the statement under its hypotheses.
+* **Strength / Objection (Confidence: High):**
+  - **Hypothesis `hd : decideRedirect ... = .follow next` is too strong / misses refused redirects at the limit:** If the $(N+1)$-th redirect has status 301/302/303/307/308, `followRedirects = true`, and `st.hops = st.policy.maxRedirects`, what if `decideRedirect` returns `.refuse` (e.g., because the body is `.stream` and method is 307, or `Location` is missing/relative-invalid)? Then `plan` falls through to line 453 and returns `(st, .deliver)`, **delivering the 3xx response**! Even more subtly: the theorem assumes `decideRedirect ... = .follow next`, which is an internal helper call, rather than stating the theorem in terms of the incoming `head` (e.g., a valid redirect response).
+
+#### [`plan_no_resend`](file://LeanHttp/Call/Proofs.lean#L540-L553)
+* **Docstring vs. Statement:**
+  > "**No resend after bytes may have reached the server, unless safe.** If the current request's method is not idempotent, or its body cannot be sent again, then after an outcome where any request byte may have reached the server (a response, or a failure that is not `notSent` or counts a byte written) the planner never retries it."
+  - Matches the statement.
+* **Strength / Objection (Confidence: High):**
+  - **1. Does not cover redirects resending a non-replayable body after bytes were written!**
+    Rule 3 says: *"A request whose method is not idempotent, or whose body is not replayable, is never retried after any byte may have been written."* `plan_no_resend` only proves `plan st clock outcome ≠ (st', .retry d k)`. What about `(st', .follow next)`? Look at [`Reachable`](file://LeanHttp/Call.lean#L365) and [`Hop.replayable`](file://LeanHttp/Call/Redirect.lean#L110-L113):
+    Suppose the initial request is `POST` with `bodyKind = .stream` (not replayable!).
+    - Hop 1 (`POST`, `body = .original`): sends the streamed body to the server, and receives `303 See Other`.
+    - `decideRedirect` changes the method to `GET` and sets `next.body := .empty`.
+    - `Hop.replayable` for `next` is `match .empty with | .empty => true`!
+    - Now on Hop 2 (`GET`, `body = .empty`), `st.current.replayable st.bodyKind` is **`true`** (even though `st.bodyKind = .stream`!).
+    - That's fine for `GET` with `.empty` body, **except** look at how `plan_no_resend` is stated: it uses `st.current.replayable st.bodyKind = false`, not `st.bodyKind.replayable = false`.
+    - Even worse, what if the shell fails during `.sending` or `.awaitingHead`? How does `Outcome.mayHaveSent` work?
+  - **2. `Outcome.mayHaveSent` vs. "any byte may have been written" in `Exchange.lean`:**
+    In [`Call.lean`](file://LeanHttp/Call.lean#L344-L345), `mayHaveSent f` is `f.delivery ≠ .notSent || f.written > 0`.
+    In [`Exchange.lean`](file://LeanHttp/Exchange.lean#L489-L492), `ex.delivery` is `.notSent` iff `ex.head.isNone && !ex.sentAny`, where `sentAny` is set to `true` when `.write slice` is emitted ([line 854](file://LeanHttp/Exchange.lean#L854)).
+    However, if `req.bytes` is empty (`req.bytes.size == 0`, which happens only on a degenerate prepared request, or before `schedule` runs when `now ≥ deadline` in `begin`), `sentAny` is `false`. More importantly, `Failure` is a plain structure passed by the shell in `Outcome.failure f`. If the shell constructs a `Failure` before `Exchange.begin` or after a socket write that timed out in the OS kernel before `Exchange` was notified, `plan` blindly trusts `f.delivery` and `f.written`.
+  - **3. Redirects on 307/308 with non-idempotent methods (e.g., `POST`) ARE followed and re-sent!**
+    When a `POST` request with `bodyKind = .bytes` receives a `307 Temporary Redirect` or `308 Permanent Redirect` (say, to the exact same URL or another URL), `outcome.mayHaveSent` is `true` (the server received the `POST` and answered `307`). `plan` returns `.follow next` where `next` has `method = .post` and `body = .original`. While HTTP distinguishes a redirect from a retry, if a server redirects a `POST` with `307` back to itself, the client sends the non-idempotent `POST` again!
+
+#### [`plan_localClose`](file://LeanHttp/Call/Proofs.lean#L559-L566)
+* **Docstring vs. Statement:**
+  > "**Closing never causes a resend.** A failure caused by the client closing the connection itself (`localClose`) is never retried, **whatever was sent**."
+  - Matches the statement (`f.delivery` and `f.written` are universally quantified as fields of `f`).
+* **Strength / Objection (Confidence: Medium):**
+  - Look at [`Exchange.lean` lines 778-792](file://LeanHttp/Exchange.lean#L778-L792): When the client abandons the exchange (`ExchangeEvent.abandon`) during `.receiving` (after the response head has arrived), `Exchange` does **not** emit `failNow .localClose`—it already emitted `.deliverHead head` when entering `.receiving`! If the shell passes `.response head` to `Call.plan` before the body is read (as [`Outcome.response`](file://LeanHttp/Call.lean#L176-L178) states: *"The final response head arrived. Its body has not been read"*), and `head` is a 429 or 503 with `retry429`/`retry503` enabled, or a 3xx redirect, the planner decides on `.response head` without seeing `.localClose`.
+
+#### [`plan_retry_delay`](file://LeanHttp/Call/Proofs.lean#L573-L581)
+* **Docstring vs. Statement:**
+  > "**Delays are bounded.** Every retry the planner plans waits less than the time left before the call's deadline; a backoff delay is at most `Policy.backoffCapMs`, and a `Retry-After` delay at most `Policy.maxRetryAfterMs`."
+  - Matches the statement.
+* **Strength / Objection (Confidence: High):**
+  - **1. Nat subtraction truncation makes `d < st.deadline - clock.now` **unsatisfiable** when `clock.now ≥ st.deadline`, which happens to prevent retries after the deadline, BUT `Retry-After` is measured against the wrong clock (`Date` header vs. `clock.now`):**
+    In [`retryAfterMs`](file://LeanHttp/Call.lean#L406-L414), when a `Retry-After` header contains an `HTTP-date` $T$, the delay `d` is computed as `(T - reference) * 1000`, where `reference` is the **response's `Date` header** if present, and `clock.wallSec` only if `Date` is absent!
+    If the server's clock is skewed behind real time (or if a cached/delayed response has an old `Date` header, e.g., 50 seconds in the past, and `Retry-After` is 5 seconds in the past), `T - date` is 45 seconds (`45000 ms`), even though the `Retry-After` date has already passed on `clock.wallSec`! Conversely, if the server's `Date` header is ahead of `clock.wallSec`, `T - date` under-waits relative to the wall clock.
+  - **2. Second-to-millisecond truncation in `Retry-After` HTTP-date:**
+    `clock.wallSec` has 1-second resolution (`Nat`), while `st.deadline` and `clock.now` are in milliseconds (`Timestamp`). `(t - referenceSec) * 1000` can be off by up to 999 ms from the actual wall-clock time remaining until `t`.
+  - **3. Strict inequality `<` vs Rule 5's `[0, remaining time before the deadline]`:**
+    Rule 5 asks for delays within `[0, remaining time before the deadline]`. Because `d : Nat`, `0 ≤ d` is automatic, and `d < st.deadline - clock.now` implies `d ≤ st.deadline - clock.now` (and also guarantees `clock.now < st.deadline`). However, `clock.now` is the timestamp when `plan` is called; any time spent before the timer starts is not accounted for.
+
+#### [`plan_retry_same_hop`](file://LeanHttp/Call/Proofs.lean#L587-L591)
+* **Docstring vs. Statement:**
+  > "**Retries never cross a redirect.** A retry sends the current hop's request again: the current request and the number of redirects followed are unchanged."
+  - **Unbacked quote:** `"A retry sends the current hop's request again"` — Look at [`Step.retry`](file://LeanHttp/Call.lean#L275): `| retry (delayMs : Nat) (kind : DelayKind)`. Unlike `Step.follow (next : Hop)`, `Step.retry` does **not** carry a `Hop`! The statement only proves `st'.current = st.current ∧ st'.hops = st.hops`.
+* **Strength / Objection (Confidence: Medium):**
+  - It only covers half of "retries never cross a redirect" (the `Call.lean` module docstring at [lines 22-23](file://LeanHttp/Call.lean#L22-L23) defines this rule as: *"a retry sends the current hop's request again, and following a redirect starts the new hop with no retries"*). `plan_retry_same_hop` does **not** state that following a redirect resets `st'.attempts = 0`! (That fact is buried inside the helper lemma [`plan_follow`](file://LeanHttp/Call/Proofs.lean#L238-L243), not in `plan_retry_same_hop`.)
+
+#### [`plan_follow_303`](file://LeanHttp/Call/Proofs.lean#L597-L603)
+* **Docstring vs. Statement:**
+  > "**303 means GET.** A followed 303 makes the next request a GET, or a HEAD if the current one is a HEAD."
+  - Matches the statement.
+* **Strength / Objection (Confidence: Low):**
+  - Accurate for `next.head.method`. Note that it is a single-step theorem about `next` in `.follow next`; because `plan_follow` proves `st'.current = next`, this transfers to `st'.current`.
+
+#### [`Reachable.given`](file://LeanHttp/Call/Proofs.lean#L608-L624)
+* **Docstring vs. Statement:**
+  > "The credential fields a reachable call gives back are credential fields."
+  - **Unbacked quote:** `"gives back"` — The statement only says `∀ e ∈ st.given, e.1 ∈ credentialNames`. It does not state that `st.given` are the exact credential fields from the initial request (i.e. `st.given = credentials initialHead.headers.toList`), nor that they are given back on a redirect returning to `originalOrigin`.
+* **Strength / Objection (Confidence: High):**
+  - If `st.given` were always `[]`, `Reachable.given` would still hold! It only proves that `st.given` contains no non-credential header names, not that `st.given` preserves the initial request's credentials or restores them when redirecting back to `originalOrigin`.
+
+#### [`plan_follow_method_change`](file://LeanHttp/Call/Proofs.lean#L633-L644)
+* **Docstring vs. Statement:**
+  > "**A method change drops the body and the content fields.** When a followed redirect changes the method of a call's request, the new method is GET, and the next request carries no body and no content field (`Content-Type`, `Content-Length`, `Content-Encoding`, `Content-Language`, `Content-Location`, `Last-Modified`, `Transfer-Encoding`, `Digest`, `Content-Digest`, `Repr-Digest`)."
+  - Matches the statement for a single `.follow` step.
+* **Strength / Objection (Confidence: High):**
+  - **1. Only a single-step theorem (`plan_follow_method_change`), NOT a `Reachable` invariant across subsequent redirects!**
+    Suppose Hop 1 (`POST`, with `Content-Type: application/json` or a custom header nominated in `Connection`) redirects via `303` to Hop 2 (`GET`, `body = .empty`). On that step (`Hop 1 -> Hop 2`), `methodChanged = true`, so `contentNames` are dropped.
+    Wait: what if on Hop 1, `st.originalOrigin` had a header in `st.given`? `hst.given` shows `st.given` only has `credentialNames`, which are disjoint from `contentNames`.
+    What if Hop 2 (`GET`, `body = .empty`) redirects via `307` to Hop 3 (`GET`, `body = .empty`)? On `Hop 2 -> Hop 3`, the method does **not** change (`GET -> GET`), so `hm : next.head.method ≠ st.current.head.method` is **false**! Thus `plan_follow_method_change` does **not** apply to Hop 3! While Hop 2 already had its `contentNames` dropped and `body = .empty`, **no theorem in `Proofs.lean` establishes that Hop 3 (or every reachable state after a method change) still has `body = .empty` and no `contentNames`!**
+  - **2. Connection-nominated content headers or non-standard content headers:**
+    Even more importantly, because there is no `Reachable` theorem for Rule 7 (unlike Rule 1 which has both `plan_follow_credentials` and `Reachable.credentials`), Rule 7 is only proved for the immediate hop where the method changes, not for subsequent hops if the redirect chain continues (`POST --303--> GET --307--> GET`).
+
+#### [`plan_follow_host`](file://LeanHttp/Call/Proofs.lean#L650-L658)
+* **Docstring vs. Statement:**
+  > "**`Host` follows the origin.** When a followed redirect changes the origin, every `Host` field of the next request names the new origin (`URI.Origin.hostHeader`)."
+  - Matches the statement literally: `∀ e ∈ next.head.headers.toList, e.1 = .host → Header.Value.ofString? next.origin.hostHeader = some e.2`.
+* **Strength / Objection (Confidence: Very High):**
+  - **1. Vacuously satisfied when `Host` is absent or dropped!**
+    The theorem states: *for every `e` in `next.head.headers.toList`, if `e.1 = .host`, then ...*. It does **not** prove that a `Host` header actually exists in `next.head.headers.toList`!
+    Look at [`hostStep`](file://LeanHttp/Call/Redirect.lean#L312-L315) and [`nextFields`](file://LeanHttp/Call/Redirect.lean#L322-L328):
+    - **Bug A (`Connection: host` strips `Host` permanently):** In `nextFields`, `dropNames (hopByHopNames ++ nominatedNames fields) fields` runs **before** `hostStep`! If the current request had `Connection: host`, `dropNames` removes `.host` from `fields`. Then `hostStep` checks `if crossOrigin && fields.any (·.1 = .host)` — which is now **`false`**! So `hostStep` does **not** add the new `Host` header, leaving the cross-origin request with **no `Host` header at all**!
+    - **Bug B (Initial request had no `Host` header):** `Call.start` does not check or add a `Host` header. If the initial request had no `Host` header, `fields.any (·.1 = .host)` is `false`, so `hostStep` never adds one on cross-origin redirects.
+    - **Bug C (`Header.Value.ofString? next.origin.hostHeader = none`):** If `ofString?` returns `none`, `hostStep` drops the old `Host` header and appends `[]` (nothing). `plan_follow_host` is then vacuously true because there are no `.host` entries in `next.head.headers.toList`!
+  - **2. Does not hold on the initial request or same-origin redirects (`Reachable` is completely missing):**
+    On the initial request ([`Call.start`](file://LeanHttp/Call.lean#L325)), `head` is sent *as it is* (`current := { origin, head, body := .original }`). If the caller passed a `head` whose `Host` header does not match `head.uri`'s origin (or passed multiple conflicting `Host` headers), `Call.start` accepts it, and on any **same-origin** redirect (`crossOrigin = false`), `hostStep` leaves the bogus/multiple `Host` headers untouched!
+    Thus, "Host follows the origin" is **false** for reachable states unless the initial request had a valid `Host` header and no `Connection: host`, and `plan_follow_host` only checks single cross-origin redirect steps vacuously when `Host` is present.
+
+#### [`Reachable.retries_le`](file://LeanHttp/Call/Proofs.lean#L664-L701)
+* **Docstring vs. Statement:**
+  > "**The retry counters hold.** In every state a call can reach, the current hop has been retried at most `Policy.maxRetriesPerHop` times, and the call at most `Policy.retryBudget` times."
+  - Matches the statement (`st.attempts ≤ st.policy.maxRetriesPerHop ∧ st.retries ≤ st.policy.retryBudget`), assuming `st.attempts` and `st.retries` accurately count the retries of the current hop and the call.
+* **Strength / Objection (Confidence: Low):**
+  - Like `Reachable.hops_le`, this proves an upper bound on the state fields `st.attempts` and `st.retries` rather than counting `.retry` steps emitted along the trace, though `plan_retry` and `plan_follow` show the counters are updated faithfully on each step.
+
+---
+
+### 3. Anything in the Rules Not Covered by Any Theorem?
+
+1. **Rule 1 (Returning to original origin / initial request credentials):**
+   - No theorem proves that on the initial request or after redirecting back to `originalOrigin`, the credentials carried by the request are only those given for `originalOrigin` (or that `https` to `http` specifically produces `originKey next.origin ≠ originKey st.originalOrigin`, which is asserted in the docstring of `Reachable.credentials` without proof).
+2. **Rule 2 (Refused 3xx redirects when `st.hops = maxRedirects`):**
+   - [`plan_hop_limit`](file://LeanHttp/Call/Proofs.lean#L524-L533) assumes `decideRedirect ... = .follow next`. When `decideRedirect` returns `.refuse _` (e.g., a 307 redirect with a streamed body, or a 302 with an unparseable `Location`) when `st.hops = st.policy.maxRedirects`, `plan` returns `.deliver`, delivering the 3xx response instead of failing.
+3. **Rule 7 across multi-hop redirects (`Reachable` invariant missing):**
+   - [`plan_follow_method_change`](file://LeanHttp/Call/Proofs.lean#L633-L644) only covers the single step where `next.head.method ≠ st.current.head.method`. There is no `Reachable` theorem showing that once a redirect changes the method (e.g., `POST --303--> GET`), subsequent status-preserving redirects (e.g., `--307--> GET` or `--308--> GET`) continue to have `body = .empty` and no `contentNames`.
+4. **"Retries never cross a redirect" (Redirect half missing from main theorems):**
+   - [`plan_retry_same_hop`](file://LeanHttp/Call/Proofs.lean#L587-L591) proves that `.retry` preserves `current` and `hops`, but no main theorem states the converse half of the rule: that following a redirect resets the per-hop retry counter (`st'.attempts = 0`) and does not carry over hop retries.
+5. **"Host follows the origin" (Existence, initial request, and `Reachable` invariant missing):**
+   - There is no `Reachable` invariant that `st.current` has a `Host` header matching `st.current.origin`. [`plan_follow_host`](file://LeanHttp/Call/Proofs.lean#L650-L658) only covers a single cross-origin redirect step and only proves that *if* a `.host` header is present in `next`, its value matches `next.origin.hostHeader`—not that a `.host` header is present or that same-origin hops have a matching `Host` header.
+
+---
+
+### 4. Findings Ordered by Importance
+
+1. **[High — Soundness / Vacuity in `plan_follow_host` (`Proofs.lean:650-658`, `Redirect.lean:312-328`)] `Host` is not guaranteed to exist, can be stripped by `Connection: host`, and is unchecked on initial/same-origin requests.**
+   - [`plan_follow_host`](file://LeanHttp/Call/Proofs.lean#L650-L658) only proves `∀ e ∈ next.head.headers.toList, e.1 = .host → Header.Value.ofString? next.origin.hostHeader = some e.2`.
+   - Because `dropNames (hopByHopNames ++ nominatedNames fields)` runs *before* `hostStep` in [`nextFields`](file://LeanHttp/Call/Redirect.lean#L324-L328), a request with `Connection: host` has its `Host` header stripped before `hostStep` checks `fields.any (·.1 = .host)`, resulting in a redirected request with **no `Host` header** that still satisfies `plan_follow_host` vacuously. Similarly, if the initial request in `Call.start` has a mismatched or missing `Host` header, it is never fixed on initial or same-origin hops, and `ofString? = none` silently drops `Host` while satisfying `plan_follow_host` vacuously.
+
+2. **[High — Missing Reachability Invariant in `plan_follow_method_change` (`Proofs.lean:633-644`)] Rule 7 is only proved for the single step where the method changes, not across subsequent redirects.**
+   - [`plan_follow_method_change`](file://LeanHttp/Call/Proofs.lean#L633-L644) requires `hm : next.head.method ≠ st.current.head.method`. In a chain like `POST --302--> GET --307--> GET`, the second redirect has `next.head.method = st.current.head.method` (`.get = .get`), so `plan_follow_method_change` does not apply to the second redirect. There is no `Reachable` invariant establishing that once `body = .empty` (or after any method-changing redirect), no subsequent hop in the call carries a body or content headers.
+
+3. **[High — Clock Mismatch in `plan_retry_delay` / `retryAfterMs` (`Call.lean:406-414`, `Proofs.lean:573-581`)] `Retry-After` HTTP-date delays are computed relative to the response's `Date` header (or 1-second truncated `wallSec`), while the deadline bound is checked against `clock.now`.**
+   - [`plan_retry_delay`](file://LeanHttp/Call/Proofs.lean#L573-L581) proves `d < st.deadline - clock.now` for the numerical value `d` returned by `plan`. However, when `Retry-After` is an HTTP-date, [`retryAfterMs`](file://LeanHttp/Call.lean#L406-L414) computes `d` by subtracting the response's `Date` header (if valid) rather than `clock.wallSec`, and converts seconds to milliseconds via `* 1000`. If the server's `Date` header is stale or skewed relative to the client's clock, `d` does not represent the actual time remaining until the HTTP-date.
+
+4. **[Medium-High — Origin Equivalence in `Reachable.credentials` & `plan_follow_credentials` (`Redirect.lean:139-140`, `Call.lean:306-307`, `Proofs.lean:458-495`)] `originKey` is assumed as the definition of "same origin" without proving scheme/host/port normalization.**
+   - [`Reachable.credentials`](file://LeanHttp/Call/Proofs.lean#L473-L495) takes `hne : originKey st.current.origin ≠ originKey st.originalOrigin` as a hypothesis rather than proving how `URI.Origin` values are constructed and normalized across `uriOrigin` (in `Call.start`) and `resolveOrigin` (in `decideRedirect`). Furthermore, its docstring claims *"Origins differ when their scheme, host or port differ, so a redirect from https to http counts as a change of origin"*, which is not backed by the theorem statement.
+
+5. **[Medium — Overly Strong Hypothesis in `plan_hop_limit` (`Proofs.lean:524-533`)] Delivering a 3xx at the hop limit when `decideRedirect` returns `.refuse`.**
+   - [`plan_hop_limit`](file://LeanHttp/Call/Proofs.lean#L524-L533) requires `hd : decideRedirect ... = .follow next`. Because `plan` checks `st.hops ≥ st.policy.maxRedirects` *inside* the `.follow next` branch ([`Call.lean:448-450`](file://LeanHttp/Call.lean#L448-L450)) rather than before `decideRedirect`, any 3xx response at the hop limit that triggers `.refuse` (such as a `307` with a non-replayable `.stream` body) is delivered to the caller via `.deliver` instead of failing with `tooManyRedirects`.
+
+6. **[Medium — Scope of `plan_no_resend` (`Proofs.lean:540-553`)] Only rules out `Step.retry`, not `Step.follow` on 307/308, and relies on the shell for `Failure.delivery` / `Failure.written`.**
+   - [`plan_no_resend`](file://LeanHttp/Call/Proofs.lean#L540-L553) proves `plan st clock outcome ≠ (st', .retry d k)`. If a non-idempotent request (e.g., `POST` with `bodyKind = .bytes`) is sent to the server and receives a `307` or `308` redirect (even to the same URL), `outcome.mayHaveSent` is `true` and `st.current.head.method.isIdempotent` is `false`, yet `plan` returns `.follow next` with `next.head.method = .post` and `next.body = .original`, sending the non-idempotent request and body a second time.
+
+7. **[Low — Docstring Overclaims in `Reachable.given` (`Proofs.lean:608-624`) and `plan_retry_same_hop` (`Proofs.lean:587-591`)].**
+   - [`Reachable.given`](file://LeanHttp/Call/Proofs.lean#L608-L624)'s docstring says *"The credential fields a reachable call gives back are credential fields"*, whereas the statement only proves `∀ e ∈ st.given, e.1 ∈ credentialNames` (nothing about giving them back or equaling the first request's credentials).
+   - [`plan_retry_same_hop`](file://LeanHttp/Call/Proofs.lean#L587-L591)'s docstring says *"A retry sends the current hop's request again"*, whereas `Step.retry` carries no request and the theorem only states `st'.current = st.current ∧ st'.hops = st.hops` (and omits that `.follow` resets `attempts := 0`).
+exit 0

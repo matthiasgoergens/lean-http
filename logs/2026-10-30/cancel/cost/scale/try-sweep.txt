@@ -1,0 +1,22 @@
+b25d117996371391490ad24211f112d0db15a8f81d7fd4b7a1243b91a15a2e0b  out/bench/cost-scale-cache
+6c6f848eadf443cb253942d03efb0e509f70046ac197664dc19bce040dc5a31c  out/bench/cost-scale-sweep
+variant=cache rep=0 k=1024 iters=2000 ns_per_call=78721
+variant=cache rep=0 k=16 iters=76923 ns_per_call=2711
+variant=cache rep=0 k=128 iters=14492 ns_per_call=8375
+variant=cache rep=0 k=4096 iters=2000 ns_per_call=568305
+variant=cache rep=0 k=1 iters=181818 ns_per_call=1790
+variant=sweep rep=0 k=4096 iters=2000 ns_per_call=2602
+variant=sweep rep=0 k=16 iters=76923 ns_per_call=1910
+variant=sweep rep=0 k=1 iters=181818 ns_per_call=2413
+variant=sweep rep=0 k=128 iters=14492 ns_per_call=2100
+variant=sweep rep=0 k=1024 iters=2000 ns_per_call=2516
+variant=cache rep=0 k=16 iters=76923 ns_per_call=2544
+variant=cache rep=0 k=4096 iters=2000 ns_per_call=602794
+variant=cache rep=0 k=1024 iters=2000 ns_per_call=84154
+variant=cache rep=0 k=128 iters=14492 ns_per_call=11643
+variant=cache rep=0 k=1 iters=181818 ns_per_call=1718
+variant=sweep rep=0 k=1024 iters=2000 ns_per_call=7601
+variant=sweep rep=0 k=128 iters=14492 ns_per_call=1797
+variant=sweep rep=0 k=1 iters=181818 ns_per_call=2401
+variant=sweep rep=0 k=16 iters=76923 ns_per_call=1804
+variant=sweep rep=0 k=4096 iters=2000 ns_per_call=2832

@@ -1,0 +1,57 @@
+ok   vendor (vendor/ is at 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b)
+ok   toolchain (299 ms)
+ok   build (1370 ms)
+ok   build-tests (2224 ms)
+ok   axioms-control (3593 ms)
+ok   axioms (18103 ms)
+ok   unit (140 ms)
+ok   codec (138 ms)
+ok   response-codec (89 ms)
+ok   core-traces (21 ms)
+ok   core-props (3359 ms)
+ok   core-explore (10811 ms)
+ok   core-compare (2802 ms)
+ok   pool-traces (50 ms)
+ok   pool-props (29813 ms)
+ok   pool-explore (15629 ms)
+ok   pool-control (26060 ms)
+ok   call-tests (14353 ms)
+ok   call-diff (56588 ms)
+ok   codec-diff (6265 ms)
+ok   codec-diff-control (2781 ms)
+ok   fuzz-seeds (348 ms)
+ok   readme-blocks (300 ms)
+ok   examples (2300 ms)
+FAIL net (exit status 1); the end of /w/out/ci/net.txt:
+     PASS stream-redirect: process exited 22 ms after main returned
+     PASS stream-redirect: the callback gets the response after two redirects
+     PASS stream-race: process exited 18 ms after main returned
+     PASS stream-race: the callback leaves while the other task reads
+     PASS stream-race: the connection was released first
+     PASS stream-race: and the other task's read fails
+     PASS stream-race: without waiting for the next byte of the body: 105 ms
+     PASS stream-deadline: process exited 51 ms after main returned
+     PASS stream-deadline: a body still coming at the deadline fails the call
+     PASS stream-deadline: at the 1 s deadline: 1008 ms
+     PASS stream-abandon: every call's steps replay through the planner
+     PASS stream-drain: every call's steps replay through the planner
+     PASS stream-drain-late: every call's steps replay through the planner
+     PASS stream-unread-big: every call's steps replay through the planner
+     PASS stream-unread: every call's steps replay through the planner
+     PASS stream-throw: every call's steps replay through the planner
+     PASS stream-throw-big: every call's steps replay through the planner
+     PASS stream-escape: every call's steps replay through the planner
+     PASS stream-error: every call's steps replay through the planner
+     PASS stream-badchunk: every call's steps replay through the planner
+     PASS stream-redirect: every call's steps replay through the planner
+     PASS stream-race: every call's steps replay through the planner
+     PASS stream-deadline: every call's steps replay through the planner
+     tests/net/run.sh: line 72:  3619 Segmentation fault      timeout 60 "$BIN" "$@" >> "$file" 2>&1
+     KNOWN dns-timeout: exit status 139, 8285 ms after main returned: the abandoned lookup delays exit until the resolver gives up, and the process often crashes then (NOTES.md)
+     PASS dns-timeout: a name server that never answers: the call ends at the deadline; nothing sent
+     PASS dns-timeout: at the 2 s deadline: 2016 ms
+     PASS traces: every call's steps replay through the planner (743 calls)
+     ### 290 passed, 1 failed, 1 known limitations, 0 skipped
+     exit status 1, wall 86494 ms
+failed: net
+exit 1

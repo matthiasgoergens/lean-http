@@ -1,0 +1,42 @@
+      18.1 listening on 127.0.0.1:18115
+      39.4 conn1 accepted from ('127.0.0.1', 37600)
+      40.1 conn1 req1 GET /flaky?key=a&after=4 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+      40.2 conn1 flaky a request 1: 503
+    4060.4 conn1 EOF from client after 1 requests
+    4060.8 conn2 accepted from ('127.0.0.1', 37604)
+    4061.1 conn1 closed by server
+    4061.4 conn2 req1 GET /flaky?key=a&after=4 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+    4062.2 conn2 EOF from client after 1 requests
+    4062.3 conn2 closed by server
+    4087.5 conn3 accepted from ('127.0.0.1', 37608)
+    4088.3 conn3 req1 GET /flaky?key=b&after=1 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+    4088.3 conn3 flaky b request 1: 503
+    4089.2 conn3 EOF from client after 1 requests
+    4089.2 conn3 closed by server
+    4120.7 conn4 accepted from ('127.0.0.1', 37614)
+    4121.9 conn4 req1 GET /flaky?key=c&code=429&after=date4 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+    4122.2 conn4 flaky c request 1: 429
+    8142.4 conn4 EOF from client after 1 requests
+    8142.6 conn5 accepted from ('127.0.0.1', 58146)
+    8142.8 conn4 closed by server
+    8143.1 conn5 req1 GET /flaky?key=c&code=429&after=date4 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+    8143.7 conn5 EOF from client after 1 requests
+    8143.8 conn5 closed by server
+    8163.9 conn6 accepted from ('127.0.0.1', 58154)
+    8164.3 conn6 req1 GET /flaky?key=d&after=120 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+    8164.3 conn6 flaky d request 1: 503
+    8164.8 conn6 EOF from client after 1 requests
+    8164.8 conn6 closed by server
+    8182.3 conn7 accepted from ('127.0.0.1', 58158)
+    8182.9 conn7 req1 GET /flaky?key=e&n=2 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+    8183.0 conn7 flaky e request 1: 503
+   11871.6 conn7 req2 GET /flaky?key=e&n=2 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+   11871.7 conn7 flaky e request 2: 503
+   15618.5 conn7 req3 GET /flaky?key=e&n=2 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive']} body=0B
+   15619.0 conn7 EOF from client after 3 requests
+   15619.0 conn7 closed by server
+   15641.2 conn8 accepted from ('127.0.0.1', 32774)
+   15641.8 conn8 req1 POST /flaky?key=f&after=1 {'host': ['127.0.0.1:18115'], 'connection': ['keep-alive'], 'content-length': ['5']} body=5B
+   15641.8 conn8 flaky f request 1: 503
+   15642.6 conn8 EOF from client after 1 requests
+   15642.7 conn8 closed by server

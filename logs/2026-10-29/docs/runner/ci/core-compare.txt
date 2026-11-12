@@ -1,0 +1,94 @@
+$ /home/runner/w/.lake/build/bin/core-tests compare 20000 1
+20000 runs from seed 1: 19842 end the same way on both cores, 158 do not
+  1 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine fail body size limit exceeded [response received], head 200, body 1
+      run 2849: script="chunked, extensions and trailers" method=GET body=0 keepAlive=false writeChunk=64 gap=1000 drainBytes=4 drainMs=10 maxBody=3 maxInterim=1 deadline=100
+  7 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine fail deadline timeout [response received], head 200, body 0
+      run 3880: script="chunked, extensions and trailers" method=POST body=100 keepAlive=false writeChunk=64 gap=1000 drainBytes=0 drainMs=10 maxBody=3 maxInterim=10 deadline=100
+      run 8143: script="chunked, extensions and trailers" method=POST body=0 keepAlive=true writeChunk=64 gap=50 drainBytes=64 drainMs=50 maxBody=3 maxInterim=10 deadline=2000
+  11 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=false, head 200, body 0
+      run 1643: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=65536 gap=200 drainBytes=4 drainMs=10 maxBody=3 maxInterim=1 deadline=500
+      run 1779: script="chunked, extensions and trailers" method=GET body=0 keepAlive=false writeChunk=64 gap=1000 drainBytes=64 drainMs=10 maxBody=3 maxInterim=10 deadline=500
+  3 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=true, head 200, body 0
+      run 2613: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=65536 gap=200 drainBytes=64 drainMs=10 maxBody=3 maxInterim=0 deadline=2000
+      run 10524: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=65536 gap=1000 drainBytes=64 drainMs=10 maxBody=3 maxInterim=0 deadline=500
+  1 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 0
+      run 7728: script="chunked, extensions and trailers" method=POST body=100 keepAlive=false writeChunk=16 gap=50 drainBytes=64 drainMs=50 maxBody=3 maxInterim=0 deadline=2000
+  2 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 1
+      run 5291: script="chunked, extensions and trailers" method=POST body=10 keepAlive=true writeChunk=65536 gap=1000 drainBytes=0 drainMs=50 maxBody=3 maxInterim=10 deadline=2000
+      run 17990: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=64 gap=50 drainBytes=4 drainMs=10 maxBody=3 maxInterim=10 deadline=500
+  1 [body limit] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 3
+      run 12885: script="chunked, extensions and trailers" method=POST body=100 keepAlive=true writeChunk=64 gap=50 drainBytes=4 drainMs=50 maxBody=3 maxInterim=10 deadline=500
+  1 [body limit] chunked, extensions and trailers: core finish reusable=false, head 200, body 0 / machine no end, head 200, body 0
+      run 5582: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=64 gap=200 drainBytes=64 drainMs=50 maxBody=3 maxInterim=1 deadline=100
+  5 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine fail deadline timeout [response received], head 200, body 0
+      run 1809: script="chunked" method=GET body=0 keepAlive=false writeChunk=64 gap=1000 drainBytes=0 drainMs=50 maxBody=3 maxInterim=1 deadline=500
+      run 3787: script="chunked" method=GET body=0 keepAlive=true writeChunk=65536 gap=50 drainBytes=0 drainMs=50 maxBody=3 maxInterim=10 deadline=2000
+  1 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine fail read timeout [response received], head 200, body 0
+      run 5481: script="chunked" method=GET body=0 keepAlive=true writeChunk=64 gap=50 drainBytes=64 drainMs=50 maxBody=3 maxInterim=0 deadline=2000
+  15 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=false, head 200, body 0
+      run 2646: script="chunked" method=GET body=0 keepAlive=false writeChunk=64 gap=1000 drainBytes=64 drainMs=50 maxBody=3 maxInterim=1 deadline=500
+      run 4348: script="chunked" method=GET body=0 keepAlive=true writeChunk=65536 gap=200 drainBytes=4 drainMs=10 maxBody=3 maxInterim=10 deadline=100
+  1 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=false, head 200, body 2
+      run 4561: script="chunked" method=POST body=100 keepAlive=false writeChunk=65536 gap=1000 drainBytes=64 drainMs=10 maxBody=3 maxInterim=1 deadline=100
+  2 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=true, head 200, body 0
+      run 5170: script="chunked" method=GET body=0 keepAlive=true writeChunk=16 gap=200 drainBytes=64 drainMs=10 maxBody=3 maxInterim=0 deadline=500
+      run 17091: script="chunked" method=GET body=0 keepAlive=true writeChunk=64 gap=1000 drainBytes=64 drainMs=10 maxBody=3 maxInterim=10 deadline=500
+  1 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 0
+      run 9433: script="chunked" method=GET body=0 keepAlive=true writeChunk=65536 gap=1000 drainBytes=0 drainMs=50 maxBody=3 maxInterim=1 deadline=100
+  1 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 1
+      run 3536: script="chunked" method=GET body=0 keepAlive=true writeChunk=16 gap=50 drainBytes=0 drainMs=50 maxBody=3 maxInterim=1 deadline=500
+  1 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 2
+      run 7666: script="chunked" method=POST body=300 keepAlive=true writeChunk=65536 gap=50 drainBytes=64 drainMs=10 maxBody=3 maxInterim=0 deadline=2000
+  3 [body limit] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 3
+      run 1878: script="chunked" method=GET body=0 keepAlive=true writeChunk=65536 gap=200 drainBytes=4 drainMs=50 maxBody=3 maxInterim=0 deadline=100
+      run 4881: script="chunked" method=POST body=10 keepAlive=true writeChunk=65536 gap=200 drainBytes=64 drainMs=50 maxBody=3 maxInterim=0 deadline=500
+  14 [body limit] close-delimited: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=false, head 200, body 0
+      run 1220: script="close-delimited" method=GET body=0 keepAlive=true writeChunk=16 gap=200 drainBytes=0 drainMs=50 maxBody=3 maxInterim=0 deadline=2000
+      run 1539: script="close-delimited" method=POST body=10 keepAlive=false writeChunk=65536 gap=50 drainBytes=64 drainMs=50 maxBody=3 maxInterim=10 deadline=500
+  39 [body limit] close-delimited: core fail body size limit exceeded [response received], head 200, body 3 / machine fail body size limit exceeded [response received], head 200, body 0
+      run 257: script="close-delimited" method=GET body=0 keepAlive=true writeChunk=64 gap=50 drainBytes=4 drainMs=10 maxBody=3 maxInterim=10 deadline=500
+      run 459: script="close-delimited" method=POST body=10 keepAlive=false writeChunk=65536 gap=200 drainBytes=4 drainMs=10 maxBody=3 maxInterim=1 deadline=500
+  1 [body limit] close-delimited: core fail body size limit exceeded [response received], head 200, body 3 / machine fail body size limit exceeded [response received], head 200, body 1
+      run 12740: script="close-delimited" method=GET body=0 keepAlive=true writeChunk=65536 gap=1000 drainBytes=0 drainMs=50 maxBody=3 maxInterim=0 deadline=2000
+  2 [body limit] close-delimited: core fail body size limit exceeded [response received], head 200, body 3 / machine fail body size limit exceeded [response received], head 200, body 2
+      run 5748: script="close-delimited" method=GET body=0 keepAlive=false writeChunk=64 gap=200 drainBytes=64 drainMs=10 maxBody=3 maxInterim=0 deadline=2000
+      run 18471: script="close-delimited" method=POST body=10 keepAlive=false writeChunk=65536 gap=50 drainBytes=4 drainMs=10 maxBody=3 maxInterim=0 deadline=100
+  3 [chunk data delivered before its terminator] chunked, extensions and trailers: core fail body size limit exceeded [response received], head 200, body 0 / machine no end, head 200, body 0
+      run 5053: script="chunked, extensions and trailers" method=POST body=0 keepAlive=true writeChunk=64 gap=1000 drainBytes=4 drainMs=50 maxBody=3 maxInterim=10 deadline=100
+      run 15727: script="chunked, extensions and trailers" method=POST body=0 keepAlive=true writeChunk=65536 gap=1000 drainBytes=64 drainMs=10 maxBody=3 maxInterim=0 deadline=2000
+  1 [chunk data delivered before its terminator] chunked, extensions and trailers: core fail the connection closed before a complete response [response received], head 200, body 5 / machine fail the connection closed before a complete response [response received], head 200, body 0
+      run 16339: script="chunked, extensions and trailers" method=GET body=0 keepAlive=false writeChunk=64 gap=200 drainBytes=0 drainMs=50 maxBody=100 maxInterim=10 deadline=500
+  2 [chunk data delivered before its terminator] chunked, extensions and trailers: core finish reusable=false, head 200, body 5 / machine finish reusable=false, head 200, body 0
+      run 12999: script="chunked, extensions and trailers" method=GET body=0 keepAlive=false writeChunk=16 gap=50 drainBytes=64 drainMs=10 maxBody=100 maxInterim=0 deadline=100
+      run 18152: script="chunked, extensions and trailers" method=GET body=0 keepAlive=true writeChunk=65536 gap=200 drainBytes=4 drainMs=10 maxBody=100 maxInterim=10 deadline=2000
+  1 [chunk data delivered before its terminator] chunked: core fail body size limit exceeded [response received], head 200, body 0 / machine finish reusable=false, head 200, body 0
+      run 17248: script="chunked" method=POST body=300 keepAlive=false writeChunk=64 gap=1000 drainBytes=4 drainMs=50 maxBody=3 maxInterim=10 deadline=100
+  1 [chunk data delivered before its terminator] chunked: core fail read timeout [response received], head 200, body 11 / machine fail read timeout [response received], head 200, body 5
+      run 14376: script="chunked" method=GET body=0 keepAlive=true writeChunk=65536 gap=200 drainBytes=64 drainMs=10 maxBody=1024 maxInterim=10 deadline=500
+  1 [credit] chunked: core fail deadline timeout [response received], head 200, body 10 / machine fail deadline timeout [response received], head 200, body 5
+      run 14317: script="chunked" method=GET body=0 keepAlive=false writeChunk=16 gap=50 drainBytes=64 drainMs=10 maxBody=100 maxInterim=1 deadline=100
+  1 [credit] chunked: core finish reusable=false, head 200, body 10 / machine finish reusable=false, head 200, body 5
+      run 1627: script="chunked" method=POST body=10 keepAlive=true writeChunk=64 gap=50 drainBytes=4 drainMs=10 maxBody=1024 maxInterim=1 deadline=100
+  3 [credit] chunked: core finish reusable=false, head 200, body 11 / machine fail deadline timeout [response received], head 200, body 5
+      run 9180: script="chunked" method=POST body=0 keepAlive=false writeChunk=65536 gap=1000 drainBytes=64 drainMs=10 maxBody=1024 maxInterim=10 deadline=100
+      run 9851: script="chunked" method=POST body=10 keepAlive=false writeChunk=65536 gap=50 drainBytes=64 drainMs=50 maxBody=1024 maxInterim=10 deadline=500
+  12 [credit] chunked: core finish reusable=false, head 200, body 11 / machine finish reusable=false, head 200, body 5
+      run 1175: script="chunked" method=GET body=0 keepAlive=false writeChunk=65536 gap=50 drainBytes=64 drainMs=10 maxBody=1024 maxInterim=1 deadline=100
+      run 2705: script="chunked" method=POST body=0 keepAlive=false writeChunk=16 gap=1000 drainBytes=64 drainMs=50 maxBody=100 maxInterim=1 deadline=2000
+  1 [credit] chunked: core finish reusable=false, head 200, body 7 / machine finish reusable=false, head 200, body 5
+      run 18937: script="chunked" method=GET body=0 keepAlive=false writeChunk=16 gap=50 drainBytes=4 drainMs=10 maxBody=100 maxInterim=0 deadline=500
+  3 [credit] chunked: core finish reusable=false, head 200, body 8 / machine finish reusable=false, head 200, body 5
+      run 2284: script="chunked" method=GET body=0 keepAlive=false writeChunk=65536 gap=200 drainBytes=64 drainMs=50 maxBody=100 maxInterim=1 deadline=500
+      run 4454: script="chunked" method=GET body=0 keepAlive=false writeChunk=65536 gap=200 drainBytes=4 drainMs=10 maxBody=100 maxInterim=10 deadline=2000
+  1 [credit] chunked: core finish reusable=false, head 200, body 9 / machine finish reusable=false, head 200, body 5
+      run 19888: script="chunked" method=GET body=0 keepAlive=true writeChunk=64 gap=1000 drainBytes=4 drainMs=50 maxBody=1024 maxInterim=1 deadline=100
+  2 [credit] chunked: core finish reusable=true, head 200, body 11 / machine fail deadline timeout [response received], head 200, body 5
+      run 8050: script="chunked" method=POST body=0 keepAlive=true writeChunk=64 gap=50 drainBytes=0 drainMs=10 maxBody=1024 maxInterim=0 deadline=2000
+      run 12850: script="chunked" method=POST body=100 keepAlive=true writeChunk=65536 gap=1000 drainBytes=0 drainMs=10 maxBody=100 maxInterim=10 deadline=500
+  10 [credit] chunked: core finish reusable=true, head 200, body 11 / machine finish reusable=false, head 200, body 5
+      run 2147: script="chunked" method=GET body=0 keepAlive=true writeChunk=64 gap=50 drainBytes=4 drainMs=50 maxBody=1024 maxInterim=1 deadline=500
+      run 3600: script="chunked" method=GET body=0 keepAlive=true writeChunk=65536 gap=1000 drainBytes=4 drainMs=10 maxBody=1024 maxInterim=0 deadline=2000
+  3 [credit] chunked: core finish reusable=true, head 200, body 11 / machine finish reusable=true, head 200, body 5
+      run 5521: script="chunked" method=POST body=100 keepAlive=true writeChunk=64 gap=200 drainBytes=64 drainMs=50 maxBody=1024 maxInterim=10 deadline=100
+      run 9940: script="chunked" method=POST body=0 keepAlive=true writeChunk=64 gap=200 drainBytes=64 drainMs=50 maxBody=1024 maxInterim=10 deadline=500
+exit status 0, wall 2608 ms

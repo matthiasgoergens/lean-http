@@ -1,0 +1,11 @@
+$ net-client call POST http://127.0.0.1:18092/close-after-idle?ms=200 body=5 repeat=2 pause=500 idlecheck=off
+call 0 ok status=200 bytes=2 ms=766.824 rounds=1 lookups=0 address=127.0.0.1:18092 seed=9396962169216864272 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18092/close-after-idle?ms=200 tls=none body_start="ok"
+call 1 error delivery=maybe delivered ms=0.760 rounds=0 lookups=0 seed=6884218909967438769 reused=true redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.delivered status=none cause="the connection closed before a complete response" detail=""
+summary calls n=2 min=0.760 p50=766.824 p90=766.824 max=766.824 ms ok=1
+summary later calls n=1 min=0.760 p50=0.760 p90=0.760 max=0.760 ms
+pool idle=0 checked_out=0 allocated=1
+trace call 0 ok steps=1
+trace call 1 ok steps=1
+fds_after_calls=11
+main returning at ms=1268.456
+exit status=0 wall_ms=1288 exit_after_main_ms=20

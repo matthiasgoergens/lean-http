@@ -1,0 +1,165 @@
+HEAD 3d6e652
+### none
+loadavg 312.63 344.19 375.07 310/18457 1601549
+Build completed successfully (61 jobs).
+207 checks, 0 failing
+loadavg 327.58 343.12 373.35 230/18950 1662963
+Build completed successfully (59 jobs).
+### 2026-11-02T11:04:29Z 7.0.0-38-generic; syn_retries=2; uid=0
+### 172 passed, 0 failed, 0 known limitations, 0 skipped
+planted exit-delay in Tests/Net.lean
+### exit-delay
+loadavg 389.91 356.04 373.18 327/19713 1808475
+Build completed successfully (59 jobs).
+### 2026-11-02T11:07:17Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL get: process took 5420 ms to exit after main returned
+FAIL post: process took 5206 ms to exit after main returned
+### 4 passed, 2 failed, 0 known limitations, 0 skipped
+planted timer-early-unfixed in LeanHttp/Wait.lean
+planted timer-early-unfixed in LeanHttp/Cancel.lean
+### timer-early-unfixed
+loadavg 443.33 375.01 378.48 402/19603 1876229
+Build completed successfully (61 jobs).
+FAIL awaitFirst times out no earlier than its time, whatever the timer: after 3123 ms
+FAIL Cancel.race times out no earlier than its time, whatever the timer: after 3123 ms
+FAIL a task that finishes after an early timer fired still wins awaitFirst
+FAIL and Cancel.race
+FAIL and so does a cancellation
+207 checks, 5 failing
+loadavg 440.09 386.84 382.35 418/20563 1924803
+Build completed successfully (59 jobs).
+### 2026-11-02T11:09:04Z 7.0.0-38-generic; syn_retries=2; uid=0
+SKIP timers: control: no timer of the client's waits fired early in this run (12 of 40 bare timers did), so the checks below had nothing to catch
+FAIL timers: no wait through awaitFirst ends before its time (no match for: ^timers awaitFirst waits=40 early=0 )
+FAIL timers: no wait through race ends before its time (no match for: ^timers race waits=40 early=0 )
+### 2 passed, 2 failed, 0 known limitations, 1 skipped
+planted deadline-late in LeanHttp/Client.lean
+### deadline-late
+loadavg 514.59 407.90 389.38 752/21227 1962498
+Build completed successfully (59 jobs).
+### 2026-11-02T11:10:44Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL deadline-trickle: at the 2 s deadline: 6160 ms, expected 1990-5000
+FAIL deadline-interim: interim responses every 300 ms, never a final one, end at the deadline (no match for: call 0 error delivery=maybe delivered .*cause="deadline timeout")
+FAIL connect-deadline: at the 1.5 s deadline: 6001 ms, expected 1490-4500
+FAIL stream-deadline: at the 3 s deadline: 7001 ms, expected 2990-6000
+FAIL upload-exit: at the 3 s deadline, not at the producer's 30 s: 7231 ms, expected 2990-6000
+FAIL tls-hang-deadline: at the 3 s deadline, not at the 10 s handshake timeout: 7053 ms, expected 2990-6000
+FAIL tls-stream-deadline: at the 3 s deadline: 7011 ms, expected 2990-6000
+### 96 passed, 7 failed, 0 known limitations, 0 skipped
+planted gap-late in LeanHttp/Client.lean
+### gap-late
+loadavg 458.19 440.30 406.52 387/20951 2134257
+Build completed successfully (59 jobs).
+### 2026-11-02T11:13:16Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL read-gap: after the 1 s gap: 5716 ms, expected 990-4000
+FAIL read-gap-retried: three 1 s gaps and two backoffs: 15291 ms, expected 2990-6300
+### 5 passed, 2 failed, 0 known limitations, 0 skipped
+planted handshake-late in LeanHttp/Client.lean
+### handshake-late
+loadavg 474.78 445.46 410.59 849/20254 2206486
+Build completed successfully (59 jobs).
+### 2026-11-02T11:14:17Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL tls-hang: two 500 ms handshakes and one backoff: 9470 ms, expected 1010-4015
+### 17 passed, 1 failed, 0 known limitations, 0 skipped
+planted handshake-early in LeanHttp/Client.lean
+### handshake-early
+loadavg 449.77 444.62 412.38 360/20805 2252899
+Build completed successfully (59 jobs).
+### 2026-11-02T11:15:23Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL tls-hang: two 500 ms handshakes and one backoff: 615 ms, expected 1010-4015
+### 17 passed, 1 failed, 0 known limitations, 0 skipped
+planted connect-late in LeanHttp/Connect.lean
+### connect-late
+loadavg 743.62 520.02 439.54 1228/21399 2304283
+Build completed successfully (59 jobs).
+### 2026-11-02T11:16:35Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL blackhole-timeout: two 1 s attempts and one backoff: 10057 ms, expected 2010-5015
+FAIL blackhole-timeout: descriptors after the call: 12, 9 s later: 11
+### 3 passed, 2 failed, 0 known limitations, 0 skipped
+planted retry-wait-double in LeanHttp/Client.lean
+### retry-wait-double
+loadavg 867.08 662.23 500.87 457/20481 2390300
+Build completed successfully (59 jobs).
+### 2026-11-02T11:18:08Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL refused-backoff: at least the 3670 + 3728 ms of backoff for seed 3: 14874 ms, expected 7398-10398
+FAIL refused-backoff: retry gaps outside [delay, delay + 3000]: trace call 0 retry delays=[3670, 3728] gaps=[7377, 7494]
+FAIL refused-backoff: the client did something the planner did not say: trace call 0 FAIL event 3 (wait until=634158524): the client waited until 634158524, the planner's delay ends at 634154854
+FAIL retry-503: after the 4 s it asked for: 8224 ms, expected 4000-7000
+FAIL retry-429-date: 4 s after the response's Date: 8048 ms, expected 3990-7000
+FAIL retry-503-backoff: retry gaps outside [delay, delay + 3000]: trace call 0 retry delays=[3670, 3728] gaps=[7567, 7493]
+FAIL retry-503: the client did something the planner did not say: trace call 0 FAIL event 3 (wait until=634175035): the client waited until 634175035, the planner's delay ends at 634171035
+FAIL retry-429-date: the client did something the planner did not say: trace call 0 FAIL event 3 (wait until=634183463): the client waited until 634183463, the planner's delay ends at 634179463
+FAIL retry-503-backoff: the client did something the planner did not say: trace call 0 FAIL event 3 (wait until=634191964): the client waited until 634191964, the planner's delay ends at 634188294
+FAIL traces: calls whose steps the planner does not replay, in: refused-backoff.txt retry-429-date.txt retry-503-backoff.txt retry-503.txt summary.txt 
+### 26 passed, 10 failed, 0 known limitations, 0 skipped
+planted retry-wait-none in LeanHttp/Client.lean
+### retry-wait-none
+loadavg 554.12 614.34 501.08 367/20407 2494963
+Build completed successfully (59 jobs).
+### 2026-11-02T11:19:58Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL refused-backoff: at least the 3670 + 3728 ms of backoff for seed 3: 4 ms, expected 7398-10398
+FAIL refused-backoff: retry gaps outside [delay, delay + 3000]: trace call 0 retry delays=[3670, 3728] gaps=[0, 0]
+FAIL refused-backoff: the client did something the planner did not say: trace call 0 FAIL event 4 (send GET http://127.0.0.1:18085/ to http://127.0.0.1:18085 body=0 at=634261865): the retry went out at 634261865, before its delay ended at 634265535
+FAIL retry-503: after the 4 s it asked for: 4 ms, expected 4000-7000
+FAIL retry-429-date: 4 s after the response's Date: 6 ms, expected 3990-7000
+FAIL retry-503-backoff: retry gaps outside [delay, delay + 3000]: trace call 0 retry delays=[3670, 3728] gaps=[0, 0]
+FAIL retry-503: the client did something the planner did not say: trace call 0 FAIL event 4 (send GET http://127.0.0.1:18115/flaky?key=a&after=4 to http://127.0.0.1:18115 body=0 at=634262468): the retry went out at 634262468, before its delay ended at 634266468
+FAIL retry-429-date: the client did something the planner did not say: trace call 0 FAIL event 4 (send GET http://127.0.0.1:18115/flaky?key=c&code=429&after=date4 to http://127.0.0.1:18115 body=0 at=634263086): the retry went out at 634263086, before its delay ended at 634267086
+FAIL retry-503-backoff: the client did something the planner did not say: trace call 0 FAIL event 4 (send GET http://127.0.0.1:18115/flaky?key=e&n=2 to http://127.0.0.1:18115 body=0 at=634263938): the retry went out at 634263938, before its delay ended at 634267608
+FAIL traces: calls whose steps the planner does not replay, in: refused-backoff.txt retry-429-date.txt retry-503-backoff.txt retry-503.txt summary.txt 
+### 26 passed, 10 failed, 0 known limitations, 0 skipped
+planted notime-ignored in LeanHttp/Call.lean
+### notime-ignored
+loadavg 597.08 608.68 506.98 737/20549 2556986
+Build completed successfully (59 jobs).
+### 2026-11-02T11:21:04Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL refused-deadline: a retry whose backoff would reach the deadline is not made (no match for: call 0 error delivery=not sent .*rounds=1 .*retries=0 not_retried=LeanHttp.Call.NoRetry.noTime .*could not connect)
+FAIL refused-deadline: the call fails at once, not at the deadline: 5152 ms, expected 0-3000
+### 10 passed, 2 failed, 0 known limitations, 0 skipped
+planted cap-one-less in LeanHttp/Client.lean
+### cap-one-less
+loadavg 544.19 592.55 508.89 334/20859 2613467
+Build completed successfully (59 jobs).
+### 2026-11-02T11:22:24Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL concurrency: eight calls at once: the server had all eight requests of a round before answering any: 4 at most, expected 8
+FAIL concurrency: the first round opens eight connections and keeps four; the second reuses those and opens four (no match for: ^pool idle=4 checked_out=0 allocated=12$)
+FAIL concurrency: twelve connections: 4, expected 12
+FAIL concurrency: not four calls reused
+FAIL concurrency-cap: at most two calls at once, and two at once: 1 at most, expected 2
+FAIL concurrency-cap: two connections: 1, expected 2
+### 5 passed, 6 failed, 0 known limitations, 0 skipped
+planted drain-longer in LeanHttp/Client.lean
+### drain-longer
+loadavg 485.66 557.02 504.19 412/20781 2717616
+Build completed successfully (59 jobs).
+### 2026-11-02T11:23:33Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL stream-drain-late: a rest that comes too late: the connection is closed (no match for: ^after stream 0: pool idle=0 checked_out=0 allocated=1$)
+FAIL stream-drain-late: and the next call opens another (no match for: stream 1 ok status=200 read=3 .*conn=\(some 1\) reused=false )
+FAIL stream-drain-late: leaving waited no more than the drain limit, from the callback's start, not for the rest: 8055 ms, expected 0-3100
+FAIL stream-unread-big: process took 4053 ms to exit after main returned
+### 48 passed, 4 failed, 0 known limitations, 0 skipped
+planted drain-zero in LeanHttp/Client.lean
+### drain-zero
+loadavg 668.82 592.06 520.70 738/20064 2801405
+Build completed successfully (59 jobs).
+### 2026-11-02T11:25:04Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL stream-drain: the rest is drained and the connection kept (no match for: ^after stream 0: pool idle=1 checked_out=0 allocated=1$)
+FAIL stream-drain: and reused (no match for: stream 1 ok status=200 read=3 .*conn=\(some 0\) reused=true )
+FAIL stream-throw: after the connection was drained and kept (no match for: ^after stream 0: pool idle=1 checked_out=0 allocated=1$)
+### 49 passed, 3 failed, 0 known limitations, 0 skipped
+planted race-waits-read in LeanHttp/Body.lean
+### race-waits-read
+loadavg 577.99 577.07 519.83 335/19406 2858228
+Build completed successfully (59 jobs).
+### 2026-11-02T11:26:08Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL stream-race: from the callback's start, without waiting for the next byte of the body: 8001 ms, expected 90-3100
+FAIL tls-stream-race: from the callback's start, without waiting for the next byte of the body: 8004 ms, expected 90-3100
+### 71 passed, 2 failed, 0 known limitations, 0 skipped
+planted helper-missing in tests/net/run.sh
+### helper-missing
+loadavg 568.08 579.51 527.35 346/19277 2944164
+Build completed successfully (59 jobs).
+### 2026-11-02T11:27:58Z 7.0.0-38-generic; syn_retries=2; uid=0
+FAIL run: the suite called a command that does not exist: tests/net/run.sh: line 980: sincex: command not found
+### 51 passed, 1 failed, 0 known limitations, 0 skipped
+done

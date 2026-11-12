@@ -1,0 +1,13 @@
+      30.6 listening tls=18156 plain=18157 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
+     117.7 conn1 accepted from ('127.0.0.1', 56292)
+     120.0 sni=None
+     140.1 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+     140.4 conn1 GET /hello {'host': '127.0.0.1:18156', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    1145.0 conn1 idle for 1000 ms
+    1145.1 conn1 sending close_notify
+    2150.0 conn1 unwrap: TimeoutError('The read operation timed out')
+    3146.2 conn2 accepted from ('127.0.0.1', 56300)
+    3148.1 sni=None
+    3152.1 conn2 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
+    3153.0 conn2 GET /hello {'host': '127.0.0.1:18156', 'connection': 'keep-alive'} body=0B version=TLSv1.3
+    3155.1 conn2 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

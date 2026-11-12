@@ -1,0 +1,63 @@
+$ fuzz_seeds
+wrote 23 hand-written seeds and 33 httparse samples to /tmp/tmp.2fxbDYd0iK
+OK   /tmp/tmp.2fxbDYd0iK/hand-101: #[LeanHttpFuzz.Ev.head 101 true, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-204-content-length: #[LeanHttpFuzz.Ev.head 204 true, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=0B#7 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-304-content-length: #[LeanHttpFuzz.Ev.head 304 true, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=0B#7 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-announced-above-2-62: #[LeanHttpFuzz.Ev.head 200 true] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-announced-too-large: #[LeanHttpFuzz.Ev.head 200 true] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-chunked-bytewise: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 10, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=10B#11757216517398885215 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-chunked-ext-trailers: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 11, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=11B#17340909544993222674 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-close-delimited: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.close, LeanHttpFuzz.Ev.data 3, LeanHttpFuzz.Ev.endBody] body=3B#767932386129847013 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-connection-close: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.close, LeanHttpFuzz.Ev.data 3, LeanHttpFuzz.Ev.endBody] body=3B#2822593465466659446 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-content-length: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 5, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=5B#1549438516948791737 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-content-length-26: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 26, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=26B#4380273740728623706 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-empty-eof: #[LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-eof-in-chunk: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 3, LeanHttpFuzz.Ev.failed "Connection closed",
+  LeanHttpFuzz.Ev.close] body=3B#18027138610954565934 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-gzip-chunked: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 5, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=5B#1549438516948791737 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-head-chunked: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=0B#7 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-head-content-length: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=0B#7 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-http10-close-delimited: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.close, LeanHttpFuzz.Ev.data 3, LeanHttpFuzz.Ev.endBody] body=3B#13969375688341002755 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/hand-http10-keep-alive: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 2, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=2B#10689072701668193774 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-interim-then-final: #[LeanHttpFuzz.Ev.head 100 false, LeanHttpFuzz.Ev.head 103 false, LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 2,
+  LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=2B#10689072701668193774 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-options-ows: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 3, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=3B#767932386129847013 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-post-417: #[LeanHttpFuzz.Ev.head 417 true, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=0B#7 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-post-chunked: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 2, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=2B#10689072701668193774 reuse=true leftover=0
+OK   /tmp/tmp.2fxbDYd0iK/hand-stray-bytes-after: #[LeanHttpFuzz.Ev.head 200 true, LeanHttpFuzz.Ev.data 2, LeanHttpFuzz.Ev.endBody, LeanHttpFuzz.Ev.next] body=2B#10689072701668193774 reuse=true leftover=24
+OK   /tmp/tmp.2fxbDYd0iK/httparse-00539ceddba008ef9767f1d77c7dfde61168f068: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-050f3c9158d41fd99956f8fda78c8364dcef272f: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-05dba45d42bd9351161374ee2be54f36a29174b3: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-08dacc71ae854a0bf7400629387a3469320457b7: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-0e12248d1afe79e06d91a059cf67a4419cc861ad: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-105e7f3e37b07d10b31748987c10ef3ed535a9b3: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-107397486877383a9d3cd5e121531b845639937c: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-128bb5d3b47352c06632b420bfdef79a6d7a128c: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-13d06c120b3149bdfc0e4800db73545bea65abf3: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-13f311dcb5f2db18944143875d592a10f244797b: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-166338b187d59dbed65a7811dbd58fd00bb05552: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-1808f8e0038611c5eb7c0c29cace6fe7ecabe965: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-182d5def736d12e7507529edaf001aaf150ecae2: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-19ba8347177e2e79b7f5b20b792b62274fd6c486: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-19ea31e159b480211f63fe4c6c29ac30ba88a2fd: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-1a1ae7744a96a0b2fbec0e9310d5fddb9c78b313: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-1a57f13a5a7aa37553ed4e603e724b0a2d2dab52: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-1ba3338bd0d397031ae85dc0347d63c94b00e5df: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-29e6eae8094a4aad725282b8f121d6a060dcc6ec: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-2a9a9a70461d9611143e4100ae9ca9de72f09d11: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-2d70bd46e08eb19843c1ef091ba43ce1e74f8c28: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-44a5d6a04866797f18f359d17d6917f75d66df02: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-50b124ab56490a6d9df7a18ea535254a523883d2: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-5379a4ecd23f8bc45ad7ead1ce862a52a58f1bd4: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-581ad15579bfedff31349f9dff953a23493bcf0a: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-5872dd47a45d80469bcff5e77d2c1025b7b36ff3: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-5be7e3536ff0508d44f8ad8401d98c4cb101943a: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-80191435889a3d4b4849683e7a96b255df8fa472: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-b12b280751605f0775cf9dc431918cacedc01b54: #[LeanHttpFuzz.Ev.failed "Bad message", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-b60263b8230cbb9db70b0c8e5a5028488e7f5d5a: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-b951c0ccbd2b35943c112743db8c4d242041236d: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-c9acf39235d31af3187bdc01eac0ee3a5e2f2bb9: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+OK   /tmp/tmp.2fxbDYd0iK/httparse-d411a0274ca79e96549871f1b72c682baedd381a: #[LeanHttpFuzz.Ev.failed "Connection closed", LeanHttpFuzz.Ev.close] body=0B#7 reuse=false
+56 inputs, 0 failing
+56 seeds
+exit status 0, wall 285 ms

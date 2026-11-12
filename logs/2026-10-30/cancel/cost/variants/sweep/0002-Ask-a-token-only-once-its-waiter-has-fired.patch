@@ -1,0 +1,181 @@
+From 9145f02ce3752f818b810b502849c025811a0e3b Mon Sep 17 00:00:00 2001
+From: Matthias Goergens <matthias.goergens@gmail.com>
+Date: Mon, 2 Nov 2026 16:47:20 +0800
+Subject: [PATCH 2/3] Ask a token only once its waiter has fired
+
+The waiter a call registers with each of its tokens is resolved inside the
+token's cancel, so it records that a token fired before cancel returns; a
+check asks the tokens for the reason only then, and otherwise reads the call's
+state and the client's flag, with no lock taken.
+---
+ LeanHttp/Cancel.lean | 50 ++++++++++++++++++++++++++++++--------------
+ LeanHttp/Client.lean |  2 +-
+ Tests/Unit.lean      | 10 ++++-----
+ 3 files changed, 40 insertions(+), 22 deletions(-)
+
+diff --git a/LeanHttp/Cancel.lean b/LeanHttp/Cancel.lean
+index a8cc961..6856655 100644
+--- a/LeanHttp/Cancel.lean
++++ b/LeanHttp/Cancel.lean
+@@ -44,6 +44,19 @@ set_option linter.all true
+ 
+ open Std.Async
+ 
++/--
++Where a call's cancellation stands.
++-/
++inductive Phase where
++  /-- The call goes on, and no token it watches has been cancelled. -/
++  | going
++  /-- A token the call watches has been cancelled; the reason is the token's. -/
++  | tokenFired
++  /-- `cancel` fired the call, for this reason. -/
++  | fired (reason : Std.CancellationReason)
++  /-- The call has ended. -/
++  | ended
++
+ /--
+ The cancellation of one call.
+ -/
+@@ -54,11 +67,11 @@ structure Cancel where
+   tokens : Array Std.CancellationToken
+ 
+   /--
+-  `none` while the call goes on (a token's cancellation, whose reason the token keeps, leaves it so),
+-  `some (some reason)` once `cancel` has fired it, `some none` once it has ended; only the first
+-  change counts.
++  Where the call's cancellation stands: a token's cancellation sets it, inside the token's `cancel`,
++  so a check made after `cancel` returned sees it; `cancel` with a reason overrides a token's;
++  the end counts only if nothing fired the call before.
+   -/
+-  state : IO.Ref (Option (Option Std.CancellationReason))
++  state : IO.Ref Phase
+ 
+   /--
+   The registration with each watched token: the waiter the token resolves when it is cancelled.
+@@ -93,13 +106,13 @@ A token's waiter is resolved inside the token's `cancel`, which holds the token'
+ the reason only afterwards, so what runs from there must not ask the token anything: neither this
+ nor what it runs does.  What it wakes asks the tokens later, from tasks of their own.
+ -/
+-def fire (state : IO.Ref (Option (Option Std.CancellationReason)))
++def fire (state : IO.Ref Phase)
+     (bell : IO.Ref (Option (IO.Promise Unit))) (hooks : IO.Ref (Array (BaseIO Unit)))
+     (reason : Option Std.CancellationReason) : BaseIO Unit := do
+   let go ← state.modifyGet fun
+-    | none => (true, reason.map some)
+-    | other@(some (some _)) => (true, other)
+-    | other => (false, other)
++    | .going | .tokenFired => (true, match reason with | some r => .fired r | none => .tokenFired)
++    | other@(.fired _) => (true, other)
++    | .ended => (false, .ended)
+   if go then
+     if let some b ← bell.get then b.resolve ()
+     for hook in ← hooks.get do hook
+@@ -111,12 +124,12 @@ but not in `watched` must be watched by other means, which fire the call (`cance
+ so for its own token, which every call shares, by keeping a table of its calls in flight.  Without a
+ token to watch, this makes no promise and registers nothing.
+ -/
+-def watch (tokens watched : Array Std.CancellationToken)
++def watch (tokens : Array Std.CancellationToken)
+     (stop : IO.Ref (Option Std.CancellationReason)) : BaseIO Cancel := do
+-  let state ← IO.mkRef none
++  let state ← IO.mkRef .going
+   let bell ← IO.mkRef none
+   let hooks ← IO.mkRef #[]
+-  let waiters ← watched.mapM fun token => do
++  let waiters ← tokens.mapM fun token => do
+     -- A waiter of the token's selector, as `Selectable.one` would make it (`Waiter.mk` is private
+     -- to `Std.Async.Select`, the same in v4.34.1 and v4.35.0).  `Selectable.one` itself hands a win,
+     -- and the end of the call, on through tasks of the thread pool, which made every call that was
+@@ -144,7 +157,7 @@ last bell and the hooks, with whatever they hold, are dropped.
+ -/
+ def finish (c : Cancel) : BaseIO Unit := do
+   c.state.modify fun
+-    | none => some none
++    | .going | .tokenFired => .ended
+     | other => other
+   -- Finish each waiter, so that its token drops it (its selector's `unregisterFn` removes the
+   -- finished ones), and release what was chained on it.
+@@ -161,10 +174,15 @@ holds as soon as a token is cancelled (or the reason `cancel` gave).  Once the c
+ `none`, unless `cancel` fired it before.
+ -/
+ def reason? (c : Cancel) : BaseIO (Option Std.CancellationReason) := do
+-  if let some known ← c.state.get then return known
+-  for token in c.tokens do
+-    if let some reason ← token.getCancellationReason then return some reason
+-  c.stop.get
++  match ← c.state.get with
++  | .going => c.stop.get
++  | .fired reason => return some reason
++  | .ended => return none
++  | .tokenFired =>
++    -- Inside the token's `cancel` until it has recorded the reason: asking waits for that.
++    for token in c.tokens do
++      if let some reason ← token.getCancellationReason then return some reason
++    c.stop.get
+ 
+ /--
+ Runs `f` when the call is fired, in the thread that fires it (the one cancelling the token, inside
+diff --git a/LeanHttp/Client.lean b/LeanHttp/Client.lean
+index 1ca5db6..fddbfcf 100644
+--- a/LeanHttp/Client.lean
++++ b/LeanHttp/Client.lean
+@@ -1121,7 +1121,7 @@ private def run {α : Type} (client : Client) (req : Request RequestBody) (maxBo
+   let number ← client.calls.modifyGet fun n => (n, n + 1)
+   -- The caller's token first: a call it cancelled reports its reason, even if the client is shut
+   -- down afterwards.
+-  let watch ← Cancel.watch cancel.toArray cancel.toArray client.closing
++  let watch ← Cancel.watch cancel.toArray client.closing
+   track client number (some watch)
+   let spec : CallSpec := { client, req, xcfg, seed, started, deadline, number, cancel := watch }
+   spec.observe (.start config.policy req.line kind framing seed deadline xcfg.keepAlive)
+diff --git a/Tests/Unit.lean b/Tests/Unit.lean
+index 0ed56e1..07edb97 100644
+--- a/Tests/Unit.lean
++++ b/Tests/Unit.lean
+@@ -622,7 +622,7 @@ def cancelChecks : Checks Unit := do
+   -- A token cancelled before the watch starts is seen at once, and fires the call.
+   let early ← Std.CancellationToken.new
+   early.cancel .shutdown
+-  let c ← Cancel.watch #[early] #[early] (← IO.mkRef none)
++  let c ← Cancel.watch #[early] (← IO.mkRef none)
+   check "a token cancelled before the watch is seen at once" (reprStr (← c.reason?) == reprStr (some Std.CancellationReason.shutdown))
+   let ran ← IO.mkRef false
+   c.onCancel (ran.set true)
+@@ -630,7 +630,7 @@ def cancelChecks : Checks Unit := do
+   c.finish
+   -- A token cancelled during the call: the check asks the token, so it holds as cancel returns.
+   let token ← Std.CancellationToken.new
+-  let c ← Cancel.watch #[token] #[token] (← IO.mkRef none)
++  let c ← Cancel.watch #[token] (← IO.mkRef none)
+   check "an uncancelled call has no reason" (← c.reason?).isNone
+   token.cancel .cancel
+   check "a check right after cancel sees it" (← c.reason?).isSome
+@@ -643,7 +643,7 @@ def cancelChecks : Checks Unit := do
+   -- A wait that the timer ends: its bell, the last of the call, is released when the call ends
+   -- (what is chained on it then runs, with nothing), so an uncancelled call keeps nothing alive.
+   let quiet ← Std.CancellationToken.new
+-  let c ← Cancel.watch #[quiet] #[quiet] (← IO.mkRef none)
++  let c ← Cancel.watch #[quiet] (← IO.mkRef none)
+   let waited ← (c.race (#[] : Array (Task Unit)) 1).block
+   check "a wait with nothing to wait for ends at its time" (waited matches .timedOut)
+   let lastBell := ((← c.bell.get).map (·.result?)).getD (Task.pure none)
+@@ -657,13 +657,13 @@ def cancelChecks : Checks Unit := do
+   let shared ← Std.CancellationToken.new
+   let entries : BaseIO Nat := shared.state.atomically (m := BaseIO) do
+     return (← get).consumers.toArray.size
+-  let calls ← (List.range 5).mapM fun _ => do Cancel.watch #[shared] #[shared] (← IO.mkRef none)
++  let calls ← (List.range 5).mapM fun _ => do Cancel.watch #[shared] (← IO.mkRef none)
+   check "each call in flight is registered with its token" ((← entries) == 5)
+   for c in calls do c.finish
+   check "and a call that has ended is not" ((← entries) == 0)
+   -- A token cancelled while a wait is in progress ends it.
+   let later ← Std.CancellationToken.new
+-  let c ← Cancel.watch #[later] #[later] (← IO.mkRef none)
++  let c ← Cancel.watch #[later] (← IO.mkRef none)
+   let fired ← IO.mkRef false
+   c.onCancel (fired.set true)
+   let wait ← start (c.race (#[] : Array (Task Unit)) 10000)
+-- 
+2.53.0
+

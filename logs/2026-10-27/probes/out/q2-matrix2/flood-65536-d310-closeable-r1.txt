@@ -1,0 +1,6 @@
+### server=flood delay=310ms size=65536 | client variant=closeable arg=0ms hold=300ms n=1
+  [client] bg selector finished: closed
+  [client] loop ended: some "closed"
+  [client] main returning
+  exit=0 wall=308ms 
+  [server] listening 22802

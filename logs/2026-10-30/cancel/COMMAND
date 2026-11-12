@@ -1,0 +1,56 @@
+Runs behind cancelling a call and the lookups of a call (branch cancel), 2026-10-30, on the build
+host (shared; load average about 55 to 85 on 128 CPUs during the benchmarks), in localhost/b8perf-lean
+with v4.34.1 from b8perf-elan unless said otherwise, uv's CPython 3.14.8 for the servers.  From the
+laptop, in the worktree, with LEAN_HTTP_REMOTE_DIR naming a directory of this branch's own:
+
+ci/v4.34.1/  the full CI script from a clean build, on 99e7983 (ci/v4.34.1/commit):
+             $ CTR_EXTRA='--sysctl net.ipv4.tcp_syn_retries=2' LEAN_HTTP_REMOTE_DIR=lean-http-cancel scripts/remote.sh bash -c 'rm -rf .lake out && lean --version && bash scripts/ci.sh'
+             then out/ci/ and out/net/ copied back (without tls-certs/); console.txt is the output.
+             639 real-socket checks pass, 0 fail, 2 known limitations (dns-timeout, dns-cancel).
+ci/v4.35.0/  the same with LEAN_HTTP_TOOLCHAIN=v4.35.0 LEAN_HTTP_ELAN=b8perf-elan
+             LEAN_HTTP_REMOTE_DIR=lean-http-cancel-435: the same result.
+controls/    $ bash controls/run.sh    planted defects (controls/mutate.py) against the checks each
+             targets, built from the committed tree in a directory of its own; out.txt on d162824.
+bench/       the cost of watching for cancellation: PLAN.txt (written before the first run, with
+             additions before each later one), build.sh, blocks.sh (run as
+             scripts/remote.sh bash -c "$(cat bench/blocks.sh)" blocks.sh 40 2000 100 101),
+             analyse.py; out.txt and result.txt the final run on 99e7983; first/, second/, third/,
+             fourth/ and ablate/ the earlier runs and the ablations, each with a README;
+             profile/ perf profiles of main and the final version.  To rerun blocks.sh, build its
+             net-client-cancel from 99e7983 (build.sh builds HEAD): its token variant passes
+             cancelon=none, an option of that client that later clients no longer know, and since
+             2026-11-02 the test client rejects an option it does not know.  With a later client,
+             cancel=3600000 gives the calls a token that is not cancelled during the run, though
+             it also starts the client's trigger, a timer of an hour, which the old variant did not.
+reviews/     four rounds of a fresh Claude and Gemini (agy-readonly), the prompts, the author's
+             verdicts on each round, the probes the Claude reviewer ran; README.md says what came of
+             every finding.
+load/        the scenarios placed at a stage of the call instead of at a time (branch cancel-flake,
+             2026-11-02), under the load that exposed the timing: the final wave on the commit in
+             load/commit, while CI and other people's jobs ran on the host as well (load average
+             112 to 269, median 217, loadavg.txt sampled every 15 s):
+               ci-1/ ci-2/ ci-3/  three copies of the full CI script at once, each three times in
+                                  a row (run-1..3), as for ci/ above with
+                                  LEAN_HTTP_REMOTE_DIR=lean-http-flake, -2, -3;
+               ci-v4.35.0/        once on v4.35.0 alongside them (lean-http-flake-435);
+               rounds-4..6.txt    at the same time, 20 rounds each of the cancellation and shutdown
+                                  scenarios with stream-abandon, tls-stream and dns-timeout:
+                                  $ CTR_EXTRA='--sysctl net.ipv4.tcp_syn_retries=2' LEAN_HTTP_REMOTE_DIR=lean-http-flake-4 \
+                                      scripts/remote.sh bash -c "$(cat logs/2026-10-30/cancel/load/rounds.sh)" rounds.sh 20
+                                  (and -5, -6), each round's load average and verdicts;
+                                  rounds-failed-N/<round>/ the outputs of the rounds with a failure;
+               controls.txt       $ bash load/controls-run.sh none shell-no-watch shell-no-mailbox
+                                      shell-abandon-drains shell-sleep-uncancellable
+                                      shell-handshake-uncancellable shell-connect-uncancellable
+                                      shell-cap-uncancellable shell-checks-signal-only
+                                      stream-hands-out-held shutdown-no-table
+                                  the planted defects of controls/ that the real-socket scenarios
+                                  see, against the changed scenarios (controls-run.sh is
+                                  controls/run.sh with a directory of its own), during the wave.
+             first/ the same on 720b2c1, the first version (600 ms bounds, 2 s server sleeps):
+             three CI copies four times each, v4.35.0 once and 60 rounds, at load average 179 to
+             539 (median 229); only each run's summary and the outputs of failing scenarios kept.
+             Its rounds found a correct shutdown-cap 714 ms after the shutdown, which set the final
+             bound of 1500 ms and the 5 s sleeps.
+cost/        2 November: how much of the cost of watching for cancellation can be given back;
+             README.md says what was run (PLAN.txt before each run) and what came of it.

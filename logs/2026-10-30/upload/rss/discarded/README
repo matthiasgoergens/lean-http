@@ -1,0 +1,4 @@
+These runs are discarded: each script copied a variant tree to the build host and then built it with
+scripts/remote.sh, which first copies the laptop's working tree over the same directory, so every
+"variant" was in fact the working tree of the time (the mailbox version, commit "WIP: mailbox,
+broken-body theorem, review fixes").  They measure that one version only.  ../run.sh replaces them.

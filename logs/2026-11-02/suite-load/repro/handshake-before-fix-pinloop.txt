@@ -1,0 +1,23 @@
+Build completed successfully (59 jobs).
+loadavg 493.10 522.43 433.24 383/20161 57 rounds=20 hammer=4 cpu=101 hogs=32
+round 1: ms=2867 accept_gap=1205 cause="TLS handshake timeout" pinned the event loop's thread 95 to CPU 101
+round 2: ms=3035 accept_gap=995 cause="TLS handshake timeout" pinned the event loop's thread 153 to CPU 101
+round 3: ms=4418 accept_gap=2589 cause="TLS handshake timeout" pinned the event loop's thread 212 to CPU 101
+round 4: ms=1396 accept_gap=647 cause="TLS handshake timeout" pinned the event loop's thread 270 to CPU 101
+round 5: ms=3097 accept_gap=769 cause="TLS handshake timeout" pinned the event loop's thread 328 to CPU 101
+round 6: ms=1387 accept_gap=580 cause="TLS handshake timeout" pinned the event loop's thread 386 to CPU 101
+round 7: ms=2119 accept_gap=1335 cause="TLS handshake timeout" pinned the event loop's thread 443 to CPU 101
+round 8: ms=3494 accept_gap=501 cause="TLS handshake timeout" pinned the event loop's thread 501 to CPU 101
+round 9: ms=1352 accept_gap=536 cause="TLS handshake timeout" pinned the event loop's thread 558 to CPU 101
+round 10: ms=5587 accept_gap=2555 cause="TLS handshake timeout" pinned the event loop's thread 616 to CPU 101
+round 11: ms=1267 accept_gap=529 cause="TLS handshake timeout" pinned the event loop's thread 674 to CPU 101
+round 12: ms=1611 accept_gap=530 cause="TLS handshake timeout" pinned the event loop's thread 744 to CPU 101
+round 13: ms=1915 accept_gap=525 cause="TLS handshake timeout" pinned the event loop's thread 802 to CPU 101
+round 14: ms=1354 accept_gap=682 cause="TLS handshake timeout" pinned the event loop's thread 860 to CPU 101
+round 15: ms=2940 accept_gap=1026 cause="TLS handshake timeout" pinned the event loop's thread 918 to CPU 101
+round 16: ms=1347 accept_gap=689 cause="TLS handshake timeout" pinned the event loop's thread 978 to CPU 101
+round 17: ms=1491 accept_gap=709 cause="TLS handshake timeout" pinned the event loop's thread 1036 to CPU 101
+round 18: ms=1221 accept_gap=888 cause="TLS handshake timeout" pinned the event loop's thread 1094 to CPU 101
+round 19: ms=2141 accept_gap=1089 cause="TLS handshake timeout" pinned the event loop's thread 1162 to CPU 101
+round 20: ms=2823 accept_gap=636 cause="TLS handshake timeout" pinned the event loop's thread 1223 to CPU 101
+early (under 1012 ms): 0 of 20
