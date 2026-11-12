@@ -1,5 +1,7 @@
 # Notes
 
+The runs cited here, in `DESIGN.md` and in the code as `logs/...` are kept outside the tree, under the tag `runs-2026-11`: a cited path `logs/X` is that path in the tag.  `git fetch https://github.com/matthiasgoergens/lean-http.git tag runs-2026-11` fetches them, `git show runs-2026-11:logs/` lists them, and `git archive runs-2026-11 | tar --extract --directory /some/dir` unpacks them.
+
 ## The HTTP/1.1 codec: a vendored copy of the upstream protocol layer
 
 Decided on 2026-10-27, by measurement.  Since 2026-10-28 the library no longer uses this copy: the exchange core parses responses with its own codec and encodes requests itself ("The codec inside the exchange core", below), and the copy is the oracle of the tests and the fuzzing harness only.

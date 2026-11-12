@@ -1,9 +1,0 @@
-Runs for the per-call planner (branch planner), on the build host in localhost/b8perf-lean with Lean v4.34.1, from scratch (rm -rf .lake first), at commit 3b46041de4c6069d0531c3f26082db902ebc4239, since rewritten; its code is that of b761dac, and the commits after it change only the documents and these logs:
-$ LEAN_HTTP_REMOTE_DIR=lean-http-planner CTR_EXTRA=-i scripts/remote.sh bash -s < logs/2026-10-29/planner/run.sh
-$ rsync --archive buildhost:lean-http-planner/out/planner/ logs/2026-10-29/planner/
-  build.txt, build-tests.txt  lake build (LeanHttp.Call.Proofs among the modules), then the test executables; no warnings
-  axioms.txt                  #print axioms for the planner's theorems: each [propext, (Classical.choice,) Quot.sound], no sorryAx
-  unit.txt                    the existing unit tests (Backoff gained lemmas), unchanged
-  call-tests-seed{1,2}.txt    unit tests of each rule, then 20,000 and 200,000 random calls checked step by step, and nine planted bugs
-  call-diff-seed{1,2}.txt     the differential test (3 and 6 field sets per combination; 20,000 and 100,000 chains), with three planted bugs as positive controls
-Every file ends with "exit status 0".

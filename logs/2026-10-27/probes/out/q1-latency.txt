@@ -1,8 +1,0 @@
-### latency scenario=data
-waitReadable resolved after (spinning on isResolved): n=200 min 102us, median 200us, p95 3401us, max 7900us; not resolved within 50 ms: 0
-### latency scenario=fin
-waitReadable resolved after (spinning on isResolved): n=200 min 98us, median 207us, p95 3863us, max 6872us; not resolved within 50 ms: 0
-### latency scenario=rst
-waitReadable resolved after (spinning on isResolved): n=200 min 87us, median 216us, p95 4766us, max 24232us; not resolved within 50 ms: 0
-### latency scenario=none
-waitReadable never resolved within 50 ms in 200 of 200 connections

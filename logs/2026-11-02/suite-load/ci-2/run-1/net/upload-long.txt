@@ -1,7 +1,0 @@
-$ net-client upload PUT http://127.0.0.1:18124/sink size=3000 chunk=1000 declare=2500
-upload call 0 error delivery=maybe delivered ms=105.125 rounds=1 lookups=0 seed=16648825651223853469 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="request body: the producer gave more than the declared 2500 bytes (3000 so far)" detail="" pulls=3 produced=3000
-after upload 0: pool idle=0 checked_out=0 allocated=1
-trace call 0 ok steps=1
-rss_peak_kb=13080 rss_kb=13092
-main returning at ms=106.355 started_unix_us=1793620779008531 returning_unix_us=1793620779114887
-exit status=0 wall_ms=248 start_ms=67 exit_after_main_ms=74

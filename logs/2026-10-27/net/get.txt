@@ -1,5 +1,0 @@
-$ net-client call GET http://127.0.0.1:18080/ok
-call 0 ok status=200 bytes=5 ms=5.920 rounds=1 address=127.0.0.1:18080 seed=18391690982144422205 failed_attempts=[] body_start="hello"
-fds_after_calls=11
-main returning at ms=6.280
-exit status=0 wall_ms=35 exit_after_main_ms=29

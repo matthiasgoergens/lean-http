@@ -1,7 +1,0 @@
-Build completed successfully (21 jobs).
-PASS an error's text names the delivery and the seed
-PASS only connect failures count as connect
-46 checks, 0 failing
-PASS eof before the last chunk: failed LeanHttp.Cause.peerClosed (60 modes)
-PASS eof in the trailers: failed LeanHttp.Cause.peerClosed (71 modes)
-40 cases, 0 failing

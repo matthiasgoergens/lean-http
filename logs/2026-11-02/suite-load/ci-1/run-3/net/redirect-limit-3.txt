@@ -1,7 +1,0 @@
-$ net-client call GET http://127.0.0.1:18114/infinite-redirect maxredirects=3
-call 0 error delivery=response received ms=8.963 rounds=1 lookups=0 seed=12439155256684635258 reused=true redispatched=false hops=3 retries=0 not_retried=none status=(some 302) cause="more than 3 redirects" detail=""
-pool idle=1 checked_out=0 allocated=1
-trace call 0 ok steps=4
-fds_after_calls=11
-main returning at ms=10.552 started_unix_us=1793621812669621 returning_unix_us=1793621812680172
-exit status=0 wall_ms=22 start_ms=6 exit_after_main_ms=5

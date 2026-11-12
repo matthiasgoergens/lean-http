@@ -1,7 +1,0 @@
-$ net-client upload POST http://127.0.0.1:18123/ size=32000000 chunk=65536 gap=5000
-upload call 0 ok status=413 bytes=3 ms=13.186 rounds=1 lookups=0 address=127.0.0.1:18123 seed=10244135085277678004 failed_attempts=[] conn=(some 0) reused=false discarded=0 check_us=0 redispatched=false hops=0 retries=0 uri=http://127.0.0.1:18123/ tls=none body_start="big" pulls=18 produced=1179648 response="big"
-after upload 0: pool idle=0 checked_out=0 allocated=1
-trace call 0 ok steps=1
-rss_peak_kb=14840 rss_kb=14840
-main returning at ms=14.679 started_unix_us=1793621864965826 returning_unix_us=1793621864980505
-exit status=0 wall_ms=57 start_ms=37 exit_after_main_ms=4

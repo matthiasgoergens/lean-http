@@ -1,9 +1,0 @@
-$ net-client call GET http://127.0.0.1:18115/flaky?key=c&code=429&after=date2 retry429=1
-call 0 ok status=200 bytes=17 ms=2243.477 rounds=1 address=127.0.0.1:18115 seed=14843706575459423731 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=185979 redispatched=false hops=0 retries=1 uri=http://127.0.0.1:18115/flaky?key=c&code=429&after=date2 body_start="recovered after 1"
-summary idle checks of reused connections n=1 min=185.979 p50=185.979 p90=185.979 max=185.979 ms
-pool idle=1 checked_out=0 allocated=1
-trace call 0 ok steps=2
-trace call 0 retry delays=[2000] gaps=[2011]
-fds_after_calls=11
-main returning at ms=2244.557
-exit status=0 wall_ms=2279 exit_after_main_ms=35

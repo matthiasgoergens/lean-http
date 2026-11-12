@@ -1,1 +1,0 @@
-LEAN_HTTP_REMOTE_DIR=lean-http-cost scripts/remote.sh /py/bin/python3 -I out/bench/costbench.py 100 50 20 100 101 cancel token=cancel:token sweep2 sweep2-token=sweep2:token

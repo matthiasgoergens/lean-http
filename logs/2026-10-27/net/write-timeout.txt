@@ -1,5 +1,0 @@
-$ net-client call POST http://127.0.0.1:18087/ body=32000000 gap=1000
-call 0 error delivery=maybe delivered ms=1083.321 rounds=1 seed=6660806425043654722 status=none cause="write timeout" detail="1769472 of 32000087 request bytes accepted"
-fds_after_calls=12
-main returning at ms=1734.380
-exit status=0 wall_ms=1783 exit_after_main_ms=49

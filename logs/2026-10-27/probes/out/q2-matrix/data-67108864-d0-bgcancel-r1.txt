@@ -1,7 +1,0 @@
-### server=data delay=0ms size=67108864 | client variant=bgcancel arg=0ms hold=300ms n=1
-  [client] bg selector finished: 65536 bytes
-  [client] cancelRecv done
-  [client] main returning
-  exit=0 wall=321ms 
-  [server] listening 23376
-  [server] Exception in thread Thread-1 (serve):

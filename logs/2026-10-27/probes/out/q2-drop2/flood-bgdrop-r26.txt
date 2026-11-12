@@ -1,7 +1,0 @@
-### server=flood delay=300ms size=65536 | client variant=bgdrop arg=0ms hold=300ms n=1
-  [client] main returning
-  [client] bg selector finished: 65536 bytes
-  exit=0 wall=365ms 
-  [server] listening 20058
-  [server] server[0]: flood stopped after 1835008: [Errno 104] Connection reset by peer
-  [server] server[0]: client closed

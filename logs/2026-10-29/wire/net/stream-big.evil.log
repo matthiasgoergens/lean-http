@@ -1,9 +1,0 @@
-      19.6 listening on 127.0.0.1:18117
-      36.2 conn1 accepted from ('127.0.0.1', 48728)
-      37.4 conn1 req1 GET /bigbody?n=200000000 {'host': ['127.0.0.1:18117'], 'connection': ['keep-alive']} body=0B
-     937.4 conn1 EOF from client after 1 requests
-     937.5 conn1 closed by server
-     981.6 conn2 accepted from ('127.0.0.1', 48732)
-     983.0 conn2 req1 GET /bigbody?n=200000000 {'host': ['127.0.0.1:18117'], 'connection': ['keep-alive']} body=0B
-    2014.6 conn2 EOF from client after 1 requests
-    2015.1 conn2 closed by server

@@ -1,4 +1,0 @@
-k=1: no round times
-k=16: sweep2/cancel median ratio=0.986 95% interval=0.710..1.403 blocks=30; median round cancel=5.38 ms sweep2=5.06 ms
-k=128: sweep2/cancel median ratio=0.948 95% interval=0.897..1.013 blocks=30; median round cancel=93.87 ms sweep2=88.03 ms
-k=512: sweep2/cancel median ratio=0.924 95% interval=0.890..1.027 blocks=30; median round cancel=490.83 ms sweep2=463.71 ms

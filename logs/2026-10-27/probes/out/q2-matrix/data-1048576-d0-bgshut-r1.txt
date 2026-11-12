@@ -1,8 +1,0 @@
-### server=data delay=0ms size=1048576 | client variant=bgshut arg=0ms hold=300ms n=1
-  [client] bg selector finished: 65536 bytes
-  [client] cancelRecv done
-  [client] main returning
-  exit=0 wall=609ms 
-  [server] listening 27330
-  [server] server[0]: sent 1048576
-  [server] server[0]: client closed

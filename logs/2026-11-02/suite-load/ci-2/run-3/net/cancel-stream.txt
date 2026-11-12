@@ -1,9 +1,0 @@
-$ net-client stream GET http://127.0.0.1:18183/trickle?ms=5 cancel=100 after=read pull=1
-stream call 0 error delivery=response received ms=109.898 rounds=1 lookups=0 seed=11634355985197435068 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the call was cancelled (cancel)" detail="" read_before=19
-callback entered at ms=4.847
-after stream 0: pool idle=0 checked_out=0 allocated=1
-cancel fired at ms=108.950
-trace call 0 ok steps=1
-rss_peak_kb=23076 rss_kb=23076
-main returning at ms=111.029 started_unix_us=1793621951623822 returning_unix_us=1793621951734853
-exit status=0 wall_ms=127 start_ms=12 exit_after_main_ms=4

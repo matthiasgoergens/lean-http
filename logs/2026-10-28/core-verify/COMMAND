@@ -1,3 +1,0 @@
-Independent rerun of the exchange core at 49cac66, 2026-10-28, the build host, v4.34.1 container, remote dir lean-http-core-verify:
-$ LEAN_HTTP_REMOTE_DIR=lean-http-core-verify scripts/remote.sh bash -c "lake build; lake build unit-tests codec-tests core-tests; unit-tests; codec-tests; core-tests traces; core-tests props 300000 7; core-tests explore 10"
-(core-verify-mine.txt has tails; core-props-seed7.txt the full random-run output)

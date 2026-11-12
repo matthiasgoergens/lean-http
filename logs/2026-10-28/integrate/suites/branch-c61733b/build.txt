@@ -1,6 +1,0 @@
-$ lake build
-✔ [28/31] Built LeanHttp.Exchange.Proofs (8.3s)
-✔ [29/31] Built LeanHttp.Exchange.Response (3.3s)
-✔ [30/31] Built LeanHttp.Exchange.Liveness (3.5s)
-Build completed successfully (31 jobs).
-exit status 0, wall 12842 ms

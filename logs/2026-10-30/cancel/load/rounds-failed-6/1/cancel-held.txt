@@ -1,9 +1,0 @@
-$ net-client stream GET http://127.0.0.1:18183/bigbody?n=10000000 cancel=200 after=hold pull=1 stop=1 hold=400
-stream call 0 error delivery=response received ms=444.121 rounds=1 lookups=0 seed=4676236792457984099 reused=false redispatched=false hops=0 retries=0 not_retried=none status=(some 200) cause="the call was cancelled (cancel)" detail="" read_before=1
-callback entered at ms=9.906
-after stream 0: pool idle=0 checked_out=0 allocated=1
-cancel fired at ms=211.507
-trace call 0 ok steps=1
-rss_peak_kb=9484 rss_kb=9496
-main returning at ms=444.753
-exit status=0 wall_ms=569 exit_after_main_ms=125

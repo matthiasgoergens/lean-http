@@ -1,9 +1,0 @@
-      21.5 listening on 127.0.0.1:18100
-     685.3 conn1 accepted from ('127.0.0.1', 36796)
-     686.3 conn1 req1 GET /ok {'host': ['127.0.0.1:18100'], 'connection': ['keep-alive']} body=0B
-    1291.4 conn1 EOF from client after 1 requests
-    1291.6 conn1 closed by server
-    1292.4 conn2 accepted from ('127.0.0.1', 36802)
-    1293.1 conn2 req1 GET /ok {'host': ['127.0.0.1:18100'], 'connection': ['keep-alive']} body=0B
-    1294.4 conn2 EOF from client after 1 requests
-    1294.5 conn2 closed by server

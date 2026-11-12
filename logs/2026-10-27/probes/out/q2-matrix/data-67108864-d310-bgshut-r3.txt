@@ -1,5 +1,0 @@
-### server=data delay=310ms size=67108864 | client variant=bgshut arg=0ms hold=300ms n=1
-  [client] cancelRecv done
-  [client] main returning
-  exit=0 wall=315ms 
-  [server] listening 32367

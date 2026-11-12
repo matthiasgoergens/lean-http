@@ -1,4 +1,0 @@
-Independent checks of branch planner at e82962d, 2026-10-29, the build host, v4.34.1 container, fresh dir lean-http-planner-verify:
-- no library import of LeanHttpProto; no sorry, admit or axiom in LeanHttp/
-- lake build; axioms: proof 41 and codec 41 as before, call 28 (27 [propext, Classical.choice, Quot.sound], 1 [propext, Quot.sound]); call-tests 139 and unit 56 passing -> planner-verify.txt
-- call-diff 4 9 30000: 0 unexplained against the vendored planner, both v4.34.1 variants and the upstream loop model; the three planted controls leave 11735, 864 and 5042 unexplained -> planner-diff-seed9.txt

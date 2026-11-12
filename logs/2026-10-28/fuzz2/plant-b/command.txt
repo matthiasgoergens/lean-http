@@ -1,8 +1,0 @@
-# Plant B (as in ../../fuzz/commands.txt): in the generated vendor/.../H1.lean, parseFixedBody's .incomplete branch,
-#   emitBodyChunk machine (.readBody (.fixed (if remaining == 1 then 0 else remaining))) false false #[] body
-# a scratch edit of the ignored vendor/ on the tree at 6e0bc0b, undone afterwards (scripts/vendor.sh).
-LEAN_HTTP_REMOTE_DIR=lean-http-fuzz2 fuzz/run.sh fuzz/build.sh
-SKIP_LEAN_BUILD=1 PIN_CPUS=79 LEAN_HTTP_REMOTE_DIR=lean-http-fuzz2 fuzz/run.sh env AFL_BENCH_UNTIL_CRASH=1 fuzz/fuzz.sh .lake/fuzz/campaigns/plant-b 600 1 200
-SKIP_LEAN_BUILD=1 LEAN_HTTP_REMOTE_DIR=lean-http-fuzz2 fuzz/run.sh bash -c '.lake/build/bin/fuzz-replay .lake/fuzz/campaigns/plant-b/sync/main/crashes/id:000000*'   (replay.txt)
-Found after 4.8 s and 21,728 executions (crash-000000; fuzzer_stats, plot_data), on CPU 79 of the
-shared host at a load average of about 250 on 128 CPUs.

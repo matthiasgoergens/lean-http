@@ -1,3 +1,0 @@
-$ scripts/openssl-headers.sh /w/.lake/openssl-3.6.0
-curl: (6) Could not resolve host: github.com
-exit status 1, wall 21 ms

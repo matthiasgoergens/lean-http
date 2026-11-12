@@ -1,4 +1,0 @@
-# Build host, tree at c82622e plus fuzz/h11-diff.py as committed with this log:
-# the 6161 distinct inputs in the main1 queues (deduplicated by SHA-256) into .lake/fuzz/campaigns/main1/corpus,
-# scripts/remote.sh: .lake/build/bin/fuzz-replay --framing <corpus files> > .lake/fuzz/diff/main1.jsonl
-# host: uv run --script fuzz/h11-diff.py .lake/fuzz/diff/main1.jsonl .lake/fuzz/diff/main1-findings.jsonl

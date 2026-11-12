@@ -1,5 +1,0 @@
-      24.0 listening on ::1:18081
-      74.4 conn1 accepted from ('::1', 39048, 0, 0)
-      75.8 conn1 req1 GET /ok {'host': ['[::1]:18081'], 'connection': ['keep-alive']} body=0B
-      76.6 conn1 EOF from client after 1 requests
-      76.7 conn1 closed by server

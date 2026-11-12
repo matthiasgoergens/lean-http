@@ -1,7 +1,0 @@
-$ net-client call GET https://127.0.0.1:18140/hello ca=/nonexistent.pem
-call 0 error delivery=not sent ms=2.802 rounds=0 lookups=0 seed=2783701645115184992 reused=false redispatched=false hops=0 retries=0 not_retried=LeanHttp.Call.NoRetry.cause status=none cause="TLS setup failed: cannot load the CA file /nonexistent.pem: No such file or directory" detail=""
-pool idle=0 checked_out=0 allocated=1
-trace call 0 ok steps=1
-fds_after_calls=10
-main returning at ms=3.299
-exit status=0 wall_ms=13 exit_after_main_ms=10

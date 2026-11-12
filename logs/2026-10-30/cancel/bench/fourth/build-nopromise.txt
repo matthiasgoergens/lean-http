@@ -1,6 +1,0 @@
-### main = 27a0d86
-Build completed successfully (57 jobs).
-e878309035974de01a015e0ccfefa90014a2a60647bb4fff193cc7122d4a3a30  /home/matthias/lean-http-cancel/out/bench/net-client-main
-### cancel = e0be965
-Build completed successfully (59 jobs).
-a1e48d3791c13aeedf5424f6e4879a1e9d759d9596a400529194ee03a5b50ecb  /home/matthias/lean-http-cancel/out/bench/net-client-cancel

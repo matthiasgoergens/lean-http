@@ -1,4 +1,0 @@
-Large-body reads over loopback: milestone 1's client (ee18238, built in ~/lean-http-core-m1 and copied to out/m1-net-client) against the new shell (075fb77, built in ~/lean-http-core-net), inside localhost/b8perf-lean on the build host with Lean v4.34.1.
-$ LEAN_HTTP_REMOTE_DIR=lean-http-core-net scripts/remote.sh bash -c "lake build net-client; bash out/bigbody.sh 60000000 6 out/m1-net-client .lake/build/bin/net-client; for n in 10000000 20000000 40000000; do bash out/bigbody.sh $n 2 .lake/build/bin/net-client; done"
-bigbody.sh is the script in this directory (copied to out/ on the host).  out.txt: milestone 1 took 5.6 to 7.5 s for 60 MB, the new shell 70 to 100 ms; the new shell's time grows linearly with the size.
-Before the fix, the new shell took as long as milestone 1 (unsaved runs: 8 to 20 s for 60 MB, and 29, 112, 594, 2714 ms for 5, 10, 20, 40 MB), and perf on the host showed 92% of the cycles in memmove.

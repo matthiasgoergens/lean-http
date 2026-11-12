@@ -1,4 +1,0 @@
-$ fetch_lean4 /tmp/tmp.wPTPSjVcRP 3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b
-From https://github.com/leanprover/lean4
- * branch            3e6f42a58a955f7fd9a6df4213f3be4bb68e3e3b -> FETCH_HEAD
-exit status 0, wall 2821 ms

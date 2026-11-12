@@ -1,4 +1,0 @@
-Independent checks of branch integrate at c5bd9c9, 2026-10-28, the build host, v4.34.1 container, fresh dir lean-http-integrate-verify:
-- no library module imports LeanHttpProto (grep); no sorry, admit or axiom in LeanHttp/
-- lake build; proof-axioms (41) and codec-axioms (41) on the standard axioms (2 codec theorems use only propext); unit 56, codec 49, response-codec 41, traces 48, props 50000 seed 41, explore 8: all passing -> integrate-verify.txt
-- lake build net-client; CTR_EXTRA=--sysctl net.ipv4.tcp_syn_retries=2 scripts/remote.sh bash tests/net/run.sh: 76 passed, 0 failed, 1 known (dns-timeout, as on main) -> integrate-net-verify.txt

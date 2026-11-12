@@ -1,8 +1,0 @@
-$ net-client call GET http://127.0.0.1:18111/bounce/18112/bounce/18111/echo auth=Bearer-secret cookie=s1
-call 0 ok status=200 bytes=79 ms=3.168 rounds=2 lookups=0 address=127.0.0.1:18111 seed=15112779661491708768 failed_attempts=[] conn=(some 0) reused=true discarded=0 check_us=90 redispatched=false hops=2 retries=0 uri=http://127.0.0.1:18111/echo tls=none body_start="GET /echo auth=['Bearer-secret'] cookie="
-summary idle checks of reused connections n=1 min=0.090 p50=0.090 p90=0.090 max=0.090 ms
-pool idle=2 checked_out=0 allocated=2
-trace call 0 ok steps=3
-fds_after_calls=11
-main returning at ms=4.255
-exit status=0 wall_ms=11 exit_after_main_ms=7

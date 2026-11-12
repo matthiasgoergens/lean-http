@@ -1,2 +1,0 @@
-Build completed successfully (57 jobs).
-159 checks, 0 failing

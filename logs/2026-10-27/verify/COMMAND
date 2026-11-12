@@ -1,3 +1,0 @@
-Independent rerun of milestone 1 on the build host, 2026-10-27:
-$ scripts/remote.sh bash -c "lake build && .lake/build/bin/unit-tests && .lake/build/bin/codec-tests"  -> build-unit-codec.txt (tails)
-$ scripts/remote.sh lake build net-client; CTR_EXTRA=--sysctl net.ipv4.tcp_syn_retries=2 scripts/remote.sh bash tests/net/run.sh  -> net-summary.txt

@@ -1,6 +1,0 @@
-      53.5 listening tls=18191 plain=18192 mode=normal openssl=OpenSSL 3.5.9 29 Sep 2026
-     284.6 conn1 accepted from ('127.0.0.1', 41178)
-     291.8 sni=None
-     295.8 conn1 handshake done version=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384 alpn=http/1.1
-     296.4 conn1 GET /trickle?ms=100 {'host': '127.0.0.1:18191', 'connection': 'keep-alive'} body=0B version=TLSv1.3
-    2853.4 conn1 read failed: SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:2713)')

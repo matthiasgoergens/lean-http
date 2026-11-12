@@ -1,7 +1,0 @@
-$ net-client call GET http://127.0.0.1:18189/chain/2 pool=0
-call 0 ok status=200 bytes=67 ms=4.584 rounds=3 lookups=0 address=127.0.0.1:18189 seed=6646837086320251582 failed_attempts=[] conn=none reused=false discarded=0 check_us=0 redispatched=false hops=2 retries=0 uri=http://127.0.0.1:18189/chain/0 tls=none body_start="GET /chain/0 auth=None cookie=None host="
-pool idle=0 checked_out=0 allocated=0
-trace call 0 ok steps=3
-fds_after_calls=11
-main returning at ms=5.495
-exit status=0 wall_ms=14 exit_after_main_ms=9

@@ -1,6 +1,0 @@
-$ tls_abi /home/matthias/prog/lean-http-wt-tls/.lake/openssl-3.6.0/include
-$ cc -std=c11 -Wall -Wextra -Werror -fsyntax-only -I /home/matthias/prog/lean-http-wt-tls/.lake/openssl-3.6.0/include native/openssl-check.c
-openssl-min.h agrees with OpenSSL 3.6.0's headers
-openssl-min.h agrees with the system's headers: # define OPENSSL_VERSION_TEXT "OpenSSL 3.5.5 27 Jan 2026"
-/home/matthias/.elan/toolchains/leanprover--lean4---v4.34.1/lib/libcrypto.a: OpenSSL 3.6.0
-exit status 0, wall 353 ms
